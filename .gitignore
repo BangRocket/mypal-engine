@@ -26,6 +26,9 @@ poetry.lock
 # mem0 local storage
 mem0_data/
 
+# User profile (personal data)
+user_profile.txt
+
 # IDE
 .idea/
 .vscode/
