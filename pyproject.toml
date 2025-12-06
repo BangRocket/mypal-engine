@@ -1,0 +1,42 @@
+[tool.poetry]
+name = "clara"
+version = "0.1.0"
+description = "AI assistant with session management and memory"
+authors = ["Your Name <you@example.com>"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.11,<3.14"
+
+# UI
+gradio = "^5.0"
+
+# Database
+sqlalchemy = "^2.0"
+
+# Memory system (OSS)
+mem0ai = "^1.0.1"
+
+# LLM backends
+openai = "^1.42.0"
+huggingface_hub = "^0.26.0"
+
+# General utils
+requests = "^2.32.5"
+python-dotenv = "^1.0.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+ruff = "^0.8"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
