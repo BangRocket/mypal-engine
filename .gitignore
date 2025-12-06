@@ -23,6 +23,9 @@ poetry.lock
 # Database
 *.db
 
+# mem0 local storage
+mem0_data/
+
 # IDE
 .idea/
 .vscode/
