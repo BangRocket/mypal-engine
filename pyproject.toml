@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "clara"
+name = "mypalclara"
 version = "0.1.0"
-description = "AI assistant with session management and memory"
+description = "MyPalClara - AI assistant with session management and memory"
 authors = ["Your Name <you@example.com>"]
 readme = "README.md"
 package-mode = false
@@ -22,10 +22,6 @@ mem0ai = "^1.0.1"
 # LLM backends
 openai = "^1.42.0"
 huggingface_hub = "^0.26.0"
-
-# Telegram bot
-python-telegram-bot = "^21.0"
-httpx = "^0.28.0"
 
 # General utils
 requests = "^2.32.5"
