@@ -28,6 +28,7 @@ poetry.lock
 # mem0 / Qdrant local storage
 mem0_data/
 qdrant_data/
+kuzu_data/
 
 # User profile (personal data)
 user_profile.txt

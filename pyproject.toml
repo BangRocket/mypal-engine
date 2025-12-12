@@ -16,8 +16,9 @@ uvicorn = {extras = ["standard"], version = "^0.38.0"}
 # Database
 sqlalchemy = "^2.0"
 
-# Memory system (OSS)
-mem0ai = "^1.0.1"
+# Memory system (OSS) with graph support
+mem0ai = {extras = ["graph"], version = "^1.0.1"}
+neo4j = "^5.0"  # Graph database driver
 
 # LLM backends
 openai = "^1.42.0"
@@ -26,6 +27,7 @@ huggingface_hub = "^0.26.0"
 # General utils
 requests = "^2.32.5"
 python-dotenv = "^1.0.1"
+imessage-reader = "^0.6.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"
