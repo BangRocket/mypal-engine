@@ -32,6 +32,8 @@ kuzu_data/
 
 # User profile (personal data)
 user_profile.txt
+inputs/user_profile.txt
+generated/
 
 # IDE
 .idea/
