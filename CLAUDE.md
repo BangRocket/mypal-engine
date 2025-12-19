@@ -58,6 +58,7 @@ docker-compose up                 # Run backend (port 8000) + frontend (port 300
 ### Memory System
 - **User memories**: Persistent facts/preferences per user (stored in mem0, searched via `_fetch_mem0_context`)
 - **Project memories**: Topic-specific context per project (filtered by project_id in mem0)
+- **Graph memories**: Optional relationship tracking via Neo4j or Kuzu (disabled by default, enable with `ENABLE_GRAPH_MEMORY=true`)
 - **Session context**: Recent 20 messages + snapshot of last 10 messages from previous session
 - **Session summary**: LLM-generated summary stored when session times out
 - Sessions auto-timeout after 30 minutes of inactivity (`SESSION_IDLE_MINUTES`)
@@ -101,6 +102,9 @@ Backend provides full CRUD for threads via `/api/threads` endpoints:
 - `DEFAULT_PROJECT` - Default project name (default: "Default Project")
 - `BACKEND_URL` - Backend URL for frontend (default: http://localhost:8000)
 - `SKIP_PROFILE_LOAD` - Skip initial mem0 profile loading (default: true)
+- `ENABLE_GRAPH_MEMORY` - Enable graph memory for relationship tracking (default: false)
+- `GRAPH_STORE_PROVIDER` - Graph store provider: "neo4j" (default) or "kuzu" (embedded)
+- `NEO4J_URL`, `NEO4J_USERNAME`, `NEO4J_PASSWORD` - Neo4j connection (when using neo4j provider)
 
 ## Key Patterns
 
