@@ -100,5 +100,6 @@ Copy `.env.example` to `.env` and configure:
 - `MEM0_MODEL` - Model for extraction (default: `gpt-4o-mini`)
 
 ### Graph Store (optional)
-- `GRAPH_STORE_PROVIDER` - `neo4j` or `kuzu` (embedded)
+- `ENABLE_GRAPH_MEMORY` - Set to `true` to enable graph memory (default: `false`)
+- `GRAPH_STORE_PROVIDER` - `neo4j` (default) or `kuzu` (embedded)
 - `NEO4J_URL`, `NEO4J_USERNAME`, `NEO4J_PASSWORD` - For Neo4j
