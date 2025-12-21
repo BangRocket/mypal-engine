@@ -20,6 +20,10 @@ sqlalchemy = "^2.0"
 mem0ai = {extras = ["graph"], version = "^1.0.1"}
 neo4j = "^5.0"  # Graph database driver
 
+# PostgreSQL support
+psycopg2-binary = "^2.9.9"  # PostgreSQL driver
+pgvector = "^0.3.0"  # Vector support for mem0
+
 # LLM backends
 openai = "^1.42.0"
 huggingface_hub = "^0.26.0"

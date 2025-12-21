@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MyPalClara is a personal AI assistant with session management and persistent memory (via mem0). The assistant's name is Clara. It uses a FastAPI backend with SQLite storage and a Next.js frontend built with assistant-ui.
+MyPalClara is a personal AI assistant with session management and persistent memory (via mem0). The assistant's name is Clara. It uses a FastAPI backend with SQLite/PostgreSQL storage and a Next.js frontend built with assistant-ui.
 
 ## Development Commands
 
@@ -41,9 +41,9 @@ docker-compose up                 # Run backend (port 8000) + frontend (port 300
 - `discord_bot.py` - Discord bot with multi-user support, reply chains, and streaming responses
 - `memory_manager.py` - Core orchestrator: session handling, mem0 integration, prompt building with Clara's persona
 - `llm_backends.py` - LLM provider abstraction (OpenRouter, NanoGPT, custom OpenAI) - both streaming and non-streaming
-- `mem0_config.py` - mem0 memory system configuration (Qdrant vector store, OpenAI embeddings)
-- `models.py` - SQLAlchemy models: Project, Session, Message
-- `db.py` - SQLite database setup
+- `mem0_config.py` - mem0 memory system configuration (Qdrant/pgvector for vectors, OpenAI embeddings)
+- `models.py` - SQLAlchemy models: Project, Session, Message, ChannelSummary
+- `db.py` - Database setup (SQLite for dev, PostgreSQL for production)
 
 ### Frontend Structure
 - `frontend/app/api/chat/route.ts` - Next.js API route that fetches context from backend, streams LLM response via AI SDK
@@ -108,6 +108,22 @@ Backend provides full CRUD for threads via `/api/threads` endpoints:
 - `GRAPH_STORE_PROVIDER` - Graph store provider: "neo4j" (default) or "kuzu" (embedded)
 - `NEO4J_URL`, `NEO4J_USERNAME`, `NEO4J_PASSWORD` - Neo4j connection (when using neo4j provider)
 
+### PostgreSQL (Production)
+For production, use managed PostgreSQL instead of SQLite/Qdrant:
+- `DATABASE_URL` - PostgreSQL connection for SQLAlchemy (default: uses SQLite)
+- `MEM0_DATABASE_URL` - PostgreSQL+pgvector connection for mem0 vectors (default: uses Qdrant)
+
+Example (Railway):
+```bash
+DATABASE_URL=postgresql://user:pass@host:5432/clara_main
+MEM0_DATABASE_URL=postgresql://user:pass@host:5432/clara_vectors
+```
+
+To migrate existing data:
+```bash
+poetry run python scripts/migrate_to_postgres.py --all
+```
+
 ### Discord Bot
 - `DISCORD_BOT_TOKEN` - Discord bot token (required for Discord integration)
 - `DISCORD_CLIENT_ID` - Client ID for invite link generation
@@ -119,10 +135,12 @@ Backend provides full CRUD for threads via `/api/threads` endpoints:
 - `DISCORD_MONITOR_PORT` - Monitor dashboard port (default: 8001)
 - `DISCORD_MONITOR_ENABLED` - Enable monitor dashboard (default: true)
 
-### E2B Code Execution (Discord Bot)
-Tool calling requires the E2B sandbox and a tool-capable LLM:
-- `E2B_API_KEY` - E2B API key for cloud sandbox (required for code execution)
-- `E2B_TIMEOUT` - Sandbox timeout in seconds (default: 300)
+### Docker Code Execution (Discord Bot)
+Tool calling requires Docker and a tool-capable LLM:
+- `DOCKER_SANDBOX_IMAGE` - Docker image for sandbox (default: python:3.12-slim)
+- `DOCKER_SANDBOX_TIMEOUT` - Container idle timeout in seconds (default: 900)
+- `DOCKER_SANDBOX_MEMORY` - Memory limit per container (default: 512m)
+- `DOCKER_SANDBOX_CPU` - CPU limit per container (default: 1.0)
 - `TAVILY_API_KEY` - Tavily API key for web search (optional but recommended)
 
 ### Tool Calling LLM
@@ -136,11 +154,13 @@ Optional overrides:
 
 **For Claude proxies (like clewdr)**: Set `TOOL_FORMAT=claude` to convert tool definitions to Claude's format.
 
-To enable E2B + web search:
+To enable Docker sandbox + web search:
 ```bash
-poetry add e2b-code-interpreter httpx
-export E2B_API_KEY="your-e2b-key"
-export TAVILY_API_KEY="your-tavily-key"  # For web search
+# Install Docker and start the daemon
+docker --version  # Verify Docker is installed
+
+# Set web search API key (optional)
+export TAVILY_API_KEY="your-tavily-key"
 ```
 
 ### Local File Storage (Discord Bot)
@@ -150,12 +170,13 @@ Clara can save files locally that persist across sessions:
 
 Files are organized per-user. Discord attachments are automatically saved locally.
 
-**Local File Tools** (always available, even without E2B):
+**Local File Tools** (always available, even without Docker):
 - `save_to_local` - Save content to local storage
 - `list_local_files` - List saved files
 - `read_local_file` - Read a saved file
 - `delete_local_file` - Delete a saved file
-- `download_from_sandbox` - Copy E2B sandbox file to local storage
+- `download_from_sandbox` - Copy Docker sandbox file to local storage
+- `upload_to_sandbox` - Upload local file to Docker sandbox
 - `send_local_file` - Send a saved file to Discord chat
 
 ## Key Patterns
@@ -164,3 +185,67 @@ Files are organized per-user. Discord attachments are automatically saved locall
 - Frontend uses assistant-ui's `RemoteThreadListAdapter` and `ThreadHistoryAdapter` for thread persistence
 - All LLM backends use OpenAI-compatible API (OpenAI SDK on backend, AI SDK on frontend)
 - Thread adapter uses empty `BACKEND_URL` to leverage Next.js rewrites for CORS-free backend access
+
+## Railway Deployment
+
+### Discord Bot on Railway
+
+1. **Create PostgreSQL databases** (two instances):
+   - `clara-main` - For SQLAlchemy data (sessions, messages, etc.)
+   - `clara-vectors` - For mem0 vectors (enable pgvector extension)
+
+2. **Enable pgvector** on the vectors database:
+   ```sql
+   CREATE EXTENSION IF NOT EXISTS vector;
+   ```
+
+3. **Create Discord bot service**:
+   - Connect your GitHub repo to Railway
+   - Railway auto-detects `railway.toml` and uses `Dockerfile.discord`
+
+4. **Set environment variables** in Railway dashboard:
+   ```
+   # Required
+   DISCORD_BOT_TOKEN=your-bot-token
+   OPENAI_API_KEY=sk-proj-...
+   DATABASE_URL=${{Postgres.DATABASE_URL}}  # Railway variable reference
+   MEM0_DATABASE_URL=${{PostgresVectors.DATABASE_URL}}
+
+   # LLM Provider
+   LLM_PROVIDER=openrouter
+   OPENROUTER_API_KEY=sk-or-...
+   OPENROUTER_MODEL=anthropic/claude-sonnet-4
+
+   # Mem0 Provider
+   MEM0_PROVIDER=openrouter
+   MEM0_MODEL=openai/gpt-4o-mini
+
+   # Optional
+   TAVILY_API_KEY=tvly-...  # For web search
+   ENABLE_GRAPH_MEMORY=false
+   ```
+
+5. **Migrate existing data** (if any):
+   ```bash
+   # Set env vars locally pointing to Railway PostgreSQL
+   export DATABASE_URL=postgresql://...
+   export MEM0_DATABASE_URL=postgresql://...
+   poetry run python scripts/migrate_to_postgres.py --all
+   ```
+
+### Files for Railway
+
+| File | Purpose |
+|------|---------|
+| `Dockerfile.discord` | Discord bot container |
+| `railway.toml` | Railway service configuration |
+| `Dockerfile` | Backend API container (for separate API service) |
+
+### Limitations on Railway
+
+**Docker Sandbox**: The Docker code execution sandbox (`execute_python`, `run_shell`, etc.) will NOT work on Railway because Docker-in-Docker is not supported. The bot will still function for:
+- Chat conversations with memory
+- Web search (if `TAVILY_API_KEY` is set)
+- Local file storage tools
+
+For full sandbox support, self-host on a VPS with Docker installed.
