@@ -20,6 +20,10 @@ sqlalchemy = "^2.0"
 mem0ai = {extras = ["graph"], version = "^1.0.1"}
 neo4j = "^5.0"  # Graph database driver
 
+# PostgreSQL support
+psycopg2-binary = "^2.9.9"  # PostgreSQL driver
+pgvector = "^0.3.0"  # Vector support for mem0
+
 # LLM backends
 openai = "^1.42.0"
 huggingface_hub = "^0.26.0"
@@ -28,6 +32,16 @@ huggingface_hub = "^0.26.0"
 requests = "^2.32.5"
 python-dotenv = "^1.0.1"
 imessage-reader = "^0.6.1"
+httpx = "^0.28.0"  # Async HTTP client for web search
+
+# Discord bot
+"discord.py" = "^2.4.0"
+
+# Docker code execution sandbox
+docker = "^7.0.0"
+
+# S3-compatible storage (Wasabi, AWS, etc.)
+boto3 = "^1.35.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"
