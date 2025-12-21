@@ -33,9 +33,8 @@ httpx = "^0.28.0"  # Async HTTP client for web search
 # Discord bot
 "discord.py" = "^2.4.0"
 
-# E2B code execution sandbox
-e2b-code-interpreter = "^1.0.0"
-e2b = "^1.0.0"  # Base sandbox for Claude Code template
+# Docker code execution sandbox
+docker = "^7.0.0"
 
 # S3-compatible storage (Wasabi, AWS, etc.)
 boto3 = "^1.35.0"
