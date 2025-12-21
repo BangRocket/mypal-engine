@@ -64,3 +64,4 @@ frontend/.vercel/
 
 #ruff
 .ruff_cache
+clara_files/

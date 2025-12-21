@@ -28,6 +28,17 @@ huggingface_hub = "^0.26.0"
 requests = "^2.32.5"
 python-dotenv = "^1.0.1"
 imessage-reader = "^0.6.1"
+httpx = "^0.28.0"  # Async HTTP client for web search
+
+# Discord bot
+"discord.py" = "^2.4.0"
+
+# E2B code execution sandbox
+e2b-code-interpreter = "^1.0.0"
+e2b = "^1.0.0"  # Base sandbox for Claude Code template
+
+# S3-compatible storage (Wasabi, AWS, etc.)
+boto3 = "^1.35.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"
