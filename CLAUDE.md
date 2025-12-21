@@ -186,66 +186,35 @@ Files are organized per-user. Discord attachments are automatically saved locall
 - All LLM backends use OpenAI-compatible API (OpenAI SDK on backend, AI SDK on frontend)
 - Thread adapter uses empty `BACKEND_URL` to leverage Next.js rewrites for CORS-free backend access
 
-## Railway Deployment
+## Production Deployment
 
-### Discord Bot on Railway
+### With PostgreSQL (recommended)
 
-1. **Create PostgreSQL databases** (two instances):
-   - `clara-main` - For SQLAlchemy data (sessions, messages, etc.)
-   - `clara-vectors` - For mem0 vectors (enable pgvector extension)
+Set `DATABASE_URL` and `MEM0_DATABASE_URL` to use PostgreSQL instead of SQLite/Qdrant:
 
-2. **Enable pgvector** on the vectors database:
-   ```sql
-   CREATE EXTENSION IF NOT EXISTS vector;
-   ```
+```bash
+# .env
+DATABASE_URL=postgresql://user:pass@localhost:5432/clara_main
+MEM0_DATABASE_URL=postgresql://user:pass@localhost:5432/clara_vectors
+```
 
-3. **Create Discord bot service**:
-   - Connect your GitHub repo to Railway
-   - Railway auto-detects `railway.toml` and uses `Dockerfile.discord`
+Enable pgvector on the vectors database:
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+```
 
-4. **Set environment variables** in Railway dashboard:
-   ```
-   # Required
-   DISCORD_BOT_TOKEN=your-bot-token
-   OPENAI_API_KEY=sk-proj-...
-   DATABASE_URL=${{Postgres.DATABASE_URL}}  # Railway variable reference
-   MEM0_DATABASE_URL=${{PostgresVectors.DATABASE_URL}}
+### Docker Compose (full stack)
 
-   # LLM Provider
-   LLM_PROVIDER=openrouter
-   OPENROUTER_API_KEY=sk-or-...
-   OPENROUTER_MODEL=anthropic/claude-sonnet-4
+```bash
+# Run everything (backend, frontend, discord bot, postgres)
+docker-compose --profile discord --profile postgres up
 
-   # Mem0 Provider
-   MEM0_PROVIDER=openrouter
-   MEM0_MODEL=openai/gpt-4o-mini
+# Or just the databases + discord bot
+docker-compose --profile discord --profile postgres up postgres postgres-vectors discord-bot
+```
 
-   # Optional
-   TAVILY_API_KEY=tvly-...  # For web search
-   ENABLE_GRAPH_MEMORY=false
-   ```
+### Migrate Existing Data
 
-5. **Migrate existing data** (if any):
-   ```bash
-   # Set env vars locally pointing to Railway PostgreSQL
-   export DATABASE_URL=postgresql://...
-   export MEM0_DATABASE_URL=postgresql://...
-   poetry run python scripts/migrate_to_postgres.py --all
-   ```
-
-### Files for Railway
-
-| File | Purpose |
-|------|---------|
-| `Dockerfile.discord` | Discord bot container |
-| `railway.toml` | Railway service configuration |
-| `Dockerfile` | Backend API container (for separate API service) |
-
-### Limitations on Railway
-
-**Docker Sandbox**: The Docker code execution sandbox (`execute_python`, `run_shell`, etc.) will NOT work on Railway because Docker-in-Docker is not supported. The bot will still function for:
-- Chat conversations with memory
-- Web search (if `TAVILY_API_KEY` is set)
-- Local file storage tools
-
-For full sandbox support, self-host on a VPS with Docker installed.
+```bash
+poetry run python scripts/migrate_to_postgres.py --all
+```
