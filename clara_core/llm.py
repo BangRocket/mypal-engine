@@ -196,6 +196,9 @@ def _make_custom_openai_llm() -> Callable[[list[dict[str, str]]], str]:
             model=model,
             messages=messages,
         )
+        # Handle proxies that return raw strings (e.g., gemini-cli-openai)
+        if isinstance(resp, str):
+            return resp
         return resp.choices[0].message.content
 
     return llm
@@ -271,6 +274,10 @@ def _make_custom_openai_llm_streaming() -> (
             messages=messages,
             stream=True,
         )
+        # Handle proxies that return raw strings (e.g., gemini-cli-openai)
+        if isinstance(stream, str):
+            yield stream
+            return
         for chunk in stream:
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
