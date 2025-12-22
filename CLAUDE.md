@@ -14,7 +14,6 @@ poetry install                    # Install dependencies
 poetry run python api.py          # Run API server (port 8000)
 poetry run python app.py          # Run Gradio UI (port 7860)
 poetry run python discord_bot.py  # Run Discord bot
-poetry run pytest                 # Run tests
 poetry run ruff check .           # Lint
 poetry run ruff format .          # Format
 ```
@@ -31,7 +30,22 @@ npm run prettier:fix              # Format with Prettier
 
 ### Docker
 ```bash
-docker-compose up                 # Run backend (port 8000) + frontend (port 3000)
+docker-compose --profile full up           # Run backend + frontend
+docker-compose --profile discord up        # Run Discord bot only
+docker-compose --profile postgres up       # Run PostgreSQL databases only
+docker-compose --profile discord --profile postgres up  # Discord bot + databases
+```
+
+### Memory Management
+```bash
+# Bootstrap profile data from inputs/user_profile.txt
+poetry run python -m src.bootstrap_memory          # Dry run (generates JSON)
+poetry run python -m src.bootstrap_memory --apply  # Apply to mem0
+
+# Clear all memory data
+poetry run python clear_dbs.py             # With confirmation prompt
+poetry run python clear_dbs.py --yes       # Skip confirmation
+poetry run python clear_dbs.py --user <id> # Clear specific user
 ```
 
 ## Architecture
@@ -39,11 +53,15 @@ docker-compose up                 # Run backend (port 8000) + frontend (port 300
 ### Backend Structure
 - `api.py` - FastAPI server with thread management, chat, and memory endpoints
 - `discord_bot.py` - Discord bot with multi-user support, reply chains, and streaming responses
+- `discord_monitor.py` - Web dashboard for monitoring Discord bot status and activity
 - `memory_manager.py` - Core orchestrator: session handling, mem0 integration, prompt building with Clara's persona
 - `llm_backends.py` - LLM provider abstraction (OpenRouter, NanoGPT, custom OpenAI) - both streaming and non-streaming
 - `mem0_config.py` - mem0 memory system configuration (Qdrant/pgvector for vectors, OpenAI embeddings)
 - `models.py` - SQLAlchemy models: Project, Session, Message, ChannelSummary
 - `db.py` - Database setup (SQLite for dev, PostgreSQL for production)
+- `docker_tools.py` - Docker sandbox for code execution (used by Discord bot tool calling)
+- `local_files.py` - Local file storage system for persistent user files
+- `email_monitor.py` - Email monitoring and auto-response system
 
 ### Frontend Structure
 - `frontend/app/api/chat/route.ts` - Next.js API route that fetches context from backend, streams LLM response via AI SDK
@@ -206,11 +224,11 @@ CREATE EXTENSION IF NOT EXISTS vector;
 ### Docker Compose (full stack)
 
 ```bash
-# Run everything (backend, frontend, discord bot, postgres)
-docker-compose --profile discord --profile postgres up
+# Run backend + frontend + postgres databases
+docker-compose --profile full --profile postgres up
 
-# Or just the databases + discord bot
-docker-compose --profile discord --profile postgres up postgres postgres-vectors discord-bot
+# Run discord bot + postgres databases
+docker-compose --profile discord --profile postgres up
 ```
 
 ### Migrate Existing Data
