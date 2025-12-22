@@ -17,6 +17,17 @@ Usage:
     tools = ToolRegistry.get_instance()
 """
 
+from pathlib import Path
+
+# Read version from VERSION file
+_VERSION_FILE = Path(__file__).parent.parent / "VERSION"
+__version__ = _VERSION_FILE.read_text().strip() if _VERSION_FILE.exists() else "0.0.0"
+
+
+def get_version() -> str:
+    """Get the current Clara platform version."""
+    return __version__
+
 from clara_core.config import get_config, init_platform
 from clara_core.llm import (
     make_llm,
@@ -28,6 +39,9 @@ from clara_core.platform import PlatformAdapter, PlatformContext, PlatformMessag
 from clara_core.tools import ToolRegistry
 
 __all__ = [
+    # Version
+    "__version__",
+    "get_version",
     # Initialization
     "init_platform",
     "get_config",
