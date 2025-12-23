@@ -211,6 +211,37 @@ Files are organized per-user. Discord attachments are automatically saved locall
 - `upload_to_sandbox` - Upload local file to Docker sandbox
 - `send_local_file` - Send a saved file to Discord chat
 
+### GitHub Integration (Discord Bot)
+Clara can interact with GitHub repositories, issues, PRs, and workflows:
+- `GITHUB_TOKEN` - GitHub Personal Access Token (required for GitHub tools)
+
+**GitHub Tools** (requires GITHUB_TOKEN):
+- `github_get_me` - Get authenticated user's profile
+- `github_search_repositories` - Search for repositories
+- `github_get_repository` - Get repository details
+- `github_list_issues` / `github_get_issue` / `github_create_issue` - Manage issues
+- `github_list_pull_requests` / `github_get_pull_request` / `github_create_pull_request` - Manage PRs
+- `github_list_commits` / `github_get_commit` - View commit history
+- `github_get_file_contents` / `github_create_or_update_file` - Read/write files
+- `github_list_workflows` / `github_list_workflow_runs` / `github_run_workflow` - Manage Actions
+- `github_list_gists` / `github_create_gist` - Manage Gists
+- And many more (search users, branches, releases, tags, notifications, stars)
+
+### Azure DevOps Integration (Discord Bot)
+Clara can interact with Azure DevOps projects, repos, work items, and pipelines:
+- `AZURE_DEVOPS_ORG` - Azure DevOps organization name or URL (required)
+- `AZURE_DEVOPS_PAT` - Azure DevOps Personal Access Token (required)
+
+**Azure DevOps Tools** (requires AZURE_DEVOPS_ORG and AZURE_DEVOPS_PAT):
+- `ado_list_projects` / `ado_list_project_teams` - List projects and teams
+- `ado_list_repos` / `ado_get_repo` / `ado_list_branches` - Manage repositories
+- `ado_list_pull_requests` / `ado_create_pull_request` / `ado_list_pr_threads` - Manage PRs
+- `ado_get_work_item` / `ado_create_work_item` / `ado_search_work_items` / `ado_my_work_items` - Manage work items
+- `ado_list_pipelines` / `ado_list_builds` / `ado_run_pipeline` - Manage pipelines
+- `ado_list_wikis` / `ado_get_wiki_page` / `ado_create_or_update_wiki_page` - Manage wikis
+- `ado_search_code` - Search code across repos
+- `ado_list_iterations` / `ado_list_team_iterations` - View sprints/iterations
+
 ## Key Patterns
 
 - Backend uses global `MemoryManager` instance initialized at startup with LLM callable
