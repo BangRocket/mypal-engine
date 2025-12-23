@@ -19,6 +19,26 @@ if TYPE_CHECKING:
 MODULE_NAME = "local_files"
 MODULE_VERSION = "1.0.0"
 
+SYSTEM_PROMPT = """
+## Local File Storage
+You can save files permanently that survive restarts and can be shared in chat.
+
+**Local Storage Tools:**
+- `save_to_local` - Save content directly to local storage
+- `list_local_files` - List files in local storage
+- `read_local_file` - Read a locally saved file
+- `delete_local_file` - Delete a local file
+- `download_from_sandbox` - Copy sandbox file to local storage
+- `upload_to_sandbox` - Upload local file to sandbox
+- `send_local_file` - Send a local file to Discord chat
+
+**Sandbox vs Local Files:**
+- Sandbox files (`write_file`) are temporary - use for intermediate work
+- Local files (`save_to_local`) are permanent - use for important results
+- Use `download_from_sandbox` to move sandbox results to local storage
+- Use `send_local_file` or `<<<file:...>>>` syntax to share files in chat
+""".strip()
+
 # Lazy-loaded manager
 _manager: LocalFileManager | None = None
 

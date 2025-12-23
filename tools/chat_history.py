@@ -16,6 +16,22 @@ from ._base import ToolContext, ToolDef
 MODULE_NAME = "chat_history"
 MODULE_VERSION = "1.0.0"
 
+SYSTEM_PROMPT = """
+## Chat History Search
+You can search and retrieve past messages from the current channel.
+
+**Tools:**
+- `search_chat_history` - Search for messages matching a query
+- `get_chat_history` - Get recent messages (with optional time/user filters)
+
+**When to Use:**
+- User asks about something discussed earlier
+- Looking up links, decisions, or info from past conversations
+- User references "that thing we talked about"
+
+**Note:** Only the current channel's history is accessible.
+""".strip()
+
 
 # --- Tool Handlers ---
 

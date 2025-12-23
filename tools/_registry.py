@@ -32,6 +32,7 @@ class ToolRegistry:
         """Initialize the registry. Use get_instance() instead of direct instantiation."""
         self._tools: dict[str, ToolDef] = {}
         self._tool_sources: dict[str, str] = {}  # tool_name -> module_name
+        self._system_prompts: dict[str, str] = {}  # module_name -> system prompt
         self._initialized = False
 
     @classmethod
@@ -190,6 +191,43 @@ class ToolRegistry:
             tb = traceback.format_exc()
             print(f"[tools] {error_msg}\n{tb}")
             return error_msg
+
+    def register_system_prompt(self, module_name: str, prompt: str) -> None:
+        """Register a system prompt from a tool module.
+
+        Args:
+            module_name: Name of the module providing this prompt
+            prompt: The system prompt text describing the module's tools
+        """
+        if prompt and prompt.strip():
+            self._system_prompts[module_name] = prompt.strip()
+
+    def unregister_system_prompt(self, module_name: str) -> bool:
+        """Unregister a system prompt.
+
+        Args:
+            module_name: Name of the module whose prompt to remove
+
+        Returns:
+            True if a prompt was removed, False if not found
+        """
+        if module_name in self._system_prompts:
+            del self._system_prompts[module_name]
+            return True
+        return False
+
+    def get_system_prompts(self, platform: str | None = None) -> str:
+        """Get all system prompts concatenated.
+
+        Args:
+            platform: Optional platform filter (not currently used but reserved)
+
+        Returns:
+            All system prompts joined with newlines
+        """
+        if not self._system_prompts:
+            return ""
+        return "\n\n".join(self._system_prompts.values())
 
     def __len__(self) -> int:
         """Return the number of registered tools."""

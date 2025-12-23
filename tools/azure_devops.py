@@ -23,6 +23,39 @@ from ._base import ToolContext, ToolDef
 MODULE_NAME = "azure_devops"
 MODULE_VERSION = "1.0.0"
 
+SYSTEM_PROMPT = """
+## Azure DevOps Integration
+You can interact with Azure DevOps projects, repos, work items, and pipelines.
+
+**Projects & Teams:**
+- `ado_list_projects` - List all projects in the organization
+- `ado_list_project_teams` - List teams in a project
+
+**Repositories:**
+- `ado_list_repos` / `ado_get_repo` - View repositories
+- `ado_list_branches` - List branches
+- `ado_list_pull_requests` / `ado_get_pull_request` / `ado_create_pull_request` - Manage PRs
+- `ado_list_pr_threads` / `ado_add_pr_comment` - PR comments and discussions
+
+**Work Items:**
+- `ado_get_work_item` / `ado_create_work_item` / `ado_update_work_item` - Manage work items
+- `ado_search_work_items` - Search with WIQL queries
+- `ado_my_work_items` - Get work items assigned to you
+- `ado_list_work_item_types` - List available work item types
+
+**Pipelines & Builds:**
+- `ado_list_pipelines` / `ado_list_builds` - View pipelines and builds
+- `ado_run_pipeline` - Trigger a pipeline run
+- `ado_get_build_logs` - Get build logs
+
+**Wiki:**
+- `ado_list_wikis` / `ado_get_wiki_page` - Read wiki pages
+- `ado_create_or_update_wiki_page` - Edit wiki
+
+**Search:**
+- `ado_search_code` - Search code across repos
+""".strip()
+
 # Configuration
 AZURE_DEVOPS_ORG = os.getenv("AZURE_DEVOPS_ORG", "")
 AZURE_DEVOPS_PAT = os.getenv("AZURE_DEVOPS_PAT", "")

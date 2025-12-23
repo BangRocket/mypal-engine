@@ -133,6 +133,12 @@ class ToolLoader:
             for tool_def in tools:
                 self.registry.register(tool_def, source_module=mod_name)
 
+            # Register system prompt only if module has active tools
+            if tools:
+                system_prompt = getattr(module, "SYSTEM_PROMPT", None)
+                if system_prompt:
+                    self.registry.register_system_prompt(mod_name, system_prompt)
+
             # Store module reference
             self._modules[module_name] = module
             self._module_versions[module_name] = mod_version
@@ -166,11 +172,12 @@ class ToolLoader:
             except Exception as e:
                 print(f"[tools] Error during cleanup of {module_name}: {e}")
 
-        # Unregister tools
+        # Unregister tools and system prompt
         mod_name = getattr(module, "MODULE_NAME", module_name)
         removed = self.registry.unregister_module(mod_name)
         if removed:
             print(f"[tools] Unregistered tools from {mod_name}: {removed}")
+        self.registry.unregister_system_prompt(mod_name)
 
         # Remove from sys.modules
         sys_key = f"tools.{module_name}"

@@ -16,6 +16,20 @@ from ._base import ToolContext, ToolDef
 MODULE_NAME = "web_search"
 MODULE_VERSION = "1.0.0"
 
+SYSTEM_PROMPT = """
+## Web Search
+You can search the web for current information, news, documentation, and research.
+
+**Tool:**
+- `web_search` - Search the web via Tavily for current info, research, docs
+
+**When to Use:**
+- Questions about current events or recent news
+- Looking up documentation or tutorials
+- Research on topics you're uncertain about
+- Verifying facts or getting up-to-date information
+""".strip()
+
 # Configuration
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 

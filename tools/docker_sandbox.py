@@ -19,6 +19,36 @@ if TYPE_CHECKING:
 MODULE_NAME = "docker_sandbox"
 MODULE_VERSION = "1.0.0"
 
+SYSTEM_PROMPT = """
+## Code Execution (Docker Sandbox)
+You have access to a secure Docker sandbox where you can execute code! This gives you
+real computational abilities - you're not just simulating or explaining code.
+
+**Sandbox Tools:**
+- `execute_python` - Run Python code (stateful - variables persist across calls)
+- `install_package` - Install pip packages (requests, pandas, numpy, etc.)
+- `run_shell` - Run shell commands (curl, git, wget, etc.)
+- `read_file` / `write_file` - Read and write files in the sandbox
+- `list_files` - List directory contents
+- `unzip_file` - Extract archives (.zip, .tar.gz, .tar, etc.)
+
+**When to Use Code Execution:**
+- Mathematical calculations (don't calculate in your head - run the code!)
+- Data analysis or processing
+- Web requests / API calls
+- File generation (then share results)
+- Testing code snippets users ask about
+
+**Important:**
+- The sandbox has internet access - you can fetch URLs, call APIs, etc.
+- Each user has their own persistent sandbox (variables and files persist)
+- Show users what you're doing: mention when you're running code
+- If code fails, you'll see the error - fix and retry
+
+**Example:**
+When asked "What's 2^100?", use `execute_python` with `print(2**100)` instead of guessing.
+""".strip()
+
 # Lazy-loaded manager (shared across all handlers)
 _manager: DockerSandboxManager | None = None
 
