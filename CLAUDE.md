@@ -111,6 +111,20 @@ Backend provides full CRUD for threads via `/api/threads` endpoints:
 - `CUSTOM_OPENAI_BASE_URL` - Base URL (default: https://api.openai.com/v1)
 - `CUSTOM_OPENAI_MODEL` - Chat model (default: gpt-4o)
 
+### Model Tiers (Discord Bot)
+The Discord bot supports dynamic model selection via message prefixes:
+- `!high` or `!opus` → High tier (Opus-class, most capable)
+- `!mid` or `!sonnet` → Mid tier (Sonnet-class, balanced) - default
+- `!low`, `!haiku`, or `!fast` → Low tier (Haiku-class, fast/cheap)
+
+Optional tier-specific model overrides:
+- `OPENROUTER_MODEL_HIGH`, `OPENROUTER_MODEL_MID`, `OPENROUTER_MODEL_LOW`
+- `NANOGPT_MODEL_HIGH`, `NANOGPT_MODEL_MID`, `NANOGPT_MODEL_LOW`
+- `CUSTOM_OPENAI_MODEL_HIGH`, `CUSTOM_OPENAI_MODEL_MID`, `CUSTOM_OPENAI_MODEL_LOW`
+- `MODEL_TIER` - Default tier when not specified (default: "mid")
+
+Example usage in Discord: `!high What is quantum entanglement?`
+
 ### Mem0 Provider (independent from chat LLM)
 - `MEM0_PROVIDER` - Provider for memory extraction: "openrouter" (default), "nanogpt", or "openai"
 - `MEM0_MODEL` - Model for memory extraction (default: openai/gpt-4o-mini)
