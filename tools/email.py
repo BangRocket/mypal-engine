@@ -21,14 +21,16 @@ MODULE_VERSION = "1.0.0"
 
 SYSTEM_PROMPT = """
 ## Email
-You can check and send emails.
+You can check, search, and send emails.
 
 **Tools:**
-- `check_email` - Check for new emails (returns recent unread messages)
+- `check_email` - Check for new/recent emails
+- `search_email` - Search emails by query, sender, subject, or date range
 - `send_email` - Send an email to a recipient
 
 **When to Use:**
 - User asks to check their email or inbox
+- User wants to find a specific email or emails from someone
 - User wants to send an email or reply to someone
 - User asks about messages or correspondence
 """.strip()
@@ -91,6 +93,53 @@ async def check_email(args: dict[str, Any], ctx: ToolContext) -> str:
         return f"Error checking email: {str(e)}"
 
 
+async def search_email(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Search emails with various criteria."""
+    if not is_configured():
+        return "Error: Email not configured. CLARA_EMAIL_ADDRESS and CLARA_EMAIL_PASSWORD must be set."
+
+    query = args.get("query")
+    from_addr = args.get("from")
+    subject = args.get("subject")
+    since_days = args.get("since_days")
+    limit = min(args.get("limit", 20), 50)
+
+    # Require at least one search criterion
+    if not any([query, from_addr, subject, since_days]):
+        return "Error: At least one search criterion required (query, from, subject, or since_days)"
+
+    monitor = _get_monitor()
+
+    try:
+        emails, error = monitor.search_emails(
+            query=query,
+            from_addr=from_addr,
+            subject=subject,
+            since_days=since_days,
+            limit=limit,
+        )
+
+        if error:
+            return f"Error searching email: {error}"
+
+        if not emails:
+            return "No emails found matching your search."
+
+        # Format results
+        lines = [f"Found {len(emails)} matching email(s):\n"]
+        for i, e in enumerate(emails, 1):
+            status = " [UNREAD]" if not e.is_read else ""
+            lines.append(f"{i}. **From:** {e.from_addr}")
+            lines.append(f"   **Subject:** {e.subject}{status}")
+            lines.append(f"   **Date:** {e.date}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Error searching email: {str(e)}"
+
+
 async def send_email(args: dict[str, Any], ctx: ToolContext) -> str:
     """Send an email."""
     if not is_configured():
@@ -145,6 +194,41 @@ TOOLS = [
             "required": [],
         },
         handler=check_email,
+        requires=["email"],
+    ),
+    ToolDef(
+        name="search_email",
+        description=(
+            "Search emails by text query, sender, subject, or date range. "
+            "Use this to find specific emails or emails from a particular person."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search text (matches subject and body)",
+                },
+                "from": {
+                    "type": "string",
+                    "description": "Filter by sender email address or name",
+                },
+                "subject": {
+                    "type": "string",
+                    "description": "Filter by subject line",
+                },
+                "since_days": {
+                    "type": "integer",
+                    "description": "Only emails from the last N days",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results (default: 20, max: 50)",
+                },
+            },
+            "required": [],
+        },
+        handler=search_email,
         requires=["email"],
     ),
     ToolDef(
