@@ -223,11 +223,11 @@ async def create_file_attachment(args: dict[str, Any], ctx: ToolContext) -> str:
     if not result.success:
         return f"Error saving file: {result.message}"
 
-    # Queue for sending
+    # Queue for sending - append Path object (discord_bot expects Path with .exists())
     files_to_send = ctx.extra.get("files_to_send")
     if files_to_send is not None:
         file_path = manager._storage_dir(ctx.user_id, ctx.channel_id) / filename
-        files_to_send.append({"path": str(file_path), "filename": filename})
+        files_to_send.append(file_path)
         return f"Created and attached '{filename}' ({len(content)} chars)"
     else:
         return f"Created '{filename}' - use send_local_file to share it"
