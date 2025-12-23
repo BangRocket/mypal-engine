@@ -19,6 +19,20 @@ if TYPE_CHECKING:
 MODULE_NAME = "email"
 MODULE_VERSION = "1.0.0"
 
+SYSTEM_PROMPT = """
+## Email
+You can check and send emails.
+
+**Tools:**
+- `check_email` - Check for new emails (returns recent unread messages)
+- `send_email` - Send an email to a recipient
+
+**When to Use:**
+- User asks to check their email or inbox
+- User wants to send an email or reply to someone
+- User asks about messages or correspondence
+""".strip()
+
 # Configuration
 EMAIL_ADDRESS = os.getenv("CLARA_EMAIL_ADDRESS", "")
 EMAIL_PASSWORD = os.getenv("CLARA_EMAIL_PASSWORD", "")
