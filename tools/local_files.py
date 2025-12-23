@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 from ._base import ToolContext, ToolDef
 
 if TYPE_CHECKING:
-    from local_files import LocalFileManager
+    from storage.local_files import LocalFileManager
 
 MODULE_NAME = "local_files"
 MODULE_VERSION = "1.0.0"
@@ -27,7 +27,7 @@ def _get_manager() -> LocalFileManager:
     """Get or create the LocalFileManager singleton."""
     global _manager
     if _manager is None:
-        from local_files import LocalFileManager
+        from storage.local_files import LocalFileManager
 
         _manager = LocalFileManager()
     return _manager
@@ -102,7 +102,7 @@ async def download_from_sandbox(args: dict[str, Any], ctx: ToolContext) -> str:
     sandbox_manager = ctx.extra.get("sandbox_manager")
     if sandbox_manager is None:
         try:
-            from docker_tools import DockerSandboxManager
+            from sandbox.docker import DockerSandboxManager
 
             sandbox_manager = DockerSandboxManager()
         except ImportError:
@@ -139,7 +139,7 @@ async def upload_to_sandbox(args: dict[str, Any], ctx: ToolContext) -> str:
     sandbox_manager = ctx.extra.get("sandbox_manager")
     if sandbox_manager is None:
         try:
-            from docker_tools import DockerSandboxManager
+            from sandbox.docker import DockerSandboxManager
 
             sandbox_manager = DockerSandboxManager()
         except ImportError:

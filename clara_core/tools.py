@@ -296,12 +296,12 @@ def register_docker_tools(registry: ToolRegistry) -> None:
     """
     # Import here to avoid circular imports
     try:
-        from docker_tools import (
+        from sandbox.docker import (
             get_sandbox_manager,
             DOCKER_TOOLS,
         )
     except ImportError:
-        print("[tools] Docker tools not available (docker_tools module not found)")
+        print("[tools] Docker tools not available (sandbox.docker module not found)")
         return
 
     manager = get_sandbox_manager()
@@ -348,7 +348,7 @@ def register_local_file_tools(registry: ToolRegistry) -> None:
     These tools allow saving and reading files that persist across sessions.
     """
     try:
-        from local_files import LOCAL_FILE_TOOLS, get_file_manager
+        from storage.local_files import LOCAL_FILE_TOOLS, get_file_manager
     except ImportError:
         print("[tools] Local file tools not available")
         return

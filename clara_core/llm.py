@@ -31,6 +31,10 @@ ModelTier = Literal["high", "mid", "low"]
 # Default tier
 DEFAULT_TIER: ModelTier = "mid"
 
+# Tool calling configuration
+TOOL_FORMAT = os.getenv("TOOL_FORMAT", "openai").lower()
+TOOL_MODEL = os.getenv("TOOL_MODEL", "")
+
 # Default models per provider per tier
 DEFAULT_MODELS = {
     "openrouter": {

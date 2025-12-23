@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session as OrmSession
 
-    from models import Message, Session
+    from db.models import Message, Session
 
 # Configuration constants
 CONTEXT_MESSAGE_COUNT = 20
@@ -46,7 +46,7 @@ def _generate_memories_from_profile() -> dict | None:
         print("[mem0] No user_profile.txt found, cannot generate memories")
         return None
 
-    from src.bootstrap_memory import (
+    from scripts.bootstrap_memory import (
         consolidate_memories,
         extract_memories_with_llm,
         validate_memories,
@@ -77,7 +77,7 @@ def load_initial_profile(user_id: str) -> None:
     2. If not, generate from inputs/user_profile.txt first
     3. Apply structured memories to mem0 with graph-friendly grouping
     """
-    from mem0_config import MEM0
+    from config.mem0 import MEM0
 
     skip_profile = os.getenv("SKIP_PROFILE_LOAD", "true").lower() == "true"
     if skip_profile:
@@ -219,13 +219,13 @@ class MemoryManager:
 
     def get_thread(self, db: "OrmSession", thread_id: str) -> "Session | None":
         """Get a thread by ID."""
-        from models import Session
+        from db.models import Session
 
         return db.query(Session).filter_by(id=thread_id).first()
 
     def get_recent_messages(self, db: "OrmSession", thread_id: str) -> list["Message"]:
         """Get recent messages from a thread."""
-        from models import Message
+        from db.models import Message
 
         msgs = (
             db.query(Message)
@@ -238,7 +238,7 @@ class MemoryManager:
 
     def get_message_count(self, db: "OrmSession", thread_id: str) -> int:
         """Get total message count for a thread."""
-        from models import Message
+        from db.models import Message
 
         return db.query(Message).filter_by(session_id=thread_id).count()
 
@@ -251,7 +251,7 @@ class MemoryManager:
         content: str,
     ) -> "Message":
         """Store a message in a thread."""
-        from models import Message
+        from db.models import Message
 
         msg = Message(
             session_id=thread_id,
@@ -273,7 +273,7 @@ class MemoryManager:
 
     def update_thread_summary(self, db: "OrmSession", thread: "Session") -> str:
         """Generate/update summary for a thread."""
-        from models import Message
+        from db.models import Message
 
         all_msgs = (
             db.query(Message)
@@ -324,7 +324,7 @@ class MemoryManager:
         Returns:
             Tuple of (user_memories, project_memories)
         """
-        from mem0_config import MEM0
+        from config.mem0 import MEM0
 
         if MEM0 is None:
             return [], []
@@ -404,7 +404,7 @@ class MemoryManager:
             assistant_reply: Clara's response
             participants: List of {"id": str, "name": str} for people mentioned
         """
-        from mem0_config import MEM0
+        from config.mem0 import MEM0
 
         if MEM0 is None:
             return
@@ -461,7 +461,7 @@ class MemoryManager:
         Returns:
             List of messages ready for LLM
         """
-        from bot_config import PERSONALITY
+        from config.bot import PERSONALITY
 
         system_base = PERSONALITY
 

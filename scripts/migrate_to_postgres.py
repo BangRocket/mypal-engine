@@ -77,7 +77,7 @@ def migrate_sqlite_to_postgres():
     PostgresSession = sessionmaker(bind=postgres_engine)
 
     # Import models
-    from models import Base, Project, Session, Message, ChannelSummary
+    from db.models import Base, Project, Session, Message, ChannelSummary
 
     # Create tables in PostgreSQL
     print("[migrate] Creating tables in PostgreSQL...")

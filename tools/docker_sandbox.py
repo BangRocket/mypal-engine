@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 from ._base import ToolContext, ToolDef
 
 if TYPE_CHECKING:
-    from docker_tools import DockerSandboxManager
+    from sandbox.docker import DockerSandboxManager
 
 MODULE_NAME = "docker_sandbox"
 MODULE_VERSION = "1.0.0"
@@ -27,7 +27,7 @@ def _get_manager() -> DockerSandboxManager:
     """Get or create the DockerSandboxManager singleton."""
     global _manager
     if _manager is None:
-        from docker_tools import DockerSandboxManager
+        from sandbox.docker import DockerSandboxManager
 
         _manager = DockerSandboxManager()
     return _manager
@@ -36,7 +36,7 @@ def _get_manager() -> DockerSandboxManager:
 def is_available() -> bool:
     """Check if Docker sandbox is available."""
     try:
-        from docker_tools import DOCKER_AVAILABLE
+        from sandbox.docker import DOCKER_AVAILABLE
 
         return DOCKER_AVAILABLE
     except ImportError:
