@@ -6,6 +6,11 @@ Provides unified interface to multiple LLM providers:
 - Custom OpenAI-compatible endpoints
 
 Also supports tool calling with format conversion for Claude proxies.
+
+Model Tiers:
+- high: Most capable, expensive (Opus-class)
+- mid: Balanced capability/cost (Sonnet-class) - default
+- low: Fast, cheap, good for simple tasks (Haiku-class)
 """
 
 from __future__ import annotations
@@ -13,12 +18,37 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable, Generator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from openai import OpenAI
 
 if TYPE_CHECKING:
     from openai.types.chat import ChatCompletion
+
+# Model tier type
+ModelTier = Literal["high", "mid", "low"]
+
+# Default tier
+DEFAULT_TIER: ModelTier = "mid"
+
+# Default models per provider per tier
+DEFAULT_MODELS = {
+    "openrouter": {
+        "high": "anthropic/claude-opus-4",
+        "mid": "anthropic/claude-sonnet-4",
+        "low": "anthropic/claude-haiku",
+    },
+    "nanogpt": {
+        "high": "anthropic/claude-opus-4",
+        "mid": "moonshotai/Kimi-K2-Instruct-0905",
+        "low": "openai/gpt-4o-mini",
+    },
+    "openai": {
+        "high": "claude-opus-4",
+        "mid": "gpt-4o",
+        "low": "gpt-4o-mini",
+    },
+}
 
 # Global clients for reuse (lazy initialization)
 _openrouter_client: OpenAI | None = None
@@ -133,33 +163,123 @@ def _get_openai_tool_client() -> OpenAI:
     return _openai_tool_client
 
 
+# ============== Model Tier Support ==============
+
+
+def get_model_for_tier(tier: ModelTier, provider: str | None = None) -> str:
+    """Get the model name for a specific tier and provider.
+
+    Checks environment variables first, then falls back to defaults.
+
+    Environment variables (by provider):
+        OpenRouter: OPENROUTER_MODEL_HIGH, OPENROUTER_MODEL_MID, OPENROUTER_MODEL_LOW
+        NanoGPT: NANOGPT_MODEL_HIGH, NANOGPT_MODEL_MID, NANOGPT_MODEL_LOW
+        OpenAI: CUSTOM_OPENAI_MODEL_HIGH, CUSTOM_OPENAI_MODEL_MID, CUSTOM_OPENAI_MODEL_LOW
+
+    For backwards compatibility:
+        - If tier-specific env var is not set, falls back to the base model env var
+        - e.g., OPENROUTER_MODEL is used as the default for OPENROUTER_MODEL_MID
+
+    Args:
+        tier: The model tier ("high", "mid", "low")
+        provider: The LLM provider. If None, uses LLM_PROVIDER env var.
+
+    Returns:
+        The model name to use.
+    """
+    if provider is None:
+        provider = os.getenv("LLM_PROVIDER", "openrouter").lower()
+
+    tier_upper = tier.upper()
+
+    # Check for tier-specific environment variable
+    if provider == "openrouter":
+        tier_model = os.getenv(f"OPENROUTER_MODEL_{tier_upper}")
+        if tier_model:
+            return tier_model
+        # Fall back to base model for mid tier, or defaults
+        if tier == "mid":
+            return os.getenv("OPENROUTER_MODEL", DEFAULT_MODELS["openrouter"]["mid"])
+        return DEFAULT_MODELS["openrouter"].get(
+            tier, DEFAULT_MODELS["openrouter"]["mid"]
+        )
+
+    elif provider == "nanogpt":
+        tier_model = os.getenv(f"NANOGPT_MODEL_{tier_upper}")
+        if tier_model:
+            return tier_model
+        if tier == "mid":
+            return os.getenv("NANOGPT_MODEL", DEFAULT_MODELS["nanogpt"]["mid"])
+        return DEFAULT_MODELS["nanogpt"].get(tier, DEFAULT_MODELS["nanogpt"]["mid"])
+
+    elif provider == "openai":
+        tier_model = os.getenv(f"CUSTOM_OPENAI_MODEL_{tier_upper}")
+        if tier_model:
+            return tier_model
+        if tier == "mid":
+            return os.getenv("CUSTOM_OPENAI_MODEL", DEFAULT_MODELS["openai"]["mid"])
+        return DEFAULT_MODELS["openai"].get(tier, DEFAULT_MODELS["openai"]["mid"])
+
+    else:
+        raise ValueError(f"Unknown provider: {provider}")
+
+
+def get_current_tier() -> ModelTier:
+    """Get the current default tier from environment."""
+    tier = os.getenv("MODEL_TIER", DEFAULT_TIER).lower()
+    if tier in ("high", "mid", "low"):
+        return tier  # type: ignore
+    return DEFAULT_TIER
+
+
+def get_tier_info() -> dict:
+    """Get information about configured tiers for current provider."""
+    provider = os.getenv("LLM_PROVIDER", "openrouter").lower()
+    return {
+        "provider": provider,
+        "current_tier": get_current_tier(),
+        "models": {
+            "high": get_model_for_tier("high", provider),
+            "mid": get_model_for_tier("mid", provider),
+            "low": get_model_for_tier("low", provider),
+        },
+    }
+
+
 # ============== Non-streaming LLM ==============
 
 
-def make_llm() -> Callable[[list[dict[str, str]]], str]:
+def make_llm(tier: ModelTier | None = None) -> Callable[[list[dict[str, str]]], str]:
     """Return a function(messages) -> assistant_reply string.
 
     Select backend with env var LLM_PROVIDER:
       - "openrouter" (default)
       - "nanogpt"
       - "openai" (custom OpenAI-compatible endpoint)
+
+    Args:
+        tier: Optional model tier ("high", "mid", "low").
+              If None, uses the default tier from MODEL_TIER env var or "mid".
     """
     provider = os.getenv("LLM_PROVIDER", "openrouter").lower()
+    effective_tier = tier or get_current_tier()
+    model = get_model_for_tier(effective_tier, provider)
 
     if provider == "openrouter":
-        return _make_openrouter_llm()
+        return _make_openrouter_llm_with_model(model)
     elif provider == "nanogpt":
-        return _make_nanogpt_llm()
+        return _make_nanogpt_llm_with_model(model)
     elif provider == "openai":
-        return _make_custom_openai_llm()
+        return _make_custom_openai_llm_with_model(model)
     else:
         raise ValueError(f"Unknown LLM_PROVIDER={provider}")
 
 
-def _make_openrouter_llm() -> Callable[[list[dict[str, str]]], str]:
-    """Non-streaming OpenRouter LLM."""
+def _make_openrouter_llm_with_model(
+    model: str,
+) -> Callable[[list[dict[str, str]]], str]:
+    """Non-streaming OpenRouter LLM with specified model."""
     client = _get_openrouter_client()
-    model = os.getenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4")
 
     def llm(messages: list[dict[str, str]]) -> str:
         resp = client.chat.completions.create(
@@ -171,10 +291,9 @@ def _make_openrouter_llm() -> Callable[[list[dict[str, str]]], str]:
     return llm
 
 
-def _make_nanogpt_llm() -> Callable[[list[dict[str, str]]], str]:
-    """Non-streaming NanoGPT LLM."""
+def _make_nanogpt_llm_with_model(model: str) -> Callable[[list[dict[str, str]]], str]:
+    """Non-streaming NanoGPT LLM with specified model."""
     client = _get_nanogpt_client()
-    model = os.getenv("NANOGPT_MODEL", "moonshotai/Kimi-K2-Instruct-0905")
 
     def llm(messages: list[dict[str, str]]) -> str:
         resp = client.chat.completions.create(
@@ -186,10 +305,11 @@ def _make_nanogpt_llm() -> Callable[[list[dict[str, str]]], str]:
     return llm
 
 
-def _make_custom_openai_llm() -> Callable[[list[dict[str, str]]], str]:
-    """Non-streaming custom OpenAI-compatible LLM."""
+def _make_custom_openai_llm_with_model(
+    model: str,
+) -> Callable[[list[dict[str, str]]], str]:
+    """Non-streaming custom OpenAI-compatible LLM with specified model."""
     client = _get_custom_openai_client()
-    model = os.getenv("CUSTOM_OPENAI_MODEL", "gpt-4o")
 
     def llm(messages: list[dict[str, str]]) -> str:
         resp = client.chat.completions.create(
@@ -207,26 +327,34 @@ def _make_custom_openai_llm() -> Callable[[list[dict[str, str]]], str]:
 # ============== Streaming LLM ==============
 
 
-def make_llm_streaming() -> Callable[[list[dict[str, str]]], Generator[str, None, None]]:
-    """Return a streaming LLM function that yields chunks."""
+def make_llm_streaming(
+    tier: ModelTier | None = None,
+) -> Callable[[list[dict[str, str]]], Generator[str, None, None]]:
+    """Return a streaming LLM function that yields chunks.
+
+    Args:
+        tier: Optional model tier ("high", "mid", "low").
+              If None, uses the default tier from MODEL_TIER env var or "mid".
+    """
     provider = os.getenv("LLM_PROVIDER", "openrouter").lower()
+    effective_tier = tier or get_current_tier()
+    model = get_model_for_tier(effective_tier, provider)
 
     if provider == "openrouter":
-        return _make_openrouter_llm_streaming()
+        return _make_openrouter_llm_streaming_with_model(model)
     elif provider == "nanogpt":
-        return _make_nanogpt_llm_streaming()
+        return _make_nanogpt_llm_streaming_with_model(model)
     elif provider == "openai":
-        return _make_custom_openai_llm_streaming()
+        return _make_custom_openai_llm_streaming_with_model(model)
     else:
         raise ValueError(f"Streaming not supported for LLM_PROVIDER={provider}")
 
 
-def _make_openrouter_llm_streaming() -> (
-    Callable[[list[dict[str, str]]], Generator[str, None, None]]
-):
-    """Streaming OpenRouter LLM."""
+def _make_openrouter_llm_streaming_with_model(
+    model: str,
+) -> Callable[[list[dict[str, str]]], Generator[str, None, None]]:
+    """Streaming OpenRouter LLM with specified model."""
     client = _get_openrouter_client()
-    model = os.getenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4")
 
     def llm(messages: list[dict[str, str]]) -> Generator[str, None, None]:
         stream = client.chat.completions.create(
@@ -241,12 +369,11 @@ def _make_openrouter_llm_streaming() -> (
     return llm
 
 
-def _make_nanogpt_llm_streaming() -> (
-    Callable[[list[dict[str, str]]], Generator[str, None, None]]
-):
-    """Streaming NanoGPT LLM."""
+def _make_nanogpt_llm_streaming_with_model(
+    model: str,
+) -> Callable[[list[dict[str, str]]], Generator[str, None, None]]:
+    """Streaming NanoGPT LLM with specified model."""
     client = _get_nanogpt_client()
-    model = os.getenv("NANOGPT_MODEL", "moonshotai/Kimi-K2-Instruct-0905")
 
     def llm(messages: list[dict[str, str]]) -> Generator[str, None, None]:
         stream = client.chat.completions.create(
@@ -261,12 +388,11 @@ def _make_nanogpt_llm_streaming() -> (
     return llm
 
 
-def _make_custom_openai_llm_streaming() -> (
-    Callable[[list[dict[str, str]]], Generator[str, None, None]]
-):
-    """Streaming custom OpenAI-compatible LLM."""
+def _make_custom_openai_llm_streaming_with_model(
+    model: str,
+) -> Callable[[list[dict[str, str]]], Generator[str, None, None]]:
+    """Streaming custom OpenAI-compatible LLM with specified model."""
     client = _get_custom_openai_client()
-    model = os.getenv("CUSTOM_OPENAI_MODEL", "gpt-4o")
 
     def llm(messages: list[dict[str, str]]) -> Generator[str, None, None]:
         stream = client.chat.completions.create(
@@ -395,26 +521,27 @@ def _convert_messages_to_claude_format(messages: list[dict]) -> list[dict]:
     return claude_messages
 
 
-def _get_tool_model() -> str:
+def _get_tool_model(tier: ModelTier | None = None) -> str:
     """Get the model to use for tool calling.
 
-    Defaults to the main LLM's model if TOOL_MODEL is not set.
+    Checks TOOL_MODEL env var first, then falls back to tier-based selection.
+
+    Args:
+        tier: Optional tier override. If None, uses default tier.
     """
+    # Explicit TOOL_MODEL takes priority
     if tool_model := os.getenv("TOOL_MODEL"):
         return tool_model
 
-    # Fall back to main LLM's model based on provider
+    # Use tier-based model selection
     provider = os.getenv("LLM_PROVIDER", "openrouter").lower()
-    if provider == "openai":
-        return os.getenv("CUSTOM_OPENAI_MODEL", "gpt-4o")
-    elif provider == "nanogpt":
-        return os.getenv("NANOGPT_MODEL", "moonshotai/Kimi-K2-Instruct-0905")
-    else:  # openrouter
-        return os.getenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4")
+    effective_tier = tier or get_current_tier()
+    return get_model_for_tier(effective_tier, provider)
 
 
 def make_llm_with_tools(
     tools: list[dict] | None = None,
+    tier: ModelTier | None = None,
 ) -> Callable[[list[dict]], "ChatCompletion"]:
     """Return a function(messages) -> ChatCompletion that supports tool calling.
 
@@ -426,12 +553,14 @@ def make_llm_with_tools(
 
     Args:
         tools: List of tool definitions in OpenAI format. If None, no tools.
+        tier: Optional model tier ("high", "mid", "low").
+              If None, uses the default tier from MODEL_TIER env var or "mid".
 
     Returns:
         Function that calls the LLM with tool support.
     """
     client = _get_openai_tool_client()
-    tool_model = _get_tool_model()
+    tool_model = _get_tool_model(tier)
     tool_format = os.getenv("TOOL_FORMAT", "openai").lower()
 
     def llm(messages: list[dict]) -> "ChatCompletion":

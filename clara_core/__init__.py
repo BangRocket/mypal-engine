@@ -30,9 +30,14 @@ def get_version() -> str:
 
 from clara_core.config import get_config, init_platform
 from clara_core.llm import (
+    ModelTier,
     make_llm,
     make_llm_streaming,
     make_llm_with_tools,
+    get_model_for_tier,
+    get_current_tier,
+    get_tier_info,
+    DEFAULT_TIER,
 )
 from clara_core.memory import MemoryManager, load_initial_profile
 from clara_core.platform import PlatformAdapter, PlatformContext, PlatformMessage
@@ -56,6 +61,12 @@ __all__ = [
     "make_llm",
     "make_llm_streaming",
     "make_llm_with_tools",
+    # Model tiers
+    "ModelTier",
+    "get_model_for_tier",
+    "get_current_tier",
+    "get_tier_info",
+    "DEFAULT_TIER",
     # Profile loading
     "load_initial_profile",
 ]
