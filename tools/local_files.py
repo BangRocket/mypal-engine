@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 from ._base import ToolContext, ToolDef
 
 if TYPE_CHECKING:
-    from storage.local_files import LocalFileManager
+    from storage.local_files import FileManager
 
 MODULE_NAME = "local_files"
 MODULE_VERSION = "1.0.0"
@@ -44,18 +44,11 @@ More reliable than inline <<<file:>>> syntax, especially for large content.
 - For sandbox work: `write_file` (temporary) then `download_from_sandbox` (permanent)
 """.strip()
 
-# Lazy-loaded manager
-_manager: LocalFileManager | None = None
+def _get_manager() -> "FileManager":
+    """Get the file manager singleton (Local or S3 based on config)."""
+    from storage.local_files import get_file_manager
 
-
-def _get_manager() -> LocalFileManager:
-    """Get or create the LocalFileManager singleton."""
-    global _manager
-    if _manager is None:
-        from storage.local_files import LocalFileManager
-
-        _manager = LocalFileManager()
-    return _manager
+    return get_file_manager()
 
 
 def _format_file_list(files: list) -> str:
