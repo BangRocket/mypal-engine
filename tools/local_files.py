@@ -418,8 +418,13 @@ TOOLS = [
 
 async def initialize() -> None:
     """Initialize file storage on module load."""
+    from storage.local_files import S3FileManager
+
     manager = _get_manager()
-    print(f"[local_files] Storage directory: {manager.base_dir}")
+    if isinstance(manager, S3FileManager):
+        print(f"[local_files] Using S3 storage: {manager.bucket}")
+    else:
+        print(f"[local_files] Storage directory: {manager.base_dir}")
 
 
 async def cleanup() -> None:
