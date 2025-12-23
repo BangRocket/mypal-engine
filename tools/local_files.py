@@ -2,7 +2,8 @@
 
 Provides managed storage for Clara to save and retrieve files.
 Tools: save_to_local, list_local_files, read_local_file, delete_local_file,
-       download_from_sandbox, upload_to_sandbox, send_local_file
+       download_from_sandbox, upload_to_sandbox, send_local_file,
+       create_file_attachment
 
 Supports both local filesystem and S3-compatible storage.
 """
@@ -23,20 +24,24 @@ SYSTEM_PROMPT = """
 ## Local File Storage
 You can save files permanently that survive restarts and can be shared in chat.
 
+**PREFERRED: Use `create_file_attachment` for sharing files!**
+This tool creates a file AND attaches it to your message in one step.
+More reliable than inline <<<file:>>> syntax, especially for large content.
+
 **Local Storage Tools:**
-- `save_to_local` - Save content directly to local storage
-- `list_local_files` - List files in local storage
-- `read_local_file` - Read a locally saved file
-- `delete_local_file` - Delete a local file
+- `create_file_attachment` - CREATE AND ATTACH a file in one step (PREFERRED)
+- `save_to_local` - Save content without attaching
+- `list_local_files` - List saved files
+- `read_local_file` - Read a saved file
+- `delete_local_file` - Delete a file
+- `send_local_file` - Attach an existing file to chat
 - `download_from_sandbox` - Copy sandbox file to local storage
 - `upload_to_sandbox` - Upload local file to sandbox
-- `send_local_file` - Send a local file to Discord chat
 
-**Sandbox vs Local Files:**
-- Sandbox files (`write_file`) are temporary - use for intermediate work
-- Local files (`save_to_local`) are permanent - use for important results
-- Use `download_from_sandbox` to move sandbox results to local storage
-- Use `send_local_file` or `<<<file:...>>>` syntax to share files in chat
+**When to use what:**
+- For HTML, JSON, code, or any content to share: `create_file_attachment`
+- For intermediate results you'll process later: `save_to_local`
+- For sandbox work: `write_file` (temporary) then `download_from_sandbox` (permanent)
 """.strip()
 
 # Lazy-loaded manager
@@ -199,6 +204,35 @@ async def send_local_file(args: dict[str, Any], ctx: ToolContext) -> str:
     return f"File '{filename}' will be sent to chat"
 
 
+async def create_file_attachment(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Create a file and attach it to the chat message in one step.
+
+    This is the PREFERRED method for sharing files - more reliable than inline syntax.
+    Combines save_to_local + send_local_file into a single operation.
+    """
+    filename = args.get("filename", "output.txt")
+    content = args.get("content", "")
+
+    if not content:
+        return "Error: No content provided for the file"
+
+    # Save the file
+    manager = _get_manager()
+    result = manager.save_file(ctx.user_id, filename, content, ctx.channel_id)
+
+    if not result.success:
+        return f"Error saving file: {result.message}"
+
+    # Queue for sending
+    files_to_send = ctx.extra.get("files_to_send")
+    if files_to_send is not None:
+        file_path = manager._storage_dir(ctx.user_id, ctx.channel_id) / filename
+        files_to_send.append({"path": str(file_path), "filename": filename})
+        return f"Created and attached '{filename}' ({len(content)} chars)"
+    else:
+        return f"Created '{filename}' - use send_local_file to share it"
+
+
 # --- Tool Definitions ---
 
 TOOLS = [
@@ -352,6 +386,35 @@ TOOLS = [
         },
         handler=send_local_file,
         platforms=["discord"],  # Discord-specific
+        requires=["files"],
+    ),
+    ToolDef(
+        name="create_file_attachment",
+        description=(
+            "Create a file and attach it to your message in one step. "
+            "THIS IS THE PREFERRED METHOD for sharing files - use this instead of "
+            "inline <<<file:>>> syntax. Works reliably for HTML, JSON, code, and any text content. "
+            "The file is saved permanently AND attached to your response."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "filename": {
+                    "type": "string",
+                    "description": (
+                        "Name for the file with extension "
+                        "(e.g., 'page.html', 'data.json', 'script.py')"
+                    ),
+                },
+                "content": {
+                    "type": "string",
+                    "description": "The full content to put in the file.",
+                },
+            },
+            "required": ["filename", "content"],
+        },
+        handler=create_file_attachment,
+        platforms=["discord"],
         requires=["files"],
     ),
 ]
