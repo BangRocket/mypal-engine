@@ -35,7 +35,7 @@ imessage-reader = "^0.6.1"
 httpx = "^0.28.0"  # Async HTTP client for web search
 
 # Discord bot
-"discord.py" = "^2.4.0"
+py-cord = "^2.6.1"
 
 # Docker code execution sandbox
 docker = "^7.0.0"
