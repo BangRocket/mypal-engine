@@ -21,9 +21,10 @@ if TYPE_CHECKING:
     from db.models import Message, Session
 
 # Configuration constants
-CONTEXT_MESSAGE_COUNT = 20
+CONTEXT_MESSAGE_COUNT = 15  # Reduced from 20 to save tokens
 SUMMARY_INTERVAL = 10
 MAX_SEARCH_QUERY_CHARS = 6000
+MAX_MEMORIES_PER_TYPE = 50  # Limit memories to reduce token usage
 
 # Paths for initial profile loading
 BASE_DIR = Path(__file__).parent.parent
@@ -377,6 +378,12 @@ class MemoryManager:
                 mem_text = f"[About {contact_name}]: {r['memory']}"
                 if mem_text not in user_mems:
                     user_mems.append(mem_text)
+
+        # Limit memories to reduce token usage (keep most relevant)
+        if len(user_mems) > MAX_MEMORIES_PER_TYPE:
+            user_mems = user_mems[:MAX_MEMORIES_PER_TYPE]
+        if len(proj_mems) > MAX_MEMORIES_PER_TYPE:
+            proj_mems = proj_mems[:MAX_MEMORIES_PER_TYPE]
 
         if user_mems or proj_mems:
             print(
