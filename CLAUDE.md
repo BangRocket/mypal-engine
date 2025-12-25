@@ -242,6 +242,36 @@ Clara can interact with Azure DevOps projects, repos, work items, and pipelines:
 - `ado_search_code` - Search code across repos
 - `ado_list_iterations` / `ado_list_team_iterations` - View sprints/iterations
 
+### Claude Code Integration (Discord Bot)
+Clara can delegate complex coding tasks to Claude Code, an autonomous AI coding agent.
+
+**Authentication (one of these):**
+- Claude Max/Pro subscription: Login via `claude login` in terminal (no API key needed)
+- `ANTHROPIC_API_KEY` - Anthropic API key for API-based authentication
+
+**Optional Configuration:**
+- `CLAUDE_CODE_WORKDIR` - Default working directory for coding tasks
+- `CLAUDE_CODE_MAX_TURNS` - Maximum agent steps per task (default: 10)
+
+**Claude Code Tools:**
+- `claude_code` - Execute coding tasks autonomously (read/write files, run commands, etc.)
+- `claude_code_status` - Check availability and authentication method
+- `claude_code_set_workdir` - Set the working directory for coding tasks
+- `claude_code_get_workdir` - Get the current working directory
+
+**Capabilities:**
+- Read and write files within the working directory
+- Execute shell commands (bash, python, npm, git, etc.)
+- Search code with glob and grep patterns
+- Multi-step, agentic workflows with automatic file editing
+
+**Example Usage in Discord:**
+```
+@Clara Check Claude Code status
+@Clara Use Claude Code to add error handling to src/api/users.py
+@Clara claude_code: Write unit tests for the utils module in /path/to/project
+```
+
 ## Key Patterns
 
 - Backend uses global `MemoryManager` instance initialized at startup with LLM callable
