@@ -29,11 +29,16 @@ real computational abilities - you're not just simulating or explaining code.
 
 **Sandbox Tools:**
 - `execute_python` - Run Python code (stateful - variables persist across calls)
-- `install_package` - Install pip packages (requests, pandas, numpy, etc.)
+- `install_package` - Install pip packages (only for packages NOT pre-installed)
 - `run_shell` - Run shell commands (curl, git, wget, etc.)
 - `read_file` / `write_file` - Read and write files in the sandbox
 - `list_files` - List directory contents
 - `unzip_file` - Extract archives (.zip, .tar.gz, .tar, etc.)
+
+**Pre-installed Packages (no install needed):**
+requests, httpx, aiohttp, pandas, numpy, scipy, matplotlib, seaborn, pillow,
+beautifulsoup4, lxml, selectolax, pyyaml, toml, orjson, pydantic, rich, tabulate,
+click, typer, python-dateutil, arrow, tqdm, playwright, pytest, websockets
 
 **When to Use Code Execution:**
 - Mathematical calculations (don't calculate in your head - run the code!)
@@ -204,7 +209,10 @@ TOOLS = [
         name="install_package",
         description=(
             "Install a Python package using pip in the sandbox. "
-            "Use this before importing non-standard-library packages."
+            "Common packages like requests, httpx, pandas, numpy, matplotlib, "
+            "beautifulsoup4, pyyaml, and playwright are PRE-INSTALLED - "
+            "you can import them directly without installing. "
+            "Only use this for packages NOT in the pre-installed list."
         ),
         parameters={
             "type": "object",
@@ -212,8 +220,11 @@ TOOLS = [
                 "package": {
                     "type": "string",
                     "description": (
-                        "The package name to install (e.g., 'requests', "
-                        "'pandas', 'numpy'). Can include version specifiers."
+                        "The package name to install (e.g., 'selenium', "
+                        "'openai'). Can include version specifiers. "
+                        "Skip for: requests, httpx, aiohttp, pandas, numpy, "
+                        "scipy, matplotlib, seaborn, beautifulsoup4, lxml, "
+                        "pyyaml, pydantic, playwright, pytest, click, rich."
                     ),
                 },
             },
