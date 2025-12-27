@@ -167,12 +167,35 @@ poetry run python scripts/migrate_to_postgres.py --all
 - `DISCORD_MONITOR_PORT` - Monitor dashboard port (default: 8001)
 - `DISCORD_MONITOR_ENABLED` - Enable monitor dashboard (default: true)
 
-### Docker Code Execution (Discord Bot)
-Tool calling requires Docker and a tool-capable LLM:
+### Sandbox Code Execution
+
+Clara supports code execution via local Docker or a remote self-hosted sandbox service.
+
+**Mode Selection:**
+- `SANDBOX_MODE` - Backend selection: "local", "remote", or "auto" (default: auto)
+  - `local`: Use local Docker containers only
+  - `remote`: Use remote sandbox API only
+  - `auto`: Use remote if configured, fall back to local Docker
+
+**Local Docker** (`SANDBOX_MODE=local` or fallback):
 - `DOCKER_SANDBOX_IMAGE` - Docker image for sandbox (default: python:3.12-slim)
 - `DOCKER_SANDBOX_TIMEOUT` - Container idle timeout in seconds (default: 900)
 - `DOCKER_SANDBOX_MEMORY` - Memory limit per container (default: 512m)
 - `DOCKER_SANDBOX_CPU` - CPU limit per container (default: 1.0)
+
+**Remote Sandbox** (`SANDBOX_MODE=remote` or auto with config):
+- `SANDBOX_API_URL` - Remote sandbox service URL (e.g., https://sandbox.example.com)
+- `SANDBOX_API_KEY` - API key for authentication
+- `SANDBOX_TIMEOUT` - Request timeout in seconds (default: 60)
+
+The self-hosted sandbox service is in `sandbox_service/`. Deploy to a VPS with Docker:
+```bash
+cd sandbox_service
+docker-compose build sandbox-image  # Build sandbox container image
+docker-compose up -d                # Start API service
+```
+
+**Web Search:**
 - `TAVILY_API_KEY` - Tavily API key for web search (optional but recommended)
 
 ### Tool Calling LLM
