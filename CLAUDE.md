@@ -167,12 +167,35 @@ poetry run python scripts/migrate_to_postgres.py --all
 - `DISCORD_MONITOR_PORT` - Monitor dashboard port (default: 8001)
 - `DISCORD_MONITOR_ENABLED` - Enable monitor dashboard (default: true)
 
-### Docker Code Execution (Discord Bot)
-Tool calling requires Docker and a tool-capable LLM:
+### Sandbox Code Execution
+
+Clara supports code execution via local Docker or a remote self-hosted sandbox service.
+
+**Mode Selection:**
+- `SANDBOX_MODE` - Backend selection: "local", "remote", or "auto" (default: auto)
+  - `local`: Use local Docker containers only
+  - `remote`: Use remote sandbox API only
+  - `auto`: Use remote if configured, fall back to local Docker
+
+**Local Docker** (`SANDBOX_MODE=local` or fallback):
 - `DOCKER_SANDBOX_IMAGE` - Docker image for sandbox (default: python:3.12-slim)
 - `DOCKER_SANDBOX_TIMEOUT` - Container idle timeout in seconds (default: 900)
 - `DOCKER_SANDBOX_MEMORY` - Memory limit per container (default: 512m)
 - `DOCKER_SANDBOX_CPU` - CPU limit per container (default: 1.0)
+
+**Remote Sandbox** (`SANDBOX_MODE=remote` or auto with config):
+- `SANDBOX_API_URL` - Remote sandbox service URL (e.g., https://sandbox.example.com)
+- `SANDBOX_API_KEY` - API key for authentication
+- `SANDBOX_TIMEOUT` - Request timeout in seconds (default: 60)
+
+The self-hosted sandbox service is in `sandbox_service/`. Deploy to a VPS with Docker:
+```bash
+cd sandbox_service
+docker-compose build sandbox-image  # Build sandbox container image
+docker-compose up -d                # Start API service
+```
+
+**Web Search:**
 - `TAVILY_API_KEY` - Tavily API key for web search (optional but recommended)
 
 ### Tool Calling LLM
@@ -241,6 +264,36 @@ Clara can interact with Azure DevOps projects, repos, work items, and pipelines:
 - `ado_list_wikis` / `ado_get_wiki_page` / `ado_create_or_update_wiki_page` - Manage wikis
 - `ado_search_code` - Search code across repos
 - `ado_list_iterations` / `ado_list_team_iterations` - View sprints/iterations
+
+### Claude Code Integration (Discord Bot)
+Clara can delegate complex coding tasks to Claude Code, an autonomous AI coding agent.
+
+**Authentication (one of these):**
+- Claude Max/Pro subscription: Login via `claude login` in terminal (no API key needed)
+- `ANTHROPIC_API_KEY` - Anthropic API key for API-based authentication
+
+**Optional Configuration:**
+- `CLAUDE_CODE_WORKDIR` - Default working directory for coding tasks
+- `CLAUDE_CODE_MAX_TURNS` - Maximum agent steps per task (default: 10)
+
+**Claude Code Tools:**
+- `claude_code` - Execute coding tasks autonomously (read/write files, run commands, etc.)
+- `claude_code_status` - Check availability and authentication method
+- `claude_code_set_workdir` - Set the working directory for coding tasks
+- `claude_code_get_workdir` - Get the current working directory
+
+**Capabilities:**
+- Read and write files within the working directory
+- Execute shell commands (bash, python, npm, git, etc.)
+- Search code with glob and grep patterns
+- Multi-step, agentic workflows with automatic file editing
+
+**Example Usage in Discord:**
+```
+@Clara Check Claude Code status
+@Clara Use Claude Code to add error handling to src/api/users.py
+@Clara claude_code: Write unit tests for the utils module in /path/to/project
+```
 
 ## Key Patterns
 

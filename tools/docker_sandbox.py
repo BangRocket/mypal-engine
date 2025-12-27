@@ -1,10 +1,13 @@
-"""Docker sandbox execution tools.
+"""Sandbox execution tools.
 
-Provides sandboxed code execution via Docker containers.
+Provides sandboxed code execution via Docker containers (local or remote).
 Tools: execute_python, install_package, read_file, write_file,
        list_files, run_shell, unzip_file
 
-Requires: Docker daemon running, docker-py installed
+Supports:
+- Local Docker containers (SANDBOX_MODE=local)
+- Remote sandbox API (SANDBOX_MODE=remote)
+- Auto-selection (SANDBOX_MODE=auto, default)
 """
 
 from __future__ import annotations
@@ -14,10 +17,10 @@ from typing import TYPE_CHECKING, Any
 from ._base import ToolContext, ToolDef
 
 if TYPE_CHECKING:
-    from sandbox.docker import DockerSandboxManager
+    from sandbox.manager import UnifiedSandboxManager
 
 MODULE_NAME = "docker_sandbox"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.1.0"  # Updated for unified manager support
 
 SYSTEM_PROMPT = """
 ## Code Execution (Docker Sandbox)
@@ -50,26 +53,31 @@ When asked "What's 2^100?", use `execute_python` with `print(2**100)` instead of
 """.strip()
 
 # Lazy-loaded manager (shared across all handlers)
-_manager: DockerSandboxManager | None = None
+_manager: UnifiedSandboxManager | None = None
 
 
-def _get_manager() -> DockerSandboxManager:
-    """Get or create the DockerSandboxManager singleton."""
+def _get_manager() -> UnifiedSandboxManager:
+    """Get the unified sandbox manager.
+
+    Uses SANDBOX_MODE to select between local Docker and remote API.
+    """
     global _manager
     if _manager is None:
-        from sandbox.docker import DockerSandboxManager
+        from sandbox.manager import get_sandbox_manager
 
-        _manager = DockerSandboxManager()
+        _manager = get_sandbox_manager()
     return _manager
 
 
 def is_available() -> bool:
-    """Check if Docker sandbox is available."""
-    try:
-        from sandbox.docker import DOCKER_AVAILABLE
+    """Check if any sandbox backend is available.
 
-        return DOCKER_AVAILABLE
-    except ImportError:
+    Returns True if either local Docker or remote sandbox is available.
+    """
+    try:
+        manager = _get_manager()
+        return manager.is_available()
+    except Exception:
         return False
 
 
@@ -330,24 +338,27 @@ TOOLS = [
 
 
 async def initialize() -> None:
-    """Initialize Docker connection on module load."""
-    if not is_available():
-        print("[docker_sandbox] Docker not available - tools will be disabled")
-        return
-
-    # Pre-create manager to verify Docker connection
+    """Initialize sandbox connection on module load."""
     try:
         manager = _get_manager()
+        stats = manager.get_stats()
+
         if manager.is_available():
-            print("[docker_sandbox] Docker connection verified")
+            backend = stats.get("active_backend", "unknown")
+            mode = stats.get("mode", "auto")
+            print(
+                f"[docker_sandbox] Sandbox available (mode={mode}, backend={backend})"
+            )
         else:
-            print("[docker_sandbox] Docker daemon not running")
+            print(
+                "[docker_sandbox] No sandbox backend available - tools will be disabled"
+            )
     except Exception as e:
-        print(f"[docker_sandbox] Error connecting to Docker: {e}")
+        print(f"[docker_sandbox] Error initializing sandbox: {e}")
 
 
 async def cleanup() -> None:
-    """Cleanup Docker resources on module unload."""
+    """Cleanup sandbox resources on module unload."""
     global _manager
     if _manager:
         try:
