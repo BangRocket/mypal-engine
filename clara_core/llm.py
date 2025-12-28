@@ -33,6 +33,9 @@ DEFAULT_TIER: ModelTier = "mid"
 
 # Tool calling configuration
 TOOL_FORMAT = os.getenv("TOOL_FORMAT", "openai").lower()
+# DEPRECATED: TOOL_MODEL env var is no longer used.
+# Tools now always use tier-based model selection to respect !high, !mid, !low prefixes.
+# This constant is kept for backwards compatibility but has no effect.
 TOOL_MODEL = os.getenv("TOOL_MODEL", "")
 
 # Default models per provider per tier
@@ -528,16 +531,14 @@ def _convert_messages_to_claude_format(messages: list[dict]) -> list[dict]:
 def _get_tool_model(tier: ModelTier | None = None) -> str:
     """Get the model to use for tool calling.
 
-    Checks TOOL_MODEL env var first, then falls back to tier-based selection.
+    Always uses tier-based model selection to respect !high, !mid, !low prefixes.
+    The TOOL_MODEL env var is deprecated and ignored.
 
     Args:
         tier: Optional tier override. If None, uses default tier.
     """
-    # Explicit TOOL_MODEL takes priority
-    if tool_model := os.getenv("TOOL_MODEL"):
-        return tool_model
-
-    # Use tier-based model selection
+    # Always use tier-based model selection
+    # This ensures !high, !mid, !low prefixes are respected for tool calls
     provider = os.getenv("LLM_PROVIDER", "openrouter").lower()
     effective_tier = tier or get_current_tier()
     return get_model_for_tier(effective_tier, provider)
