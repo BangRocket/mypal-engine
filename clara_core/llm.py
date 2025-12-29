@@ -101,6 +101,24 @@ def _get_nanogpt_client() -> OpenAI:
     return _nanogpt_client
 
 
+def _get_cf_access_headers() -> dict[str, str] | None:
+    """Get Cloudflare Access headers if configured.
+
+    For endpoints behind Cloudflare Access (like cloudflared tunnels),
+    set these environment variables:
+    - CF_ACCESS_CLIENT_ID: Service token client ID
+    - CF_ACCESS_CLIENT_SECRET: Service token client secret
+    """
+    client_id = os.getenv("CF_ACCESS_CLIENT_ID")
+    client_secret = os.getenv("CF_ACCESS_CLIENT_SECRET")
+    if client_id and client_secret:
+        return {
+            "CF-Access-Client-Id": client_id,
+            "CF-Access-Client-Secret": client_secret,
+        }
+    return None
+
+
 def _get_custom_openai_client() -> OpenAI:
     """Get or create custom OpenAI-compatible client."""
     global _custom_openai_client
@@ -111,10 +129,17 @@ def _get_custom_openai_client() -> OpenAI:
 
         base_url = os.getenv("CUSTOM_OPENAI_BASE_URL", "https://api.openai.com/v1")
 
-        _custom_openai_client = OpenAI(
-            base_url=base_url,
-            api_key=api_key,
-        )
+        client_kwargs = {
+            "base_url": base_url,
+            "api_key": api_key,
+        }
+
+        # Add Cloudflare Access headers if configured
+        cf_headers = _get_cf_access_headers()
+        if cf_headers:
+            client_kwargs["default_headers"] = cf_headers
+
+        _custom_openai_client = OpenAI(**client_kwargs)
     return _custom_openai_client
 
 
@@ -165,6 +190,11 @@ def _get_openai_tool_client() -> OpenAI:
                 "HTTP-Referer": site,
                 "X-Title": title,
             }
+        else:
+            # Add Cloudflare Access headers if configured (for custom endpoints)
+            cf_headers = _get_cf_access_headers()
+            if cf_headers:
+                client_kwargs["default_headers"] = cf_headers
 
         _openai_tool_client = OpenAI(**client_kwargs)
     return _openai_tool_client

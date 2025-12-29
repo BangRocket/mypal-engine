@@ -125,6 +125,11 @@ Optional tier-specific model overrides:
 
 Example usage in Discord: `!high What is quantum entanglement?`
 
+### Cloudflare Access (for endpoints behind cloudflared)
+For custom OpenAI endpoints behind Cloudflare Access (like cloudflared tunnels):
+- `CF_ACCESS_CLIENT_ID` - Cloudflare Access Service Token client ID
+- `CF_ACCESS_CLIENT_SECRET` - Cloudflare Access Service Token client secret
+
 ### Mem0 Provider (independent from chat LLM)
 - `MEM0_PROVIDER` - Provider for memory extraction: "openrouter" (default), "nanogpt", or "openai"
 - `MEM0_MODEL` - Model for memory extraction (default: openai/gpt-4o-mini)
