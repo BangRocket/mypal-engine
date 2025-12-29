@@ -1,105 +1,148 @@
 # MyPalClara
 
-AI assistant with session management and persistent memory. The assistant's name is Clara.
-
-## Installation
-
-```bash
-poetry install
-```
-
-## Usage
-
-### Development
-
-Backend:
-```bash
-poetry run python api.py
-```
-
-Frontend:
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-### Docker
-
-```bash
-docker-compose up
-```
+A personal AI assistant with persistent memory and tool capabilities, powered by Discord. The assistant's name is Clara.
 
 ## Features
 
-- Threaded chat interface built with assistant-ui
-- Session-based conversations with thread management
-- User memory for persistent facts and preferences (via mem0)
-- Graph memory for relationship tracking (Neo4j)
-- Project memory for topic-specific context
-- SQLite storage via SQLAlchemy
-- Multiple LLM backend support (OpenRouter, NanoGPT, OpenAI)
+- **Discord Interface** - Full-featured Discord bot with streaming responses and reply chains
+- **Persistent Memory** - User and project memories via [mem0](https://github.com/mem0ai/mem0)
+- **Code Execution** - Sandboxed Python/Bash via local Docker or remote VPS
+- **Web Search** - Real-time web search via Tavily
+- **File Management** - Local file storage with S3 sync support
+- **GitHub/Azure DevOps** - Repository, issue, PR, and pipeline management
+- **Claude Code Integration** - Delegate complex coding tasks to Claude Code agent
+- **Multiple LLM Backends** - OpenRouter, NanoGPT, or custom OpenAI-compatible endpoints
+- **Model Tiers** - Dynamic model selection via message prefixes (`!high`, `!mid`, `!low`)
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.11+
+- [Poetry](https://python-poetry.org/)
+- Docker (optional, for code execution sandbox)
+- Discord bot token
+
+### Installation
+
+```bash
+# Clone and install
+git clone https://github.com/BangRocket/mypalclara.git
+cd mypalclara
+poetry install
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your API keys
+```
+
+### Running
+
+```bash
+# Run Discord bot locally
+poetry run python discord_bot.py
+
+# Or with Docker
+docker-compose --profile discord up
+```
+
+## Configuration
+
+### Required Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `DISCORD_BOT_TOKEN` | Discord bot token |
+| `OPENAI_API_KEY` | Required for mem0 embeddings |
+| `LLM_PROVIDER` | `openrouter`, `nanogpt`, or `openai` |
+
+### LLM Providers
+
+**OpenRouter** (default):
+```bash
+LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY=your-key
+OPENROUTER_MODEL=anthropic/claude-sonnet-4
+```
+
+**NanoGPT**:
+```bash
+LLM_PROVIDER=nanogpt
+NANOGPT_API_KEY=your-key
+NANOGPT_MODEL=moonshotai/Kimi-K2-Instruct-0905
+```
+
+**Custom OpenAI-compatible**:
+```bash
+LLM_PROVIDER=openai
+CUSTOM_OPENAI_API_KEY=your-key
+CUSTOM_OPENAI_BASE_URL=https://api.openai.com/v1
+CUSTOM_OPENAI_MODEL=gpt-4o
+```
+
+### Optional Features
+
+| Variable | Description |
+|----------|-------------|
+| `TAVILY_API_KEY` | Enable web search |
+| `GITHUB_TOKEN` | Enable GitHub integration |
+| `AZURE_DEVOPS_ORG` / `AZURE_DEVOPS_PAT` | Enable Azure DevOps integration |
+| `ANTHROPIC_API_KEY` | Enable Claude Code agent |
+| `ENABLE_GRAPH_MEMORY=true` | Enable relationship tracking (Neo4j/Kuzu) |
 
 ## Memory System
 
-MyPalClara uses [mem0](https://github.com/mem0ai/mem0) for memory management with:
-
-- **Vector Store (Qdrant)**: Semantic search over memories
-- **Graph Store (Neo4j)**: Relationship tracking between entities
+Clara uses mem0 for persistent memory with vector search (pgvector/Qdrant) and optional graph storage (Neo4j/Kuzu).
 
 ### Bootstrap Profile Data
 
-Extract and seed memories from a user profile:
-
 ```bash
-# Generate JSON files (dry run)
+# Generate memory JSON (dry run)
 poetry run python -m src.bootstrap_memory
 
-# Apply to mem0 (vector + graph)
+# Apply to mem0
 poetry run python -m src.bootstrap_memory --apply
-
-# Force regeneration of JSON files
-poetry run python -m src.bootstrap_memory --force --apply
 ```
 
-This extracts atomic memories into namespaces:
-- `profile_bio` - Name, family, location, career
-- `interaction_style` - Tone, boundaries, formatting preferences
-- `project_seed` - Assistant operating principles
-- `project_context:creative_portfolio` - Game projects, tools, aesthetics
-- `restricted:sensitive` - Mental health context (flagged in metadata)
-
-### Clear Databases
-
-Clear all memory data (vector store + graph store):
+### Clear Memory
 
 ```bash
-# With confirmation prompt
-poetry run python clear_dbs.py
-
-# Skip confirmation
-poetry run python clear_dbs.py --yes
-
-# Clear specific user
-poetry run python clear_dbs.py --user <user_id>
+poetry run python clear_dbs.py              # With prompt
+poetry run python clear_dbs.py --yes        # Skip prompt
+poetry run python clear_dbs.py --user <id>  # Specific user
 ```
 
-## Environment Variables
+## Production Deployment
 
-Copy `.env.example` to `.env` and configure:
+### Railway
 
-### Required
-- `OPENAI_API_KEY` - For embeddings (text-embedding-3-small)
+The repo includes `railway.toml` for one-click deployment:
 
-### Chat LLM (choose one provider)
-- `LLM_PROVIDER` - `openrouter`, `nanogpt`, or `openai`
-- Provider-specific keys (see `.env.example`)
+1. Connect your GitHub repo to Railway
+2. Set environment variables in Railway dashboard
+3. Deploy
 
-### Memory LLM
-- `MEM0_PROVIDER` - Provider for memory extraction (default: `openai`)
-- `MEM0_MODEL` - Model for extraction (default: `gpt-4o-mini`)
+### Docker Compose with PostgreSQL
 
-### Graph Store (optional)
-- `ENABLE_GRAPH_MEMORY` - Set to `true` to enable graph memory (default: `false`)
-- `GRAPH_STORE_PROVIDER` - `neo4j` (default) or `kuzu` (embedded)
-- `NEO4J_URL`, `NEO4J_USERNAME`, `NEO4J_PASSWORD` - For Neo4j
+```bash
+# Run with PostgreSQL databases
+docker-compose --profile discord --profile postgres up
+```
+
+Set these for PostgreSQL:
+```bash
+DATABASE_URL=postgresql://user:pass@host:5432/clara_main
+MEM0_DATABASE_URL=postgresql://user:pass@host:5432/clara_vectors
+```
+
+## Development
+
+```bash
+poetry run ruff check .    # Lint
+poetry run ruff format .   # Format
+poetry run pytest          # Test
+```
+
+## License
+
+MIT
