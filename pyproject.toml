@@ -45,7 +45,6 @@ boto3 = "^1.35.0"
 
 # Tool system
 watchdog = "^4.0.0"  # File watching for hot-reload
-mcp = "^1.0.0"  # Model Context Protocol server
 
 # Browser automation
 playwright = "^1.49.0"

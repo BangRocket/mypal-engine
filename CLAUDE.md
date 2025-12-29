@@ -4,36 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MyPalClara is a personal AI assistant with session management and persistent memory (via mem0). The assistant's name is Clara. It uses a FastAPI backend with SQLite/PostgreSQL storage and a Next.js frontend built with assistant-ui.
+MyPalClara is a personal AI assistant with session management and persistent memory (via mem0). The assistant's name is Clara. It uses a Discord bot interface with SQLite/PostgreSQL storage.
 
 ## Development Commands
 
-### Backend (Python/FastAPI)
+### Backend (Python)
 ```bash
 poetry install                    # Install dependencies
-poetry run python api.py          # Run API server (port 8000)
-poetry run python app.py          # Run Gradio UI (port 7860)
 poetry run python discord_bot.py  # Run Discord bot
 poetry run ruff check .           # Lint
 poetry run ruff format .          # Format
 ```
 
-### Frontend (Next.js)
-```bash
-cd frontend
-npm install                       # Install dependencies
-npm run dev                       # Run dev server (port 3000, uses Turbopack)
-npm run build                     # Production build
-npm run lint                      # ESLint
-npm run prettier:fix              # Format with Prettier
-```
-
 ### Docker
 ```bash
-docker-compose --profile full up           # Run backend + frontend
-docker-compose --profile discord up        # Run Discord bot only
-docker-compose --profile postgres up       # Run PostgreSQL databases only
-docker-compose --profile discord --profile postgres up  # Discord bot + databases
+docker-compose --profile discord up                    # Run Discord bot only
+docker-compose --profile discord --profile postgres up # Discord bot + databases
 ```
 
 ### Memory Management
@@ -50,8 +36,7 @@ poetry run python clear_dbs.py --user <id> # Clear specific user
 
 ## Architecture
 
-### Backend Structure
-- `api.py` - FastAPI server with thread management, chat, and memory endpoints
+### Core Structure
 - `discord_bot.py` - Discord bot with multi-user support, reply chains, and streaming responses
 - `discord_monitor.py` - Web dashboard for monitoring Discord bot status and activity
 - `memory_manager.py` - Core orchestrator: session handling, mem0 integration, prompt building with Clara's persona
@@ -59,21 +44,15 @@ poetry run python clear_dbs.py --user <id> # Clear specific user
 - `mem0_config.py` - mem0 memory system configuration (Qdrant/pgvector for vectors, OpenAI embeddings)
 - `models.py` - SQLAlchemy models: Project, Session, Message, ChannelSummary
 - `db.py` - Database setup (SQLite for dev, PostgreSQL for production)
-- `docker_tools.py` - Docker sandbox for code execution (used by Discord bot tool calling)
-- `local_files.py` - Local file storage system for persistent user files
 - `email_monitor.py` - Email monitoring and auto-response system
 
-### Frontend Structure
-- `frontend/app/api/chat/route.ts` - Next.js API route that fetches context from backend, streams LLM response via AI SDK
-- `frontend/lib/thread-adapter.ts` - RemoteThreadListAdapter and ThreadHistoryAdapter for assistant-ui thread management
-- `frontend/components/assistant-ui/` - Chat UI components built on assistant-ui
-- `frontend/app/assistant.tsx` - Main assistant component with runtime provider and adapters
+### Sandbox System
+- `sandbox/docker.py` - Local Docker sandbox for code execution
+- `sandbox/remote_client.py` - Remote VPS sandbox client
+- `sandbox/manager.py` - Unified sandbox manager (auto-selects local or remote)
 
-### Data Flow
-1. Frontend sends chat request to `/api/chat` route with messages
-2. Route fetches enriched context from backend `/api/context` (includes mem0 memories, session context, Clara persona)
-3. Route streams LLM response directly to frontend using AI SDK's `streamText`
-4. On completion, stores messages via backend `/api/store` (triggers mem0 memory extraction)
+### Storage
+- `storage/local_files.py` - Local file storage system for persistent user files
 
 ### Memory System
 - **User memories**: Persistent facts/preferences per user (stored in mem0, searched via `_fetch_mem0_context`)
@@ -82,12 +61,6 @@ poetry run python clear_dbs.py --user <id> # Clear specific user
 - **Session context**: Recent 20 messages + snapshot of last 10 messages from previous session
 - **Session summary**: LLM-generated summary stored when session times out
 - Sessions auto-timeout after 30 minutes of inactivity (`SESSION_IDLE_MINUTES`)
-
-### Thread Management
-Backend provides full CRUD for threads via `/api/threads` endpoints:
-- List, create, rename, archive, unarchive, delete threads
-- Get/append messages per thread
-- Generate titles via LLM (`/api/threads/{id}/generate-title`)
 
 ## Environment Variables
 
@@ -139,7 +112,6 @@ For custom OpenAI endpoints behind Cloudflare Access (like cloudflared tunnels):
 ### Optional
 - `USER_ID` - Single-user identifier (default: "demo-user")
 - `DEFAULT_PROJECT` - Default project name (default: "Default Project")
-- `BACKEND_URL` - Backend URL for frontend (default: http://localhost:8000)
 - `SKIP_PROFILE_LOAD` - Skip initial mem0 profile loading (default: true)
 - `ENABLE_GRAPH_MEMORY` - Enable graph memory for relationship tracking (default: false)
 - `GRAPH_STORE_PROVIDER` - Graph store provider: "neo4j" (default) or "kuzu" (embedded)
@@ -302,10 +274,9 @@ Clara can delegate complex coding tasks to Claude Code, an autonomous AI coding 
 
 ## Key Patterns
 
-- Backend uses global `MemoryManager` instance initialized at startup with LLM callable
-- Frontend uses assistant-ui's `RemoteThreadListAdapter` and `ThreadHistoryAdapter` for thread persistence
-- All LLM backends use OpenAI-compatible API (OpenAI SDK on backend, AI SDK on frontend)
-- Thread adapter uses empty `BACKEND_URL` to leverage Next.js rewrites for CORS-free backend access
+- Discord bot uses global `MemoryManager` instance initialized at startup with LLM callable
+- All LLM backends use OpenAI-compatible API (OpenAI SDK)
+- Sandbox system auto-selects between local Docker and remote VPS based on configuration
 
 ## Production Deployment
 
@@ -324,13 +295,10 @@ Enable pgvector on the vectors database:
 CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
-### Docker Compose (full stack)
+### Docker Compose
 
 ```bash
-# Run backend + frontend + postgres databases
-docker-compose --profile full --profile postgres up
-
-# Run discord bot + postgres databases
+# Run Discord bot + postgres databases
 docker-compose --profile discord --profile postgres up
 ```
 
