@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "mypalclara"
-version = "0.1.0"
+version = "0.5.0"
 description = "MyPalClara - AI assistant with session management and memory"
 authors = ["Your Name <you@example.com>"]
 readme = "README.md"
