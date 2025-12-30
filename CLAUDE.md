@@ -307,3 +307,46 @@ docker-compose --profile discord --profile postgres up
 ```bash
 poetry run python scripts/migrate_to_postgres.py --all
 ```
+
+### Database Backup Service
+
+Automated backup service for Clara and Mem0 PostgreSQL databases to S3-compatible storage (Wasabi).
+
+**Location:** `backup_service/`
+
+**Environment Variables:**
+- `DATABASE_URL` - Clara PostgreSQL connection string
+- `MEM0_DATABASE_URL` - Mem0 PostgreSQL connection string
+- `S3_BUCKET` - S3 bucket name (default: clara-backups)
+- `S3_ENDPOINT_URL` - S3 endpoint (default: https://s3.wasabisys.com)
+- `S3_ACCESS_KEY` - S3 access key
+- `S3_SECRET_KEY` - S3 secret key
+- `S3_REGION` - S3 region (default: us-east-1)
+- `BACKUP_RETENTION_DAYS` - Days to keep backups (default: 7)
+
+**Railway Deployment:**
+Deploy as a separate Railway service with cron schedule:
+```bash
+# In Railway, create new service from backup_service/ directory
+# Cron runs daily at 3:00 AM UTC
+```
+
+**Manual Usage:**
+```bash
+cd backup_service
+python backup.py              # Run backup
+python backup.py --list       # List available backups
+python backup.py --restore    # Show restore instructions
+```
+
+**Restore from Backup:**
+```bash
+# 1. Download backup from Wasabi/S3
+aws s3 cp s3://clara-backups/backups/clara/clara_YYYYMMDD_HHMMSS.sql.gz . --endpoint-url=https://s3.wasabisys.com
+
+# 2. Decompress
+gunzip clara_YYYYMMDD_HHMMSS.sql.gz
+
+# 3. Restore
+psql $DATABASE_URL < clara_YYYYMMDD_HHMMSS.sql
+```
