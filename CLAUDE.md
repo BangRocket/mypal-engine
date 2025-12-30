@@ -136,6 +136,7 @@ poetry run python scripts/migrate_to_postgres.py --all
 ### Discord Bot
 - `DISCORD_BOT_TOKEN` - Discord bot token (required for Discord integration)
 - `DISCORD_CLIENT_ID` - Client ID for invite link generation
+- `DISCORD_ALLOWED_SERVERS` - Comma-separated server IDs to whitelist all channels (optional, supersedes channel list)
 - `DISCORD_ALLOWED_CHANNELS` - Comma-separated channel IDs to restrict bot (optional)
 - `DISCORD_ALLOWED_ROLES` - Comma-separated role IDs for access control (optional)
 - `DISCORD_MAX_MESSAGES` - Max messages in conversation chain (default: 25)
