@@ -255,6 +255,42 @@ Clara can interact with Azure DevOps projects, repos, work items, and pipelines:
 - `ado_search_code` - Search code across repos
 - `ado_list_iterations` / `ado_list_team_iterations` - View sprints/iterations
 
+### Google Workspace Integration (Discord Bot)
+Clara can interact with Google Sheets, Drive, and Docs using per-user OAuth 2.0:
+- `GOOGLE_CLIENT_ID` - OAuth 2.0 client ID from Google Cloud Console
+- `GOOGLE_CLIENT_SECRET` - OAuth 2.0 client secret
+- `GOOGLE_REDIRECT_URI` - Callback URL (e.g., https://your-app.up.railway.app/oauth/google/callback)
+
+**Connection Tools** (users must connect before using other tools):
+- `google_connect` - Generate OAuth URL to connect Google account
+- `google_status` - Check if Google account is connected
+- `google_disconnect` - Disconnect Google account
+
+**Google Sheets Tools:**
+- `google_sheets_create` - Create a new spreadsheet
+- `google_sheets_read` - Read data from a range (A1 notation)
+- `google_sheets_write` - Write data to a range
+- `google_sheets_append` - Append rows to a sheet
+- `google_sheets_list` - List user's spreadsheets
+
+**Google Drive Tools:**
+- `google_drive_list` - List files with optional query
+- `google_drive_upload` - Upload text content as a file
+- `google_drive_download` - Download file content
+- `google_drive_create_folder` - Create a folder
+- `google_drive_share` - Share a file with someone
+
+**Google Docs Tools:**
+- `google_docs_create` - Create a new document
+- `google_docs_read` - Read document content
+- `google_docs_write` - Append text to a document
+
+**Setup:**
+1. Create OAuth 2.0 credentials in Google Cloud Console
+2. Enable Google Sheets, Drive, and Docs APIs
+3. Add your Railway URL to "Authorized redirect URIs": `https://your-app.up.railway.app/oauth/google/callback`
+4. Set the environment variables above
+
 ### Claude Code Integration (Discord Bot)
 Clara can delegate complex coding tasks to Claude Code, an autonomous AI coding agent.
 
