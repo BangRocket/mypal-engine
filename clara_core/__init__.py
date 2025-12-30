@@ -34,6 +34,8 @@ from clara_core.llm import (
     make_llm,
     make_llm_streaming,
     make_llm_with_tools,
+    make_llm_with_tools_anthropic,
+    anthropic_to_openai_response,
     get_model_for_tier,
     get_current_tier,
     get_tier_info,
@@ -61,6 +63,8 @@ __all__ = [
     "make_llm",
     "make_llm_streaming",
     "make_llm_with_tools",
+    "make_llm_with_tools_anthropic",
+    "anthropic_to_openai_response",
     # Model tiers
     "ModelTier",
     "get_model_for_tier",

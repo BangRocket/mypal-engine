@@ -40,7 +40,7 @@ poetry run python clear_dbs.py --user <id> # Clear specific user
 - `discord_bot.py` - Discord bot with multi-user support, reply chains, and streaming responses
 - `discord_monitor.py` - Web dashboard for monitoring Discord bot status and activity
 - `memory_manager.py` - Core orchestrator: session handling, mem0 integration, prompt building with Clara's persona
-- `llm_backends.py` - LLM provider abstraction (OpenRouter, NanoGPT, custom OpenAI) - both streaming and non-streaming
+- `llm_backends.py` - LLM provider abstraction (OpenRouter, NanoGPT, custom OpenAI, native Anthropic) - both streaming and non-streaming
 - `mem0_config.py` - mem0 memory system configuration (Qdrant/pgvector for vectors, OpenAI embeddings)
 - `models.py` - SQLAlchemy models: Project, Session, Message, ChannelSummary
 - `db.py` - Database setup (SQLite for dev, PostgreSQL for production)
@@ -66,7 +66,7 @@ poetry run python clear_dbs.py --user <id> # Clear specific user
 
 ### Required
 - `OPENAI_API_KEY` - Always required for mem0 embeddings (text-embedding-3-small)
-- `LLM_PROVIDER` - Chat LLM provider: "openrouter" (default), "nanogpt", or "openai"
+- `LLM_PROVIDER` - Chat LLM provider: "openrouter" (default), "nanogpt", "openai", or "anthropic"
 
 ### Chat LLM Providers (based on LLM_PROVIDER)
 
@@ -84,6 +84,13 @@ poetry run python clear_dbs.py --user <id> # Clear specific user
 - `CUSTOM_OPENAI_BASE_URL` - Base URL (default: https://api.openai.com/v1)
 - `CUSTOM_OPENAI_MODEL` - Chat model (default: gpt-4o)
 
+**Anthropic** (`LLM_PROVIDER=anthropic`):
+- `ANTHROPIC_API_KEY` - Anthropic API key
+- `ANTHROPIC_BASE_URL` - Custom base URL for proxies like clewdr (optional)
+- `ANTHROPIC_MODEL` - Chat model (default: claude-sonnet-4-5-20250514)
+
+Uses native Anthropic SDK with native tool calling. Recommended for Claude proxies like clewdr.
+
 ### Model Tiers (Discord Bot)
 The Discord bot supports dynamic model selection via message prefixes:
 - `!high` or `!opus` → High tier (Opus-class, most capable)
@@ -94,6 +101,7 @@ Optional tier-specific model overrides:
 - `OPENROUTER_MODEL_HIGH`, `OPENROUTER_MODEL_MID`, `OPENROUTER_MODEL_LOW`
 - `NANOGPT_MODEL_HIGH`, `NANOGPT_MODEL_MID`, `NANOGPT_MODEL_LOW`
 - `CUSTOM_OPENAI_MODEL_HIGH`, `CUSTOM_OPENAI_MODEL_MID`, `CUSTOM_OPENAI_MODEL_LOW`
+- `ANTHROPIC_MODEL_HIGH`, `ANTHROPIC_MODEL_MID`, `ANTHROPIC_MODEL_LOW`
 - `MODEL_TIER` - Default tier when not specified (default: "mid")
 
 Example usage in Discord: `!high What is quantum entanglement?`
@@ -104,10 +112,12 @@ For custom OpenAI endpoints behind Cloudflare Access (like cloudflared tunnels):
 - `CF_ACCESS_CLIENT_SECRET` - Cloudflare Access Service Token client secret
 
 ### Mem0 Provider (independent from chat LLM)
-- `MEM0_PROVIDER` - Provider for memory extraction: "openrouter" (default), "nanogpt", or "openai"
+- `MEM0_PROVIDER` - Provider for memory extraction: "openrouter" (default), "nanogpt", "openai", or "anthropic"
 - `MEM0_MODEL` - Model for memory extraction (default: openai/gpt-4o-mini)
 - `MEM0_API_KEY` - Optional: override the provider's default API key
 - `MEM0_BASE_URL` - Optional: override the provider's default base URL
+
+Note: For `MEM0_PROVIDER=anthropic`, uses native Anthropic SDK with `anthropic_base_url` support for proxies.
 
 ### Optional
 - `USER_ID` - Single-user identifier (default: "demo-user")
@@ -181,10 +191,12 @@ By default, tool calling uses the **same endpoint and model as your main chat LL
 Optional overrides:
 - `TOOL_API_KEY` - Override API key for tool calls
 - `TOOL_BASE_URL` - Override base URL for tool calls
-- `TOOL_MODEL` - Override model for tool calls
-- `TOOL_FORMAT` - Tool definition format: `openai` (default) or `claude`
 
-**For Claude proxies (like clewdr)**: Set `TOOL_FORMAT=claude` to convert tool definitions to Claude's format.
+**For Claude proxies (like clewdr)**: Use `LLM_PROVIDER=anthropic` with `ANTHROPIC_BASE_URL` for native Anthropic SDK support. This uses native Claude tool calling without format conversion.
+
+### Deprecated
+- `TOOL_FORMAT` - No longer needed. Use `LLM_PROVIDER=anthropic` for native Claude tool calling.
+- `TOOL_MODEL` - No longer used. Tool calls respect tier-based model selection (`!high`, `!mid`, `!low`).
 
 To enable Docker sandbox + web search:
 ```bash
@@ -275,8 +287,10 @@ Clara can delegate complex coding tasks to Claude Code, an autonomous AI coding 
 ## Key Patterns
 
 - Discord bot uses global `MemoryManager` instance initialized at startup with LLM callable
-- All LLM backends use OpenAI-compatible API (OpenAI SDK)
+- LLM backends support OpenAI-compatible API (via OpenAI SDK) and native Anthropic SDK
+- `LLM_PROVIDER=anthropic` uses native Anthropic SDK with native tool calling (recommended for clewdr)
 - Sandbox system auto-selects between local Docker and remote VPS based on configuration
+- mem0 is vendored locally (in `vendor/mem0/`) with fix for `anthropic_base_url` support
 
 ## Production Deployment
 
