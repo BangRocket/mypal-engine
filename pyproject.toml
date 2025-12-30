@@ -16,9 +16,11 @@ uvicorn = {extras = ["standard"], version = "^0.38.0"}
 # Database
 sqlalchemy = "^2.0"
 
-# Memory system (OSS) with graph support
-mem0ai = {extras = ["graph"], version = "^1.0.1"}
+# Memory system - using vendored mem0 with fixes (vendor/mem0)
+# Dependencies needed by the vendored mem0:
+qdrant-client = "^1.7.0"  # Vector store for local dev
 neo4j = "^5.0"  # Graph database driver
+kuzu = "^0.9.0"  # Embedded graph database (optional)
 
 # PostgreSQL support
 psycopg2-binary = "^2.9.9"  # PostgreSQL driver
