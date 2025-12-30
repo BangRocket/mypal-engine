@@ -338,6 +338,10 @@ Automated backup service for Clara and Mem0 PostgreSQL databases to S3-compatibl
 - `S3_SECRET_KEY` - S3 secret key
 - `S3_REGION` - S3 region (default: us-east-1)
 - `BACKUP_RETENTION_DAYS` - Days to keep backups (default: 7)
+- `RESPAWN_PROTECTION_HOURS` - Min hours between backups (default: 23)
+- `FORCE_BACKUP` - Set to "true" to bypass respawn protection
+- `DB_RETRY_ATTEMPTS` - Max DB connection retries (default: 5)
+- `DB_RETRY_DELAY` - Initial retry delay in seconds (default: 2)
 
 **Railway Deployment:**
 Deploy as a separate Railway service with cron schedule:
