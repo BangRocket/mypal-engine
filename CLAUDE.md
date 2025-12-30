@@ -87,7 +87,7 @@ poetry run python clear_dbs.py --user <id> # Clear specific user
 **Anthropic** (`LLM_PROVIDER=anthropic`):
 - `ANTHROPIC_API_KEY` - Anthropic API key
 - `ANTHROPIC_BASE_URL` - Custom base URL for proxies like clewdr (optional)
-- `ANTHROPIC_MODEL` - Chat model (default: claude-sonnet-4-5-20250514)
+- `ANTHROPIC_MODEL` - Chat model (default: claude-sonnet-4-5)
 
 Uses native Anthropic SDK with native tool calling. Recommended for Claude proxies like clewdr.
 
