@@ -481,14 +481,16 @@ def _make_anthropic_llm_with_model(
     client = _get_anthropic_client()
 
     def llm(messages: list[dict[str, str]]) -> str:
-        # Extract system message (Anthropic handles it separately)
-        system = ""
+        # Extract system messages (Anthropic handles it separately)
+        # Concatenate multiple system messages since build_prompt creates two
+        system_parts = []
         filtered = []
         for m in messages:
             if m.get("role") == "system":
-                system = m.get("content", "")
+                system_parts.append(m.get("content", ""))
             else:
                 filtered.append(m)
+        system = "\n\n".join(system_parts)
 
         kwargs: dict = {
             "model": model,
@@ -601,14 +603,16 @@ def _make_anthropic_llm_streaming_with_model(
     client = _get_anthropic_client()
 
     def llm(messages: list[dict[str, str]]) -> Generator[str, None, None]:
-        # Extract system message (Anthropic handles it separately)
-        system = ""
+        # Extract system messages (Anthropic handles it separately)
+        # Concatenate multiple system messages since build_prompt creates two
+        system_parts = []
         filtered = []
         for m in messages:
             if m.get("role") == "system":
-                system = m.get("content", "")
+                system_parts.append(m.get("content", ""))
             else:
                 filtered.append(m)
+        system = "\n\n".join(system_parts)
 
         kwargs: dict = {
             "model": model,
@@ -812,14 +816,16 @@ def make_llm_with_tools_anthropic(
     model = get_model_for_tier(effective_tier, "anthropic")
 
     def llm(messages: list[dict]) -> anthropic.types.Message:
-        # Extract system message
-        system = ""
+        # Extract system messages (Anthropic handles it separately)
+        # Concatenate multiple system messages since build_prompt creates two
+        system_parts = []
         filtered = []
         for m in messages:
             if m.get("role") == "system":
-                system = m.get("content", "")
+                system_parts.append(m.get("content", ""))
             else:
                 filtered.append(_convert_message_to_anthropic(m))
+        system = "\n\n".join(system_parts)
 
         kwargs: dict = {
             "model": model,
