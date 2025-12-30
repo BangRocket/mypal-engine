@@ -21,6 +21,7 @@ sqlalchemy = "^2.0"
 qdrant-client = "^1.7.0"  # Vector store for local dev
 neo4j = "^5.0"  # Graph database driver
 kuzu = "^0.9.0"  # Embedded graph database (optional)
+posthog = "^3.0.0"  # Telemetry (required by mem0)
 
 # PostgreSQL support
 psycopg2-binary = "^2.9.9"  # PostgreSQL driver
