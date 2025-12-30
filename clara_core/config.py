@@ -69,6 +69,7 @@ class ClaraConfig:
     # Discord
     discord_bot_token: str = ""
     discord_client_id: str = ""
+    discord_allowed_servers: str = ""
     discord_allowed_channels: str = ""
     discord_allowed_roles: str = ""
     discord_max_messages: int = 25
@@ -163,6 +164,7 @@ class ClaraConfig:
             # Discord
             discord_bot_token=os.getenv("DISCORD_BOT_TOKEN", ""),
             discord_client_id=os.getenv("DISCORD_CLIENT_ID", ""),
+            discord_allowed_servers=os.getenv("DISCORD_ALLOWED_SERVERS", ""),
             discord_allowed_channels=os.getenv("DISCORD_ALLOWED_CHANNELS", ""),
             discord_allowed_roles=os.getenv("DISCORD_ALLOWED_ROLES", ""),
             discord_max_messages=int(os.getenv("DISCORD_MAX_MESSAGES", "25")),
