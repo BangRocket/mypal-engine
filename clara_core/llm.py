@@ -236,10 +236,20 @@ def _get_anthropic_client() -> Anthropic:
         if base_url:
             client_kwargs["base_url"] = base_url
 
+        # Build default headers
+        headers = {}
+
         # Add Cloudflare Access headers if configured
         cf_headers = _get_cf_access_headers()
         if cf_headers:
-            client_kwargs["default_headers"] = cf_headers
+            headers.update(cf_headers)
+
+        # Override User-Agent to avoid Cloudflare bot detection
+        if base_url:
+            headers["User-Agent"] = "Clara/1.0"
+
+        if headers:
+            client_kwargs["default_headers"] = headers
 
         _anthropic_client = Anthropic(**client_kwargs)
     return _anthropic_client
@@ -267,10 +277,20 @@ def _get_anthropic_tool_client() -> Anthropic:
         if base_url:
             client_kwargs["base_url"] = base_url
 
+        # Build default headers
+        headers = {}
+
         # Add Cloudflare Access headers if configured
         cf_headers = _get_cf_access_headers()
         if cf_headers:
-            client_kwargs["default_headers"] = cf_headers
+            headers.update(cf_headers)
+
+        # Override User-Agent to avoid Cloudflare bot detection
+        if base_url:
+            headers["User-Agent"] = "Clara/1.0"
+
+        if headers:
+            client_kwargs["default_headers"] = headers
 
         _anthropic_tool_client = Anthropic(**client_kwargs)
     return _anthropic_tool_client
