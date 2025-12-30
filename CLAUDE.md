@@ -288,8 +288,34 @@ Clara can interact with Google Sheets, Drive, and Docs using per-user OAuth 2.0:
 **Setup:**
 1. Create OAuth 2.0 credentials in Google Cloud Console
 2. Enable Google Sheets, Drive, and Docs APIs
-3. Add your Railway URL to "Authorized redirect URIs": `https://your-app.up.railway.app/oauth/google/callback`
-4. Set the environment variables above
+3. Deploy the API service (see below) and add its URL to "Authorized redirect URIs": `https://your-api.up.railway.app/oauth/google/callback`
+4. Set the environment variables on both the Discord bot and API service
+
+### API Service (OAuth & Endpoints)
+
+Standalone FastAPI service for OAuth callbacks and API endpoints. Runs separately from the Discord bot.
+
+**Location:** `api_service/`
+
+**Environment Variables:**
+- `DATABASE_URL` - PostgreSQL connection string (same as Discord bot)
+- `GOOGLE_CLIENT_ID` - Google OAuth client ID
+- `GOOGLE_CLIENT_SECRET` - Google OAuth client secret
+- `GOOGLE_REDIRECT_URI` - OAuth callback URL (e.g., https://your-api.up.railway.app/oauth/google/callback)
+
+**Endpoints:**
+- `GET /health` - Health check
+- `GET /oauth/google/authorize/{user_id}` - Get OAuth authorization URL
+- `GET /oauth/google/callback` - OAuth callback handler
+- `GET /oauth/google/status/{user_id}` - Check connection status
+- `POST /oauth/google/disconnect/{user_id}` - Disconnect account
+
+**Railway Deployment:**
+1. Create new service from `api_service/` directory
+2. Set root directory to `api_service`
+3. Enable public networking and note the domain
+4. Set environment variables
+5. Update `GOOGLE_REDIRECT_URI` on both services to use the API service URL
 
 ### Claude Code Integration (Discord Bot)
 Clara can delegate complex coding tasks to Claude Code, an autonomous AI coding agent.
