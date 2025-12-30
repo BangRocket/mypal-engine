@@ -68,9 +68,9 @@ DEFAULT_MODELS = {
         "low": "gpt-4o-mini",
     },
     "anthropic": {
-        "high": "claude-opus-4-5-20250514",
-        "mid": "claude-sonnet-4-5-20250514",
-        "low": "claude-haiku-4-5-20250514",
+        "high": "claude-opus-4-5",
+        "mid": "claude-sonnet-4-5",
+        "low": "claude-haiku-4-5",
     },
 }
 
