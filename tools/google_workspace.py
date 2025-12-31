@@ -171,13 +171,54 @@ async def google_status(args: dict[str, Any], ctx: ToolContext) -> str:
             }
         )
 
+    # Include diagnostic info for debugging
+    from db.connection import SessionLocal
+    from db.models import GoogleOAuthToken
+
+    debug_info = {
+        "user_id_checked": ctx.user_id,
+        "db_configured": SessionLocal is not None,
+    }
+
+    try:
+        with SessionLocal() as session:
+            token_record = (
+                session.query(GoogleOAuthToken)
+                .filter(GoogleOAuthToken.user_id == ctx.user_id)
+                .first()
+            )
+            if token_record:
+                debug_info["token_found"] = True
+                debug_info["token_user_id"] = token_record.user_id
+                debug_info["expires_at"] = (
+                    token_record.expires_at.isoformat()
+                    if token_record.expires_at
+                    else None
+                )
+                debug_info["has_refresh_token"] = bool(token_record.refresh_token)
+            else:
+                debug_info["token_found"] = False
+                # Check how many tokens exist total (for debugging)
+                total_tokens = session.query(GoogleOAuthToken).count()
+                debug_info["total_tokens_in_db"] = total_tokens
+                if total_tokens > 0:
+                    # Show what user_ids exist (redacted)
+                    all_users = session.query(GoogleOAuthToken.user_id).all()
+                    debug_info["existing_user_ids"] = [
+                        u[0][:20] + "..." if len(u[0]) > 20 else u[0] for u in all_users
+                    ]
+    except Exception as e:
+        debug_info["db_error"] = str(e)
+
     connected = is_user_connected(ctx.user_id)
     return json.dumps(
         {
             "configured": True,
             "connected": connected,
             "message": "Connected" if connected else "Not connected",
-        }
+            "debug": debug_info,
+        },
+        indent=2,
     )
 
 
