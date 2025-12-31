@@ -380,33 +380,49 @@ Clara can delegate complex coding tasks to Claude Code, an autonomous AI coding 
 @Clara claude_code: Write unit tests for the utils module in /path/to/project
 ```
 
-### Proactive Conversation Engine (Discord Bot)
+### Organic Response System (ORS) - Proactive Conversations
 Clara can initiate conversations without user prompting when there's genuine reason to reach out.
 
-**Philosophy:** Reach out when there's genuine reason - not on a schedule. Feel like a thoughtful friend who knows when to check in vs. leave you alone.
+**Philosophy:** Reach out when there's genuine reason - not on a schedule. Feel like a thoughtful friend who texts at the right moment, not because a timer went off.
 
 **Environment Variables:**
-- `PROACTIVE_ENABLED` - Enable proactive conversations (default: false)
-- `PROACTIVE_POLL_MINUTES` - How often to check for opportunities (default: 15)
-- `PROACTIVE_MIN_GAP_HOURS` - Minimum hours between proactive messages (default: 2)
-- `PROACTIVE_ACTIVE_DAYS` - Only check users active in last N days (default: 7)
+- `ORS_ENABLED` or `PROACTIVE_ENABLED` - Enable ORS (default: false)
+- `ORS_BASE_INTERVAL_MINUTES` - Base check interval, adapts dynamically (default: 15)
+- `ORS_MIN_SPEAK_GAP_HOURS` - Minimum hours between proactive messages (default: 2)
+- `ORS_ACTIVE_DAYS` - Only check users active in last N days (default: 7)
+- `ORS_NOTE_DECAY_DAYS` - Days before note relevance decays to 0 (default: 7)
+
+**State Machine:**
+```
+WAIT  ◄──► THINK ◄──► SPEAK
+  ▲                      │
+  └──────────────────────┘
+```
+
+- **WAIT** - No action needed. Stay quiet, but keep gathering context.
+- **THINK** - Something's brewing. Process and file an observation/note for later.
+- **SPEAK** - There's a clear reason to reach out now with purpose.
 
 **How it works:**
-1. Background service polls every 10-15 minutes
-2. Gathers context: time, calendar events, last interaction, patterns
-3. Clara decides: SPEAK (send message), WAIT (not now), or NOTE (save for later)
-4. Learns from responses to improve timing
+1. Continuous loop with adaptive timing (not fixed polling)
+2. Gathers rich context: temporal, calendar, conversation, notes, patterns
+3. Situation assessment: What's going on with the user?
+4. Action decision: WAIT, THINK, or SPEAK based on assessment
+5. Adaptive timing: Next check in 5 min to 8 hours based on context
+6. Note system: Observations accumulate, connect, and decay over time
 
-**Priority Levels:**
-- `low` - Casual check-ins (active hours only, high engagement required)
-- `normal` - Relevant reminders (active hours, reasonable gaps)
-- `high` - Time-sensitive items (wider window)
-- `critical` - Urgent/imminent (always, within reason)
+**Context Sources:**
+- Temporal: Time of day, day of week, active hours, time since last interaction
+- Calendar: Upcoming events (if Google Calendar connected)
+- Conversation: Last interaction summary, energy level, open threads
+- Notes: Accumulated observations with relevance scoring
+- Patterns: Response rates, preferred times, explicit boundaries
 
 **Database Tables:**
 - `proactive_messages` - History of proactive messages sent
-- `user_interaction_patterns` - Learned patterns per user
-- `proactive_notes` - Notes to surface later
+- `proactive_assessments` - Situation assessments for continuity
+- `proactive_notes` - Internal observations with relevance decay
+- `user_interaction_patterns` - Learned patterns per user (enhanced)
 
 ## Key Patterns
 
