@@ -111,6 +111,8 @@ When `AUTO_TIER_SELECTION=true`, Clara uses the fast/low model to classify messa
 - MID = Moderate tasks, explanations, summaries, most coding questions
 - HIGH = Complex reasoning, long-form writing, difficult coding, multi-step analysis
 
+The classifier considers recent conversation history (up to 4 messages) when making its decision. This prevents short replies like "yes" or "ok" from dropping to a lower tier when they're part of a complex ongoing discussion.
+
 Example usage in Discord: `!high What is quantum entanglement?`
 
 ### Cloudflare Access (for endpoints behind cloudflared)
@@ -157,10 +159,14 @@ poetry run python scripts/migrate_to_postgres.py --all
 - `DISCORD_ALLOWED_CHANNELS` - Comma-separated channel IDs to restrict bot (optional)
 - `DISCORD_ALLOWED_ROLES` - Comma-separated role IDs for access control (optional)
 - `DISCORD_MAX_MESSAGES` - Max messages in conversation chain (default: 25)
+- `DISCORD_STOP_PHRASES` - Comma-separated phrases that interrupt running tasks (default: "clara stop,stop clara,nevermind,never mind")
 - `DISCORD_SUMMARY_AGE_MINUTES` - Messages older than this are summarized (default: 30)
 - `DISCORD_CHANNEL_HISTORY_LIMIT` - Max messages to fetch from channel (default: 50)
 - `DISCORD_MONITOR_PORT` - Monitor dashboard port (default: 8001)
 - `DISCORD_MONITOR_ENABLED` - Enable monitor dashboard (default: true)
+
+**Stop Phrases:**
+Users can interrupt Clara mid-task by sending a stop phrase (e.g., "@Clara stop" or "@Clara nevermind"). This immediately cancels the current task and clears any queued requests for that channel. Useful when Clara is taking too long or working on the wrong thing.
 
 ### Sandbox Code Execution
 
