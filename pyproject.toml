@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "mypalclara"
-version = "0.5.0"
+version = "0.6.0"
 description = "MyPalClara - AI assistant with session management and memory"
 authors = ["Joshua Heidorn <heidornj@icloud.com>"]
 readme = "README.md"
