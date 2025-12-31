@@ -101,29 +101,16 @@ async def _calendar_request(
 # =============================================================================
 
 
-async def calendar_list_events(
-    ctx: ToolContext,
-    calendar_id: str = "primary",
-    time_min: str | None = None,
-    time_max: str | None = None,
-    max_results: int = 20,
-    query: str | None = None,
-) -> str:
-    """List upcoming calendar events.
-
-    Args:
-        ctx: Tool context with user_id
-        calendar_id: Calendar ID (default: "primary")
-        time_min: Start of time range (ISO 8601), defaults to now
-        time_max: End of time range (ISO 8601)
-        max_results: Maximum number of events (default: 20)
-        query: Free-text search query
-
-    Returns:
-        JSON string with events list
-    """
+async def calendar_list_events(args: dict[str, Any], ctx: ToolContext) -> str:
+    """List upcoming calendar events."""
     if not is_configured():
         return "Error: Google OAuth not configured."
+
+    calendar_id = args.get("calendar_id", "primary")
+    time_min = args.get("time_min")
+    time_max = args.get("time_max")
+    max_results = args.get("max_results", 20)
+    query = args.get("query")
 
     # Default time_min to now if not specified
     if not time_min:
@@ -182,23 +169,16 @@ async def calendar_list_events(
         return f"Error listing events: {e}"
 
 
-async def calendar_get_event(
-    ctx: ToolContext,
-    event_id: str,
-    calendar_id: str = "primary",
-) -> str:
-    """Get details of a specific event.
-
-    Args:
-        ctx: Tool context with user_id
-        event_id: Event ID
-        calendar_id: Calendar ID (default: "primary")
-
-    Returns:
-        JSON string with event details
-    """
+async def calendar_get_event(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Get details of a specific event."""
     if not is_configured():
         return "Error: Google OAuth not configured."
+
+    event_id = args.get("event_id")
+    calendar_id = args.get("calendar_id", "primary")
+
+    if not event_id:
+        return "Error: event_id is required"
 
     try:
         event = await _calendar_request(
@@ -213,35 +193,25 @@ async def calendar_get_event(
         return f"Error getting event: {e}"
 
 
-async def calendar_create_event(
-    ctx: ToolContext,
-    summary: str,
-    start: str,
-    end: str,
-    calendar_id: str = "primary",
-    description: str | None = None,
-    location: str | None = None,
-    attendees: list[str] | None = None,
-    reminders: dict | None = None,
-) -> str:
-    """Create a new calendar event.
-
-    Args:
-        ctx: Tool context with user_id
-        summary: Event title (required)
-        start: Start time in ISO 8601 format (required)
-        end: End time in ISO 8601 format (required)
-        calendar_id: Calendar ID (default: "primary")
-        description: Event description
-        location: Event location
-        attendees: List of attendee email addresses
-        reminders: Custom reminders config
-
-    Returns:
-        JSON string with created event details
-    """
+async def calendar_create_event(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Create a new calendar event."""
     if not is_configured():
         return "Error: Google OAuth not configured."
+
+    summary = args.get("summary")
+    start = args.get("start")
+    end = args.get("end")
+    calendar_id = args.get("calendar_id", "primary")
+    description = args.get("description")
+    location = args.get("location")
+    attendees = args.get("attendees")
+
+    if not summary:
+        return "Error: summary is required"
+    if not start:
+        return "Error: start is required"
+    if not end:
+        return "Error: end is required"
 
     # Build event body
     event_body: dict[str, Any] = {
@@ -266,9 +236,6 @@ async def calendar_create_event(
     if attendees:
         event_body["attendees"] = [{"email": email} for email in attendees]
 
-    if reminders:
-        event_body["reminders"] = reminders
-
     try:
         result = await _calendar_request(
             ctx.user_id, "POST", f"calendars/{calendar_id}/events", json_data=event_body
@@ -292,35 +259,22 @@ async def calendar_create_event(
         return f"Error creating event: {e}"
 
 
-async def calendar_update_event(
-    ctx: ToolContext,
-    event_id: str,
-    calendar_id: str = "primary",
-    summary: str | None = None,
-    start: str | None = None,
-    end: str | None = None,
-    description: str | None = None,
-    location: str | None = None,
-    attendees: list[str] | None = None,
-) -> str:
-    """Update an existing calendar event.
-
-    Args:
-        ctx: Tool context with user_id
-        event_id: Event ID (required)
-        calendar_id: Calendar ID (default: "primary")
-        summary: New event title
-        start: New start time in ISO 8601 format
-        end: New end time in ISO 8601 format
-        description: New event description
-        location: New event location
-        attendees: New list of attendee email addresses
-
-    Returns:
-        JSON string with updated event details
-    """
+async def calendar_update_event(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Update an existing calendar event."""
     if not is_configured():
         return "Error: Google OAuth not configured."
+
+    event_id = args.get("event_id")
+    calendar_id = args.get("calendar_id", "primary")
+    summary = args.get("summary")
+    start = args.get("start")
+    end = args.get("end")
+    description = args.get("description")
+    location = args.get("location")
+    attendees = args.get("attendees")
+
+    if not event_id:
+        return "Error: event_id is required"
 
     # First get the existing event
     try:
@@ -379,23 +333,16 @@ async def calendar_update_event(
         return f"Error updating event: {e}"
 
 
-async def calendar_delete_event(
-    ctx: ToolContext,
-    event_id: str,
-    calendar_id: str = "primary",
-) -> str:
-    """Delete a calendar event.
-
-    Args:
-        ctx: Tool context with user_id
-        event_id: Event ID (required)
-        calendar_id: Calendar ID (default: "primary")
-
-    Returns:
-        Success message
-    """
+async def calendar_delete_event(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Delete a calendar event."""
     if not is_configured():
         return "Error: Google OAuth not configured."
+
+    event_id = args.get("event_id")
+    calendar_id = args.get("calendar_id", "primary")
+
+    if not event_id:
+        return "Error: event_id is required"
 
     try:
         await _calendar_request(
@@ -410,15 +357,8 @@ async def calendar_delete_event(
         return f"Error deleting event: {e}"
 
 
-async def calendar_list_calendars(ctx: ToolContext) -> str:
-    """List available calendars for the user.
-
-    Args:
-        ctx: Tool context with user_id
-
-    Returns:
-        JSON string with calendars list
-    """
+async def calendar_list_calendars(args: dict[str, Any], ctx: ToolContext) -> str:
+    """List available calendars for the user."""
     if not is_configured():
         return "Error: Google OAuth not configured."
 
