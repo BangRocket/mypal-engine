@@ -103,6 +103,13 @@ Optional tier-specific model overrides:
 - `CUSTOM_OPENAI_MODEL_HIGH`, `CUSTOM_OPENAI_MODEL_MID`, `CUSTOM_OPENAI_MODEL_LOW`
 - `ANTHROPIC_MODEL_HIGH`, `ANTHROPIC_MODEL_MID`, `ANTHROPIC_MODEL_LOW`
 - `MODEL_TIER` - Default tier when not specified (default: "mid")
+- `AUTO_TIER_SELECTION` - Enable automatic tier selection based on message complexity (default: false)
+
+**Auto Tier Selection:**
+When `AUTO_TIER_SELECTION=true`, Clara uses the fast/low model to classify message complexity and automatically selects the appropriate tier:
+- LOW = Simple greetings, quick facts, basic questions, casual chat
+- MID = Moderate tasks, explanations, summaries, most coding questions
+- HIGH = Complex reasoning, long-form writing, difficult coding, multi-step analysis
 
 Example usage in Discord: `!high What is quantum entanglement?`
 
