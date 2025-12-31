@@ -360,9 +360,7 @@ def get_model_for_tier(tier: ModelTier, provider: str | None = None) -> str:
             return tier_model
         if tier == "mid":
             return os.getenv("ANTHROPIC_MODEL", DEFAULT_MODELS["anthropic"]["mid"])
-        return DEFAULT_MODELS["anthropic"].get(
-            tier, DEFAULT_MODELS["anthropic"]["mid"]
-        )
+        return DEFAULT_MODELS["anthropic"].get(tier, DEFAULT_MODELS["anthropic"]["mid"])
 
     else:
         raise ValueError(f"Unknown provider: {provider}")
@@ -738,18 +736,50 @@ def _convert_messages_to_claude_format(messages: list[dict]) -> list[dict]:
     return claude_messages
 
 
+def get_base_model(provider: str | None = None) -> str:
+    """Get the base model for a provider (without tier suffix).
+
+    Returns the model from the base env var (e.g., CUSTOM_OPENAI_MODEL)
+    rather than a tier-specific one (e.g., CUSTOM_OPENAI_MODEL_LOW).
+
+    Args:
+        provider: The LLM provider. If None, uses LLM_PROVIDER env var.
+
+    Returns:
+        The base model name.
+    """
+    if provider is None:
+        provider = os.getenv("LLM_PROVIDER", "openrouter").lower()
+
+    if provider == "openrouter":
+        return os.getenv("OPENROUTER_MODEL", DEFAULT_MODELS["openrouter"]["mid"])
+    elif provider == "nanogpt":
+        return os.getenv("NANOGPT_MODEL", DEFAULT_MODELS["nanogpt"]["mid"])
+    elif provider == "openai":
+        return os.getenv("CUSTOM_OPENAI_MODEL", DEFAULT_MODELS["openai"]["mid"])
+    elif provider == "anthropic":
+        return os.getenv("ANTHROPIC_MODEL", DEFAULT_MODELS["anthropic"]["mid"])
+    else:
+        raise ValueError(f"Unknown provider: {provider}")
+
+
 def _get_tool_model(tier: ModelTier | None = None) -> str:
     """Get the model to use for tool calling.
 
-    Always uses tier-based model selection to respect !high, !mid, !low prefixes.
-    The TOOL_MODEL env var is deprecated and ignored.
+    Tool calls never use "low" tier - they use the base model at minimum.
+    This ensures tools always have sufficient capability (never haiku).
 
     Args:
         tier: Optional tier override. If None, uses default tier.
+              "low" tier is bumped to use the base model.
     """
-    # Always use tier-based model selection
-    # This ensures !high, !mid, !low prefixes are respected for tool calls
     provider = os.getenv("LLM_PROVIDER", "openrouter").lower()
+
+    # Never use "low" tier for tools - use base model instead
+    if tier == "low":
+        return get_base_model(provider)
+
+    # For other tiers (high, mid, None), use tier-based selection
     effective_tier = tier or get_current_tier()
     return get_model_for_tier(effective_tier, provider)
 
@@ -803,17 +833,25 @@ def make_llm_with_tools_anthropic(
     Uses the native Anthropic SDK with native Claude tool format.
     Unlike make_llm_with_tools(), this returns Anthropic Message objects directly.
 
+    Tool calls never use "low" tier - they use the base model at minimum.
+
     Args:
         tools: List of tool definitions in OpenAI format (will be converted).
         tier: Optional model tier ("high", "mid", "low").
               If None, uses the default tier from MODEL_TIER env var or "mid".
+              "low" tier is bumped to use the base model.
 
     Returns:
         Function that calls Anthropic with native tool support.
     """
     client = _get_anthropic_tool_client()
-    effective_tier = tier or get_current_tier()
-    model = get_model_for_tier(effective_tier, "anthropic")
+
+    # Never use "low" tier for tools - use base model instead
+    if tier == "low":
+        model = get_base_model("anthropic")
+    else:
+        effective_tier = tier or get_current_tier()
+        model = get_model_for_tier(effective_tier, "anthropic")
 
     def llm(messages: list[dict]) -> anthropic.types.Message:
         # Extract system messages (Anthropic handles it separately)

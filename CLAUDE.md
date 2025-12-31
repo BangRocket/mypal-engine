@@ -103,6 +103,15 @@ Optional tier-specific model overrides:
 - `CUSTOM_OPENAI_MODEL_HIGH`, `CUSTOM_OPENAI_MODEL_MID`, `CUSTOM_OPENAI_MODEL_LOW`
 - `ANTHROPIC_MODEL_HIGH`, `ANTHROPIC_MODEL_MID`, `ANTHROPIC_MODEL_LOW`
 - `MODEL_TIER` - Default tier when not specified (default: "mid")
+- `AUTO_TIER_SELECTION` - Enable automatic tier selection based on message complexity (default: false)
+
+**Auto Tier Selection:**
+When `AUTO_TIER_SELECTION=true`, Clara uses the fast/low model to classify message complexity and automatically selects the appropriate tier:
+- LOW = Simple greetings, quick facts, basic questions, casual chat
+- MID = Moderate tasks, explanations, summaries, most coding questions
+- HIGH = Complex reasoning, long-form writing, difficult coding, multi-step analysis
+
+The classifier considers recent conversation history (up to 4 messages) when making its decision. This prevents short replies like "yes" or "ok" from dropping to a lower tier when they're part of a complex ongoing discussion.
 
 Example usage in Discord: `!high What is quantum entanglement?`
 
@@ -150,10 +159,14 @@ poetry run python scripts/migrate_to_postgres.py --all
 - `DISCORD_ALLOWED_CHANNELS` - Comma-separated channel IDs to restrict bot (optional)
 - `DISCORD_ALLOWED_ROLES` - Comma-separated role IDs for access control (optional)
 - `DISCORD_MAX_MESSAGES` - Max messages in conversation chain (default: 25)
+- `DISCORD_STOP_PHRASES` - Comma-separated phrases that interrupt running tasks (default: "clara stop,stop clara,nevermind,never mind")
 - `DISCORD_SUMMARY_AGE_MINUTES` - Messages older than this are summarized (default: 30)
 - `DISCORD_CHANNEL_HISTORY_LIMIT` - Max messages to fetch from channel (default: 50)
 - `DISCORD_MONITOR_PORT` - Monitor dashboard port (default: 8001)
 - `DISCORD_MONITOR_ENABLED` - Enable monitor dashboard (default: true)
+
+**Stop Phrases:**
+Users can interrupt Clara mid-task by sending a stop phrase (e.g., "@Clara stop" or "@Clara nevermind"). This immediately cancels the current task and clears any queued requests for that channel. Useful when Clara is taking too long or working on the wrong thing.
 
 ### Sandbox Code Execution
 
@@ -189,6 +202,16 @@ docker-compose up -d                # Start API service
 ### Tool Calling LLM
 By default, tool calling uses the **same endpoint and model as your main chat LLM**. This means if you're using a custom endpoint (like clewdr), tool calls go through it too.
 
+**Tool tier minimum**: Tool calls never use the "low" tier (e.g., Haiku). When a message triggers the "low" tier, tool calls automatically use the base model instead (e.g., `CUSTOM_OPENAI_MODEL`). This ensures tools always have sufficient capability for complex operations.
+
+Example configuration:
+```bash
+CUSTOM_OPENAI_MODEL="claude-sonnet-4-5"       # Base model (used for tools when tier=low)
+CUSTOM_OPENAI_MODEL_HIGH="claude-opus-4-5"   # High tier
+CUSTOM_OPENAI_MODEL_MID="claude-sonnet-4-5"  # Mid tier
+CUSTOM_OPENAI_MODEL_LOW="claude-haiku-4-5"   # Low tier (chat only, not for tools)
+```
+
 Optional overrides:
 - `TOOL_API_KEY` - Override API key for tool calls
 - `TOOL_BASE_URL` - Override base URL for tool calls
@@ -197,7 +220,7 @@ Optional overrides:
 
 ### Deprecated
 - `TOOL_FORMAT` - No longer needed. Use `LLM_PROVIDER=anthropic` for native Claude tool calling.
-- `TOOL_MODEL` - No longer used. Tool calls respect tier-based model selection (`!high`, `!mid`, `!low`).
+- `TOOL_MODEL` - No longer used. Tool calls use tier-based model selection, with "low" tier bumped to base model.
 
 To enable Docker sandbox + web search:
 ```bash
@@ -254,6 +277,70 @@ Clara can interact with Azure DevOps projects, repos, work items, and pipelines:
 - `ado_list_wikis` / `ado_get_wiki_page` / `ado_create_or_update_wiki_page` - Manage wikis
 - `ado_search_code` - Search code across repos
 - `ado_list_iterations` / `ado_list_team_iterations` - View sprints/iterations
+
+### Google Workspace Integration (Discord Bot)
+Clara can interact with Google Sheets, Drive, and Docs using per-user OAuth 2.0:
+- `GOOGLE_CLIENT_ID` - OAuth 2.0 client ID from Google Cloud Console
+- `GOOGLE_CLIENT_SECRET` - OAuth 2.0 client secret
+- `GOOGLE_REDIRECT_URI` - Callback URL (e.g., https://your-api.up.railway.app/oauth/google/callback)
+- `CLARA_API_URL` - API service URL for OAuth redirects (e.g., https://your-api.up.railway.app)
+
+**Connection Tools** (users must connect before using other tools):
+- `google_connect` - Generate OAuth URL to connect Google account
+- `google_status` - Check if Google account is connected
+- `google_disconnect` - Disconnect Google account
+
+**Google Sheets Tools:**
+- `google_sheets_create` - Create a new spreadsheet
+- `google_sheets_read` - Read data from a range (A1 notation)
+- `google_sheets_write` - Write data to a range
+- `google_sheets_append` - Append rows to a sheet
+- `google_sheets_list` - List user's spreadsheets
+
+**Google Drive Tools:**
+- `google_drive_list` - List files with optional query
+- `google_drive_upload` - Upload text content as a file
+- `google_drive_download` - Download file content
+- `google_drive_create_folder` - Create a folder
+- `google_drive_share` - Share a file with someone
+
+**Google Docs Tools:**
+- `google_docs_create` - Create a new document
+- `google_docs_read` - Read document content
+- `google_docs_write` - Append text to a document
+
+**Setup:**
+1. Create OAuth 2.0 credentials in Google Cloud Console
+2. Enable Google Sheets, Drive, and Docs APIs
+3. Deploy the API service (see below) and add its URL to "Authorized redirect URIs": `https://your-api.up.railway.app/oauth/google/callback`
+4. Set the environment variables on both the Discord bot and API service
+
+### API Service (OAuth & Endpoints)
+
+Standalone FastAPI service for OAuth callbacks and API endpoints. Runs separately from the Discord bot.
+
+**Location:** `api_service/`
+
+**Environment Variables:**
+- `DATABASE_URL` - PostgreSQL connection string (same as Discord bot)
+- `GOOGLE_CLIENT_ID` - Google OAuth client ID
+- `GOOGLE_CLIENT_SECRET` - Google OAuth client secret
+- `GOOGLE_REDIRECT_URI` - OAuth callback URL (e.g., https://your-api.up.railway.app/oauth/google/callback)
+
+**Endpoints:**
+- `GET /health` - Health check
+- `GET /oauth/google/authorize/{user_id}` - Get OAuth authorization URL (JSON)
+- `GET /oauth/google/start/{user_id}` - Redirect to Google OAuth (for Discord buttons)
+- `GET /oauth/google/callback` - OAuth callback handler
+- `GET /oauth/google/status/{user_id}` - Check connection status
+- `POST /oauth/google/disconnect/{user_id}` - Disconnect account
+
+**Railway Deployment:**
+1. Create new service from `api_service/` directory
+2. Set root directory to `api_service`
+3. Enable public networking and note the domain
+4. Set environment variables
+5. Update `GOOGLE_REDIRECT_URI` on both services to use the API service URL
 
 ### Claude Code Integration (Discord Bot)
 Clara can delegate complex coding tasks to Claude Code, an autonomous AI coding agent.
