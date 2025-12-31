@@ -279,7 +279,7 @@ Clara can interact with Azure DevOps projects, repos, work items, and pipelines:
 - `ado_list_iterations` / `ado_list_team_iterations` - View sprints/iterations
 
 ### Google Workspace Integration (Discord Bot)
-Clara can interact with Google Sheets, Drive, Docs, and Calendar using per-user OAuth 2.0:
+Clara can interact with Google Sheets, Drive, and Docs using per-user OAuth 2.0:
 - `GOOGLE_CLIENT_ID` - OAuth 2.0 client ID from Google Cloud Console
 - `GOOGLE_CLIENT_SECRET` - OAuth 2.0 client secret
 - `GOOGLE_REDIRECT_URI` - Callback URL (e.g., https://your-api.up.railway.app/oauth/google/callback)
@@ -309,17 +309,9 @@ Clara can interact with Google Sheets, Drive, Docs, and Calendar using per-user 
 - `google_docs_read` - Read document content
 - `google_docs_write` - Append text to a document
 
-**Google Calendar Tools:**
-- `google_calendar_list_events` - List upcoming events (with filters)
-- `google_calendar_get_event` - Get specific event details
-- `google_calendar_create_event` - Create a new event
-- `google_calendar_update_event` - Modify an existing event
-- `google_calendar_delete_event` - Delete an event
-- `google_calendar_list_calendars` - List available calendars
-
 **Setup:**
 1. Create OAuth 2.0 credentials in Google Cloud Console
-2. Enable Google Sheets, Drive, Docs, and Calendar APIs
+2. Enable Google Sheets, Drive, and Docs APIs
 3. Deploy the API service (see below) and add its URL to "Authorized redirect URIs": `https://your-api.up.railway.app/oauth/google/callback`
 4. Set the environment variables on both the Discord bot and API service
 
@@ -379,34 +371,6 @@ Clara can delegate complex coding tasks to Claude Code, an autonomous AI coding 
 @Clara Use Claude Code to add error handling to src/api/users.py
 @Clara claude_code: Write unit tests for the utils module in /path/to/project
 ```
-
-### Proactive Conversation Engine (Discord Bot)
-Clara can initiate conversations without user prompting when there's genuine reason to reach out.
-
-**Philosophy:** Reach out when there's genuine reason - not on a schedule. Feel like a thoughtful friend who knows when to check in vs. leave you alone.
-
-**Environment Variables:**
-- `PROACTIVE_ENABLED` - Enable proactive conversations (default: false)
-- `PROACTIVE_POLL_MINUTES` - How often to check for opportunities (default: 15)
-- `PROACTIVE_MIN_GAP_HOURS` - Minimum hours between proactive messages (default: 2)
-- `PROACTIVE_ACTIVE_DAYS` - Only check users active in last N days (default: 7)
-
-**How it works:**
-1. Background service polls every 10-15 minutes
-2. Gathers context: time, calendar events, last interaction, patterns
-3. Clara decides: SPEAK (send message), WAIT (not now), or NOTE (save for later)
-4. Learns from responses to improve timing
-
-**Priority Levels:**
-- `low` - Casual check-ins (active hours only, high engagement required)
-- `normal` - Relevant reminders (active hours, reasonable gaps)
-- `high` - Time-sensitive items (wider window)
-- `critical` - Urgent/imminent (always, within reason)
-
-**Database Tables:**
-- `proactive_messages` - History of proactive messages sent
-- `user_interaction_patterns` - Learned patterns per user
-- `proactive_notes` - Notes to surface later
 
 ## Key Patterns
 
