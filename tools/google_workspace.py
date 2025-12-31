@@ -4,23 +4,27 @@ Provides integration with Google Workspace APIs via per-user OAuth.
 Users must connect their Google account before using these tools.
 
 Requires env vars: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI
+Also needs: CLARA_API_URL for OAuth redirect (Discord button URL limit is 512 chars)
 """
 
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 import httpx
 
 from ._base import ToolContext, ToolDef
 from .google_oauth import (
-    get_authorization_url,
     get_valid_token,
     is_configured,
     is_user_connected,
     revoke_token,
 )
+
+# API service base URL for OAuth redirects (keeps Discord button URLs short)
+CLARA_API_URL = os.getenv("CLARA_API_URL", "")
 
 MODULE_NAME = "google_workspace"
 MODULE_VERSION = "1.0.0"
@@ -131,19 +135,27 @@ async def google_connect(args: dict[str, Any], ctx: ToolContext) -> str:
     if not is_configured():
         return "Error: Google OAuth is not configured on this server."
 
+    if not CLARA_API_URL:
+        return "Error: CLARA_API_URL not configured. Cannot generate OAuth link."
+
     if is_user_connected(ctx.user_id):
         return "Already connected. Use google_disconnect first to reconnect."
 
     try:
-        url = get_authorization_url(ctx.user_id)
+        # Use short redirect URL (Discord buttons have 512 char URL limit)
+        # The API service will redirect to the full Google OAuth URL
+        url = f"{CLARA_API_URL.rstrip('/')}/oauth/google/start/{ctx.user_id}"
+
         # Return structured response for Discord button rendering
-        return json.dumps({
-            "_discord_button": True,
-            "url": url,
-            "label": "Connect Google Account",
-            "emoji": "🔗",
-            "message": "Click the button below to connect your Google account:",
-        })
+        return json.dumps(
+            {
+                "_discord_button": True,
+                "url": url,
+                "label": "Connect Google Account",
+                "emoji": "🔗",
+                "message": "Click the button below to connect your Google account:",
+            }
+        )
     except Exception as e:
         return f"Error generating authorization URL: {e}"
 
@@ -151,11 +163,13 @@ async def google_connect(args: dict[str, Any], ctx: ToolContext) -> str:
 async def google_status(args: dict[str, Any], ctx: ToolContext) -> str:
     """Check if user's Google account is connected."""
     if not is_configured():
-        return json.dumps({
-            "configured": False,
-            "connected": False,
-            "message": "Google OAuth not configured",
-        })
+        return json.dumps(
+            {
+                "configured": False,
+                "connected": False,
+                "message": "Google OAuth not configured",
+            }
+        )
 
     connected = is_user_connected(ctx.user_id)
     return json.dumps(

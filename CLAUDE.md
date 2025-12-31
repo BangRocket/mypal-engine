@@ -196,6 +196,16 @@ docker-compose up -d                # Start API service
 ### Tool Calling LLM
 By default, tool calling uses the **same endpoint and model as your main chat LLM**. This means if you're using a custom endpoint (like clewdr), tool calls go through it too.
 
+**Tool tier minimum**: Tool calls never use the "low" tier (e.g., Haiku). When a message triggers the "low" tier, tool calls automatically use the base model instead (e.g., `CUSTOM_OPENAI_MODEL`). This ensures tools always have sufficient capability for complex operations.
+
+Example configuration:
+```bash
+CUSTOM_OPENAI_MODEL="claude-sonnet-4-5"       # Base model (used for tools when tier=low)
+CUSTOM_OPENAI_MODEL_HIGH="claude-opus-4-5"   # High tier
+CUSTOM_OPENAI_MODEL_MID="claude-sonnet-4-5"  # Mid tier
+CUSTOM_OPENAI_MODEL_LOW="claude-haiku-4-5"   # Low tier (chat only, not for tools)
+```
+
 Optional overrides:
 - `TOOL_API_KEY` - Override API key for tool calls
 - `TOOL_BASE_URL` - Override base URL for tool calls
@@ -204,7 +214,7 @@ Optional overrides:
 
 ### Deprecated
 - `TOOL_FORMAT` - No longer needed. Use `LLM_PROVIDER=anthropic` for native Claude tool calling.
-- `TOOL_MODEL` - No longer used. Tool calls respect tier-based model selection (`!high`, `!mid`, `!low`).
+- `TOOL_MODEL` - No longer used. Tool calls use tier-based model selection, with "low" tier bumped to base model.
 
 To enable Docker sandbox + web search:
 ```bash
@@ -266,7 +276,8 @@ Clara can interact with Azure DevOps projects, repos, work items, and pipelines:
 Clara can interact with Google Sheets, Drive, and Docs using per-user OAuth 2.0:
 - `GOOGLE_CLIENT_ID` - OAuth 2.0 client ID from Google Cloud Console
 - `GOOGLE_CLIENT_SECRET` - OAuth 2.0 client secret
-- `GOOGLE_REDIRECT_URI` - Callback URL (e.g., https://your-app.up.railway.app/oauth/google/callback)
+- `GOOGLE_REDIRECT_URI` - Callback URL (e.g., https://your-api.up.railway.app/oauth/google/callback)
+- `CLARA_API_URL` - API service URL for OAuth redirects (e.g., https://your-api.up.railway.app)
 
 **Connection Tools** (users must connect before using other tools):
 - `google_connect` - Generate OAuth URL to connect Google account
@@ -312,7 +323,8 @@ Standalone FastAPI service for OAuth callbacks and API endpoints. Runs separatel
 
 **Endpoints:**
 - `GET /health` - Health check
-- `GET /oauth/google/authorize/{user_id}` - Get OAuth authorization URL
+- `GET /oauth/google/authorize/{user_id}` - Get OAuth authorization URL (JSON)
+- `GET /oauth/google/start/{user_id}` - Redirect to Google OAuth (for Discord buttons)
 - `GET /oauth/google/callback` - OAuth callback handler
 - `GET /oauth/google/status/{user_id}` - Check connection status
 - `POST /oauth/google/disconnect/{user_id}` - Disconnect account
