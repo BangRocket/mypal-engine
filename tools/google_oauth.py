@@ -30,7 +30,8 @@ GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 # Scopes for Google Workspace (Sheets, Drive, Docs)
 GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/drive.readonly",  # Read access to all Drive files
+    "https://www.googleapis.com/auth/drive.file",      # Write access to app-created files
     "https://www.googleapis.com/auth/documents",
 ]
 

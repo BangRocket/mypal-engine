@@ -136,7 +136,14 @@ async def google_connect(args: dict[str, Any], ctx: ToolContext) -> str:
 
     try:
         url = get_authorization_url(ctx.user_id)
-        return f"Click this link to connect your Google account:\n{url}"
+        # Return structured response for Discord button rendering
+        return json.dumps({
+            "_discord_button": True,
+            "url": url,
+            "label": "Connect Google Account",
+            "emoji": "🔗",
+            "message": "Click the button below to connect your Google account:",
+        })
     except Exception as e:
         return f"Error generating authorization URL: {e}"
 
