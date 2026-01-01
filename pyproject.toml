@@ -79,11 +79,11 @@ exclude = [
 [tool.ruff.lint]
 select = ["E", "F", "I"]
 ignore = [
-    "E501",  # Line too long - handled by formatter
-    "E402",  # Module level import not at top of file
-    "E741",  # Ambiguous variable name
-    "F401",  # Imported but unused (handled per-file)
-    "F841",  # Local variable assigned but never used
+    "E501",
+    "E402",
+    "E741",
+    "F401",
+    "F841",
 ]
 
 [tool.ruff.lint.per-file-ignores]
