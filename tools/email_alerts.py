@@ -657,7 +657,7 @@ async def email_status(args: dict[str, Any], ctx: ToolContext) -> str:
 async def email_recent_alerts(args: dict[str, Any], ctx: ToolContext) -> str:
     """View recent email alerts."""
     user_id = ctx.user_id
-    limit = args.get("limit", 10)
+    limit = int(args.get("limit", 10))
 
     with SessionLocal() as session:
         alerts = (
@@ -749,7 +749,7 @@ async def email_list_folders(args: dict[str, Any], ctx: ToolContext) -> str:
 async def email_list_inbox(args: dict[str, Any], ctx: ToolContext) -> str:
     """List recent emails from inbox."""
     user_id = ctx.user_id
-    limit = args.get("limit", 20)
+    limit = int(args.get("limit", 20))
     unread_only = args.get("unread_only", False)
     account_email = args.get("account")
     folder = args.get("folder", "INBOX")
@@ -825,7 +825,7 @@ async def email_search(args: dict[str, Any], ctx: ToolContext) -> str:
     after_str = args.get("after")
     before_str = args.get("before")
     unread_only = args.get("unread_only", False)
-    limit = args.get("limit", 20)
+    limit = int(args.get("limit", 20))
     account_email = args.get("account")
     folder = args.get("folder", "INBOX")
 
