@@ -825,7 +825,8 @@ async def email_search(args: dict[str, Any], ctx: ToolContext) -> str:
 
     user_id = ctx.user_id
     query = args.get("query")
-    from_addr = args.get("from_addr")
+    # Check multiple possible parameter names for sender filter
+    from_addr = args.get("from_addr") or args.get("from") or args.get("sender")
     subject = args.get("subject")
 
     logger.info(f"Parsed: query={query!r}, from_addr={from_addr!r}, subject={subject!r}")
@@ -1309,21 +1310,21 @@ TOOLS = [
     ),
     ToolDef(
         name="email_search",
-        description="Search emails with filters (from, subject, date, text, folder).",
+        description="Search emails by sender, subject, date, or text content.",
         parameters={
             "type": "object",
             "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Full text search query",
-                },
                 "from_addr": {
                     "type": "string",
-                    "description": "Filter by sender address or name",
+                    "description": "Filter by sender (e.g. 'ziprecruiter' or 'boss@company.com'). Use this to find emails FROM a specific person or company.",
                 },
                 "subject": {
                     "type": "string",
-                    "description": "Filter by subject contains",
+                    "description": "Filter by subject line contains this text",
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Full text search in email body",
                 },
                 "after": {
                     "type": "string",
