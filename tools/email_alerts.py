@@ -14,7 +14,12 @@ from ._base import ToolContext, ToolDef
 from db.connection import SessionLocal
 from db.models import EmailAccount, EmailAlert, EmailRule
 from email_service.credentials import encrypt_credential, is_encryption_configured
-from email_service.presets import apply_preset, get_preset_info, list_presets, remove_preset
+from email_service.presets import (
+    apply_preset,
+    get_preset_info,
+    list_presets,
+    remove_preset,
+)
 from email_service.providers.gmail import GmailProvider
 from email_service.providers.imap import IMAPProvider
 from tools.google_oauth import is_user_connected
@@ -49,8 +54,9 @@ You can help users monitor their email accounts and get Discord alerts for impor
 - `email_remove_rule` - Remove a rule
 
 **Inbox Search & Reading:**
-- `email_list_inbox` - List recent emails from inbox
-- `email_search` - Search emails with filters (from, subject, date, unread)
+- `email_list_folders` - List available folders/labels
+- `email_list_inbox` - List recent emails from inbox (or specific folder)
+- `email_search` - Search emails with filters (from, subject, date, unread, folder)
 - `email_read` - Read full email content by ID
 
 **Status:**
@@ -245,9 +251,7 @@ async def email_list_accounts(args: dict[str, Any], ctx: ToolContext) -> str:
 
     with SessionLocal() as session:
         accounts = (
-            session.query(EmailAccount)
-            .filter(EmailAccount.user_id == user_id)
-            .all()
+            session.query(EmailAccount).filter(EmailAccount.user_id == user_id).all()
         )
 
         if not accounts:
@@ -255,8 +259,16 @@ async def email_list_accounts(args: dict[str, Any], ctx: ToolContext) -> str:
 
         lines = ["**Connected Email Accounts:**\n"]
         for acc in accounts:
-            status_emoji = "✅" if acc.status == "active" else "⚠️" if acc.status == "error" else "🔴"
-            channel = f"<#{acc.alert_channel_id}>" if acc.alert_channel_id else "Not set"
+            status_emoji = (
+                "✅"
+                if acc.status == "active"
+                else "⚠️"
+                if acc.status == "error"
+                else "🔴"
+            )
+            channel = (
+                f"<#{acc.alert_channel_id}>" if acc.alert_channel_id else "Not set"
+            )
             lines.append(
                 f"{status_emoji} **{acc.email_address}** ({acc.provider_type})\n"
                 f"   Status: {acc.status} | Alerts: {channel} | Interval: {acc.poll_interval_minutes}min"
@@ -442,7 +454,9 @@ async def email_apply_preset(args: dict[str, Any], ctx: ToolContext) -> str:
         presets = list_presets()
         lines = ["Available presets:\n"]
         for p in presets:
-            lines.append(f"- **{p['id']}**: {p['description']} (importance: {p['importance']})")
+            lines.append(
+                f"- **{p['id']}**: {p['description']} (importance: {p['importance']})"
+            )
         return "\n".join(lines)
 
     info = get_preset_info(preset_name)
@@ -587,15 +601,9 @@ async def email_status(args: dict[str, Any], ctx: ToolContext) -> str:
 
     with SessionLocal() as session:
         accounts = (
-            session.query(EmailAccount)
-            .filter(EmailAccount.user_id == user_id)
-            .all()
+            session.query(EmailAccount).filter(EmailAccount.user_id == user_id).all()
         )
-        rules = (
-            session.query(EmailRule)
-            .filter(EmailRule.user_id == user_id)
-            .all()
-        )
+        rules = session.query(EmailRule).filter(EmailRule.user_id == user_id).all()
 
         if not accounts:
             return (
@@ -610,16 +618,26 @@ async def email_status(args: dict[str, Any], ctx: ToolContext) -> str:
 
         for acc in accounts:
             status_emoji = "✅" if acc.status == "active" else "⚠️"
-            channel = f"<#{acc.alert_channel_id}>" if acc.alert_channel_id else "Not set"
-            last_check = acc.last_checked_at.strftime("%Y-%m-%d %H:%M UTC") if acc.last_checked_at else "Never"
+            channel = (
+                f"<#{acc.alert_channel_id}>" if acc.alert_channel_id else "Not set"
+            )
+            last_check = (
+                acc.last_checked_at.strftime("%Y-%m-%d %H:%M UTC")
+                if acc.last_checked_at
+                else "Never"
+            )
 
-            lines.append(f"{status_emoji} **{acc.email_address}** ({acc.provider_type})")
+            lines.append(
+                f"{status_emoji} **{acc.email_address}** ({acc.provider_type})"
+            )
             lines.append(f"   Alert channel: {channel}")
             lines.append(f"   Last checked: {last_check}")
             lines.append(f"   Poll interval: {acc.poll_interval_minutes} minutes")
 
             if acc.quiet_hours_start is not None:
-                lines.append(f"   Quiet hours: {acc.quiet_hours_start}:00 - {acc.quiet_hours_end}:00")
+                lines.append(
+                    f"   Quiet hours: {acc.quiet_hours_start}:00 - {acc.quiet_hours_end}:00"
+                )
 
             if acc.last_error:
                 lines.append(f"   ⚠️ Error: {acc.last_error[:80]}")
@@ -656,9 +674,12 @@ async def email_recent_alerts(args: dict[str, Any], ctx: ToolContext) -> str:
         lines = ["**Recent Email Alerts:**\n"]
         for alert in alerts:
             time_str = alert.sent_at.strftime("%m/%d %H:%M")
-            importance_emoji = {"urgent": "🔴", "high": "🟠", "normal": "🔵", "low": "⚪"}.get(
-                alert.importance, "⚪"
-            )
+            importance_emoji = {
+                "urgent": "🔴",
+                "high": "🟠",
+                "normal": "🔵",
+                "low": "⚪",
+            }.get(alert.importance, "⚪")
             lines.append(
                 f"{importance_emoji} [{time_str}] {alert.email_subject[:50]}\n"
                 f"   From: {alert.email_from[:40]}"
@@ -680,12 +701,58 @@ def _get_provider(account: EmailAccount):
         return IMAPProvider(account)
 
 
+async def email_list_folders(args: dict[str, Any], ctx: ToolContext) -> str:
+    """List available email folders/labels."""
+    user_id = ctx.user_id
+    account_email = args.get("account")
+
+    with SessionLocal() as session:
+        query = session.query(EmailAccount).filter(
+            EmailAccount.user_id == user_id,
+            EmailAccount.enabled == "true",
+        )
+
+        if account_email:
+            query = query.filter(EmailAccount.email_address == account_email)
+
+        accounts = query.all()
+
+        if not accounts:
+            return "No connected email accounts."
+
+        account = accounts[0]
+        session.expunge(account)
+
+    provider = _get_provider(account)
+
+    try:
+        async with provider:
+            folders = await provider.list_folders()
+
+        if not folders:
+            return f"No folders found for {account.email_address}."
+
+        folder_type = "Labels" if account.provider_type == "gmail" else "Folders"
+        lines = [f"**{folder_type} ({account.email_address}):**\n"]
+        for folder in folders:
+            lines.append(f"- `{folder}`")
+
+        lines.append(
+            f'\nUse `email_list_inbox folder="<name>"` to list emails in a specific folder.'
+        )
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Error listing folders: {e}"
+
+
 async def email_list_inbox(args: dict[str, Any], ctx: ToolContext) -> str:
     """List recent emails from inbox."""
     user_id = ctx.user_id
     limit = args.get("limit", 20)
     unread_only = args.get("unread_only", False)
     account_email = args.get("account")
+    folder = args.get("folder", "INBOX")
 
     with SessionLocal() as session:
         query = session.query(EmailAccount).filter(
@@ -713,18 +780,27 @@ async def email_list_inbox(args: dict[str, Any], ctx: ToolContext) -> str:
                 unread_only=unread_only,
                 include_body=False,
                 limit=limit,
+                folder=folder,
             )
 
         if not messages:
-            return f"No {'unread ' if unread_only else ''}emails in inbox."
+            folder_desc = f"folder '{folder}'" if folder != "INBOX" else "inbox"
+            return f"No {'unread ' if unread_only else ''}emails in {folder_desc}."
 
-        lines = [f"**Inbox ({account.email_address})** - {len(messages)} emails\n"]
+        folder_label = folder if folder != "INBOX" else "Inbox"
+        lines = [
+            f"**{folder_label} ({account.email_address})** - {len(messages)} emails\n"
+        ]
         for msg in messages:
             read_icon = "📭" if msg.is_read else "📬"
             attach_icon = "📎" if msg.has_attachments else ""
             date_str = msg.received_at.strftime("%m/%d %H:%M")
-            from_short = msg.from_addr[:30] + "..." if len(msg.from_addr) > 30 else msg.from_addr
-            subj_short = msg.subject[:40] + "..." if len(msg.subject) > 40 else msg.subject
+            from_short = (
+                msg.from_addr[:30] + "..." if len(msg.from_addr) > 30 else msg.from_addr
+            )
+            subj_short = (
+                msg.subject[:40] + "..." if len(msg.subject) > 40 else msg.subject
+            )
 
             lines.append(f"{read_icon}{attach_icon} [{date_str}] **{from_short}**")
             lines.append(f"   {subj_short}")
@@ -751,6 +827,7 @@ async def email_search(args: dict[str, Any], ctx: ToolContext) -> str:
     unread_only = args.get("unread_only", False)
     limit = args.get("limit", 20)
     account_email = args.get("account")
+    folder = args.get("folder", "INBOX")
 
     # Parse dates
     after = None
@@ -793,13 +870,17 @@ async def email_search(args: dict[str, Any], ctx: ToolContext) -> str:
                 unread_only=unread_only,
                 include_body=False,
                 limit=limit,
+                folder=folder,
             )
 
         if not messages:
-            return "No emails match your search criteria."
+            folder_desc = f" in folder '{folder}'" if folder != "INBOX" else ""
+            return f"No emails match your search criteria{folder_desc}."
 
         # Build search description
         filters = []
+        if folder != "INBOX":
+            filters.append(f'folder: "{folder}"')
         if query:
             filters.append(f'text: "{query}"')
         if from_addr:
@@ -820,8 +901,12 @@ async def email_search(args: dict[str, Any], ctx: ToolContext) -> str:
             read_icon = "📭" if msg.is_read else "📬"
             attach_icon = "📎" if msg.has_attachments else ""
             date_str = msg.received_at.strftime("%m/%d %H:%M")
-            from_short = msg.from_addr[:30] + "..." if len(msg.from_addr) > 30 else msg.from_addr
-            subj_short = msg.subject[:40] + "..." if len(msg.subject) > 40 else msg.subject
+            from_short = (
+                msg.from_addr[:30] + "..." if len(msg.from_addr) > 30 else msg.from_addr
+            )
+            subj_short = (
+                msg.subject[:40] + "..." if len(msg.subject) > 40 else msg.subject
+            )
 
             lines.append(f"{read_icon}{attach_icon} [{date_str}] **{from_short}**")
             lines.append(f"   {subj_short}")
@@ -839,6 +924,7 @@ async def email_read(args: dict[str, Any], ctx: ToolContext) -> str:
     user_id = ctx.user_id
     email_id = args.get("email_id", "").strip()
     account_email = args.get("account")
+    folder = args.get("folder", "INBOX")
 
     if not email_id:
         return "Please provide an email_id. Use `email_list_inbox` to see email IDs."
@@ -864,10 +950,13 @@ async def email_read(args: dict[str, Any], ctx: ToolContext) -> str:
 
     try:
         async with provider:
-            email_msg = await provider.get_email_by_id(email_id, include_body=True)
+            email_msg = await provider.get_email_by_id(
+                email_id, include_body=True, folder=folder
+            )
 
         if not email_msg:
-            return f"Email with ID `{email_id}` not found."
+            folder_hint = f" in folder '{folder}'" if folder != "INBOX" else ""
+            return f"Email with ID `{email_id}` not found{folder_hint}."
 
         # Format the email
         read_status = "Read" if email_msg.is_read else "Unread"
@@ -1165,11 +1254,32 @@ TOOLS = [
     ),
     # Inbox Search & Reading
     ToolDef(
-        name="email_list_inbox",
-        description="List recent emails from inbox.",
+        name="email_list_folders",
+        description="List available email folders/labels for the account.",
         parameters={
             "type": "object",
             "properties": {
+                "account": {
+                    "type": "string",
+                    "description": "Specific email account (if multiple connected)",
+                },
+            },
+            "required": [],
+        },
+        handler=email_list_folders,
+        requires=["email_monitoring"],
+    ),
+    ToolDef(
+        name="email_list_inbox",
+        description="List recent emails from inbox or a specific folder.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "folder": {
+                    "type": "string",
+                    "description": "Folder/label to list (default: INBOX)",
+                    "default": "INBOX",
+                },
                 "limit": {
                     "type": "integer",
                     "description": "Number of emails to show (default 20)",
@@ -1192,7 +1302,7 @@ TOOLS = [
     ),
     ToolDef(
         name="email_search",
-        description="Search emails with filters (from, subject, date, text).",
+        description="Search emails with filters (from, subject, date, text, folder).",
         parameters={
             "type": "object",
             "properties": {
@@ -1221,6 +1331,11 @@ TOOLS = [
                     "description": "Only show unread emails",
                     "default": False,
                 },
+                "folder": {
+                    "type": "string",
+                    "description": "Folder/label to search (default: INBOX)",
+                    "default": "INBOX",
+                },
                 "limit": {
                     "type": "integer",
                     "description": "Max results (default 20)",
@@ -1245,6 +1360,11 @@ TOOLS = [
                 "email_id": {
                     "type": "string",
                     "description": "Email ID (from email_list_inbox or email_search)",
+                },
+                "folder": {
+                    "type": "string",
+                    "description": "Folder containing the email (IMAP only, default: INBOX)",
+                    "default": "INBOX",
                 },
                 "account": {
                     "type": "string",
