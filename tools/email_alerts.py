@@ -48,6 +48,11 @@ You can help users monitor their email accounts and get Discord alerts for impor
 - `email_list_rules` - List configured rules
 - `email_remove_rule` - Remove a rule
 
+**Inbox Search & Reading:**
+- `email_list_inbox` - List recent emails from inbox
+- `email_search` - Search emails with filters (from, subject, date, unread)
+- `email_read` - Read full email content by ID
+
 **Status:**
 - `email_status` - Check email monitoring status
 - `email_recent_alerts` - View recent alerts
@@ -663,6 +668,242 @@ async def email_recent_alerts(args: dict[str, Any], ctx: ToolContext) -> str:
 
 
 # =============================================================================
+# Inbox Search & Reading
+# =============================================================================
+
+
+def _get_provider(account: EmailAccount):
+    """Get appropriate provider for account type."""
+    if account.provider_type == "gmail":
+        return GmailProvider(account)
+    else:
+        return IMAPProvider(account)
+
+
+async def email_list_inbox(args: dict[str, Any], ctx: ToolContext) -> str:
+    """List recent emails from inbox."""
+    user_id = ctx.user_id
+    limit = args.get("limit", 20)
+    unread_only = args.get("unread_only", False)
+    account_email = args.get("account")
+
+    with SessionLocal() as session:
+        query = session.query(EmailAccount).filter(
+            EmailAccount.user_id == user_id,
+            EmailAccount.enabled == "true",
+        )
+
+        if account_email:
+            query = query.filter(EmailAccount.email_address == account_email)
+
+        accounts = query.all()
+
+        if not accounts:
+            return "No connected email accounts. Use `email_connect_gmail` or `email_connect_imap` first."
+
+        # Use first account if multiple
+        account = accounts[0]
+        session.expunge(account)
+
+    provider = _get_provider(account)
+
+    try:
+        async with provider:
+            messages = await provider.search_emails(
+                unread_only=unread_only,
+                include_body=False,
+                limit=limit,
+            )
+
+        if not messages:
+            return f"No {'unread ' if unread_only else ''}emails in inbox."
+
+        lines = [f"**Inbox ({account.email_address})** - {len(messages)} emails\n"]
+        for msg in messages:
+            read_icon = "📭" if msg.is_read else "📬"
+            attach_icon = "📎" if msg.has_attachments else ""
+            date_str = msg.received_at.strftime("%m/%d %H:%M")
+            from_short = msg.from_addr[:30] + "..." if len(msg.from_addr) > 30 else msg.from_addr
+            subj_short = msg.subject[:40] + "..." if len(msg.subject) > 40 else msg.subject
+
+            lines.append(f"{read_icon}{attach_icon} [{date_str}] **{from_short}**")
+            lines.append(f"   {subj_short}")
+            lines.append(f"   `ID: {msg.uid}`")
+            lines.append("")
+
+        lines.append("Use `email_read <id>` to read full content.")
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Error listing inbox: {e}"
+
+
+async def email_search(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Search emails with filters."""
+    from datetime import datetime
+
+    user_id = ctx.user_id
+    query = args.get("query")
+    from_addr = args.get("from_addr")
+    subject = args.get("subject")
+    after_str = args.get("after")
+    before_str = args.get("before")
+    unread_only = args.get("unread_only", False)
+    limit = args.get("limit", 20)
+    account_email = args.get("account")
+
+    # Parse dates
+    after = None
+    before = None
+    try:
+        if after_str:
+            after = datetime.fromisoformat(after_str.replace("Z", "+00:00"))
+        if before_str:
+            before = datetime.fromisoformat(before_str.replace("Z", "+00:00"))
+    except ValueError as e:
+        return f"Invalid date format: {e}. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"
+
+    with SessionLocal() as session:
+        q = session.query(EmailAccount).filter(
+            EmailAccount.user_id == user_id,
+            EmailAccount.enabled == "true",
+        )
+
+        if account_email:
+            q = q.filter(EmailAccount.email_address == account_email)
+
+        accounts = q.all()
+
+        if not accounts:
+            return "No connected email accounts."
+
+        account = accounts[0]
+        session.expunge(account)
+
+    provider = _get_provider(account)
+
+    try:
+        async with provider:
+            messages = await provider.search_emails(
+                query=query,
+                from_addr=from_addr,
+                subject=subject,
+                after=after,
+                before=before,
+                unread_only=unread_only,
+                include_body=False,
+                limit=limit,
+            )
+
+        if not messages:
+            return "No emails match your search criteria."
+
+        # Build search description
+        filters = []
+        if query:
+            filters.append(f'text: "{query}"')
+        if from_addr:
+            filters.append(f'from: "{from_addr}"')
+        if subject:
+            filters.append(f'subject: "{subject}"')
+        if after:
+            filters.append(f"after: {after.strftime('%Y-%m-%d')}")
+        if before:
+            filters.append(f"before: {before.strftime('%Y-%m-%d')}")
+        if unread_only:
+            filters.append("unread only")
+
+        filter_desc = ", ".join(filters) if filters else "all"
+
+        lines = [f"**Search Results** ({filter_desc}) - {len(messages)} found\n"]
+        for msg in messages:
+            read_icon = "📭" if msg.is_read else "📬"
+            attach_icon = "📎" if msg.has_attachments else ""
+            date_str = msg.received_at.strftime("%m/%d %H:%M")
+            from_short = msg.from_addr[:30] + "..." if len(msg.from_addr) > 30 else msg.from_addr
+            subj_short = msg.subject[:40] + "..." if len(msg.subject) > 40 else msg.subject
+
+            lines.append(f"{read_icon}{attach_icon} [{date_str}] **{from_short}**")
+            lines.append(f"   {subj_short}")
+            lines.append(f"   `ID: {msg.uid}`")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Error searching emails: {e}"
+
+
+async def email_read(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Read full email content by ID."""
+    user_id = ctx.user_id
+    email_id = args.get("email_id", "").strip()
+    account_email = args.get("account")
+
+    if not email_id:
+        return "Please provide an email_id. Use `email_list_inbox` to see email IDs."
+
+    with SessionLocal() as session:
+        q = session.query(EmailAccount).filter(
+            EmailAccount.user_id == user_id,
+            EmailAccount.enabled == "true",
+        )
+
+        if account_email:
+            q = q.filter(EmailAccount.email_address == account_email)
+
+        accounts = q.all()
+
+        if not accounts:
+            return "No connected email accounts."
+
+        account = accounts[0]
+        session.expunge(account)
+
+    provider = _get_provider(account)
+
+    try:
+        async with provider:
+            email_msg = await provider.get_email_by_id(email_id, include_body=True)
+
+        if not email_msg:
+            return f"Email with ID `{email_id}` not found."
+
+        # Format the email
+        read_status = "Read" if email_msg.is_read else "Unread"
+        attach_status = "📎 Has attachments" if email_msg.has_attachments else ""
+        date_str = email_msg.received_at.strftime("%Y-%m-%d %H:%M:%S UTC")
+
+        lines = [
+            f"**From:** {email_msg.from_addr}",
+            f"**Subject:** {email_msg.subject}",
+            f"**Date:** {date_str}",
+            f"**Status:** {read_status} {attach_status}",
+            "",
+            "---",
+            "",
+        ]
+
+        # Add body content
+        if email_msg.full_body:
+            # Truncate very long emails
+            body = email_msg.full_body
+            if len(body) > 4000:
+                body = body[:4000] + "\n\n... [truncated - email too long]"
+            lines.append(body)
+        elif email_msg.snippet:
+            lines.append(email_msg.snippet)
+            lines.append("\n*[Full body not available]*")
+        else:
+            lines.append("*[No text content]*")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Error reading email: {e}"
+
+
+# =============================================================================
 # Tool Definitions
 # =============================================================================
 
@@ -920,6 +1161,99 @@ TOOLS = [
             "required": [],
         },
         handler=email_recent_alerts,
+        requires=["email_monitoring"],
+    ),
+    # Inbox Search & Reading
+    ToolDef(
+        name="email_list_inbox",
+        description="List recent emails from inbox.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Number of emails to show (default 20)",
+                    "default": 20,
+                },
+                "unread_only": {
+                    "type": "boolean",
+                    "description": "Only show unread emails",
+                    "default": False,
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Specific email account (if multiple connected)",
+                },
+            },
+            "required": [],
+        },
+        handler=email_list_inbox,
+        requires=["email_monitoring"],
+    ),
+    ToolDef(
+        name="email_search",
+        description="Search emails with filters (from, subject, date, text).",
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Full text search query",
+                },
+                "from_addr": {
+                    "type": "string",
+                    "description": "Filter by sender address or name",
+                },
+                "subject": {
+                    "type": "string",
+                    "description": "Filter by subject contains",
+                },
+                "after": {
+                    "type": "string",
+                    "description": "Messages after this date (ISO format: YYYY-MM-DD)",
+                },
+                "before": {
+                    "type": "string",
+                    "description": "Messages before this date (ISO format: YYYY-MM-DD)",
+                },
+                "unread_only": {
+                    "type": "boolean",
+                    "description": "Only show unread emails",
+                    "default": False,
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results (default 20)",
+                    "default": 20,
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Specific email account (if multiple connected)",
+                },
+            },
+            "required": [],
+        },
+        handler=email_search,
+        requires=["email_monitoring"],
+    ),
+    ToolDef(
+        name="email_read",
+        description="Read full email content by ID.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "email_id": {
+                    "type": "string",
+                    "description": "Email ID (from email_list_inbox or email_search)",
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Specific email account (if multiple connected)",
+                },
+            },
+            "required": ["email_id"],
+        },
+        handler=email_read,
         requires=["email_monitoring"],
     ),
 ]
