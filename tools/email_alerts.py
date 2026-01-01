@@ -817,11 +817,18 @@ async def email_list_inbox(args: dict[str, Any], ctx: ToolContext) -> str:
 async def email_search(args: dict[str, Any], ctx: ToolContext) -> str:
     """Search emails with filters."""
     from datetime import datetime
+    from config.logging import get_logger
+    logger = get_logger("email.search")
+
+    # Log raw args to debug
+    logger.info(f"email_search called with args: {args}")
 
     user_id = ctx.user_id
     query = args.get("query")
     from_addr = args.get("from_addr")
     subject = args.get("subject")
+
+    logger.info(f"Parsed: query={query!r}, from_addr={from_addr!r}, subject={subject!r}")
     after_str = args.get("after")
     before_str = args.get("before")
     unread_only = args.get("unread_only", False)
