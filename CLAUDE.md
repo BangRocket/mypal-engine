@@ -319,9 +319,53 @@ Clara can interact with Google Sheets, Drive, Docs, and Calendar using per-user 
 
 **Setup:**
 1. Create OAuth 2.0 credentials in Google Cloud Console
-2. Enable Google Sheets, Drive, Docs, and Calendar APIs
+2. Enable Google Sheets, Drive, Docs, Calendar, and Gmail APIs
 3. Deploy the API service (see below) and add its URL to "Authorized redirect URIs": `https://your-api.up.railway.app/oauth/google/callback`
 4. Set the environment variables on both the Discord bot and API service
+
+### Email Monitoring Service (Discord Bot)
+Clara can monitor user email accounts and send Discord alerts for important messages.
+
+**Environment Variables:**
+- `EMAIL_MONITORING_ENABLED` - Enable the email monitoring service (default: false)
+- `EMAIL_ENCRYPTION_KEY` - Fernet key for encrypting IMAP passwords (required for IMAP accounts)
+- `EMAIL_DEFAULT_POLL_INTERVAL` - Default polling interval in minutes (default: 5)
+
+Generate encryption key: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+
+**Account Management Tools:**
+- `email_connect_gmail` - Connect Gmail (uses existing Google OAuth)
+- `email_connect_imap` - Connect IMAP account (iCloud, Outlook, etc.)
+- `email_list_accounts` - List connected accounts
+- `email_disconnect` - Remove an account
+
+**Configuration Tools:**
+- `email_set_alert_channel` - Set Discord channel for alerts
+- `email_set_quiet_hours` - Configure quiet hours (no alerts)
+- `email_toggle_ping` - Enable/disable @mentions
+
+**Rules Tools:**
+- `email_apply_preset` - Apply built-in preset (job_hunting, urgent, security, financial, shipping)
+- `email_list_presets` - List available presets
+- `email_add_rule` - Create custom rule
+- `email_list_rules` - List configured rules
+- `email_remove_rule` - Remove a rule
+
+**Status Tools:**
+- `email_status` - Check monitoring status
+- `email_recent_alerts` - View recent alerts
+
+**Built-in Presets:**
+- `job_hunting` - Recruiter emails, ATS platforms (Greenhouse, Lever, Workday), job keywords
+- `urgent` - Emails with urgent/ASAP keywords
+- `security` - Password resets, 2FA codes, security alerts
+- `financial` - Banking, payment notifications
+- `shipping` - Package tracking, delivery updates
+
+**Database Tables:**
+- `email_accounts` - User email connections (Gmail OAuth or encrypted IMAP)
+- `email_rules` - Per-user importance rules
+- `email_alerts` - Alert history for deduplication
 
 ### API Service (OAuth & Endpoints)
 
@@ -391,6 +435,7 @@ Clara can initiate conversations without user prompting when there's genuine rea
 - `ORS_MIN_SPEAK_GAP_HOURS` - Minimum hours between proactive messages (default: 2)
 - `ORS_ACTIVE_DAYS` - Only check users active in last N days (default: 7)
 - `ORS_NOTE_DECAY_DAYS` - Days before note relevance decays to 0 (default: 7)
+- `ORS_IDLE_TIMEOUT_MINUTES` - Minutes before extracting conversation summary (default: 30)
 
 **State Machine:**
 ```
