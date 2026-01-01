@@ -12,18 +12,17 @@ import base64
 import json
 import os
 from typing import Any
-from urllib.parse import quote
 
 import httpx
 
 from ._base import ToolContext, ToolDef
 
 MODULE_NAME = "github"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "2.0.0"  # Added Projects v2 GraphQL support
 
 SYSTEM_PROMPT = """
 ## GitHub Integration
-You can interact with GitHub repositories, issues, pull requests, and workflows.
+You can interact with GitHub repositories, issues, pull requests, workflows, and Projects v2.
 
 **Repository Tools:**
 - `github_search_repositories` - Search for repositories
@@ -44,6 +43,15 @@ You can interact with GitHub repositories, issues, pull requests, and workflows.
 **Actions & Workflows:**
 - `github_list_workflows` / `github_list_workflow_runs` - View workflows
 - `github_run_workflow` - Trigger a workflow
+
+**Projects v2 (GraphQL API):**
+- `github_list_projects` - List projects for repo/org/user
+- `github_get_project` - Get project details with fields and items
+- `github_get_project_fields` - Get Status options and custom fields
+- `github_add_item_to_project` - Add issue/PR to a project
+- `github_update_project_item_field` - Update Status, Priority, or other fields
+- `github_list_project_items` - List items with their field values
+- `github_remove_item_from_project` - Remove item from project
 
 **Other:**
 - `github_get_me` - Get authenticated user info
@@ -105,6 +113,46 @@ async def _github_request(
             raise ValueError(f"GitHub API error ({response.status_code}): {error_msg}")
 
         return response.json()
+
+
+async def _github_graphql(query: str, variables: dict | None = None) -> dict:
+    """Make a GitHub GraphQL API request.
+
+    Used for GitHub Projects v2 and other features not available in REST API.
+    """
+    if not GITHUB_TOKEN:
+        raise ValueError("GITHUB_TOKEN not configured")
+
+    url = f"{GITHUB_API_URL}/graphql"
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            url,
+            headers=_get_headers(),
+            json={"query": query, "variables": variables or {}},
+            timeout=30.0,
+        )
+
+        if response.status_code >= 400:
+            error_msg = response.text
+            try:
+                error_data = response.json()
+                if "errors" in error_data:
+                    error_msg = "; ".join(
+                        e.get("message", str(e)) for e in error_data["errors"]
+                    )
+            except Exception:
+                pass
+            raise ValueError(f"GitHub GraphQL error ({response.status_code}): {error_msg}")
+
+        data = response.json()
+        if "errors" in data:
+            error_msg = "; ".join(
+                e.get("message", str(e)) for e in data["errors"]
+            )
+            raise ValueError(f"GitHub GraphQL error: {error_msg}")
+
+        return data.get("data", {})
 
 
 # =============================================================================
@@ -564,7 +612,7 @@ async def list_issues(args: dict[str, Any], ctx: ToolContext) -> str:
                 "title": i["title"],
                 "state": i["state"],
                 "user": i["user"]["login"],
-                "labels": [l["name"] for l in i.get("labels", [])],
+                "labels": [lbl["name"] for lbl in i.get("labels", [])],
                 "created_at": i["created_at"],
             }
             for i in result
@@ -594,7 +642,7 @@ async def get_issue(args: dict[str, Any], ctx: ToolContext) -> str:
                 "state": result["state"],
                 "body": result.get("body", ""),
                 "user": result["user"]["login"],
-                "labels": [l["name"] for l in result.get("labels", [])],
+                "labels": [lbl["name"] for lbl in result.get("labels", [])],
                 "assignees": [a["login"] for a in result.get("assignees", [])],
                 "created_at": result["created_at"],
                 "updated_at": result["updated_at"],
@@ -1448,6 +1496,596 @@ async def unstar_repository(args: dict[str, Any], ctx: ToolContext) -> str:
 
 
 # =============================================================================
+# GitHub Projects v2 (GraphQL API)
+# =============================================================================
+
+
+async def list_projects(args: dict[str, Any], ctx: ToolContext) -> str:
+    """List GitHub Projects v2 for a repo, org, or user."""
+    owner = args.get("owner")
+    repo = args.get("repo")
+    org = args.get("org")
+    user = args.get("user")
+    first = min(args.get("first", 20), 100)
+
+    try:
+        if repo and owner:
+            # Repository projects
+            query = """
+            query($owner: String!, $repo: String!, $first: Int!) {
+                repository(owner: $owner, name: $repo) {
+                    projectsV2(first: $first) {
+                        nodes {
+                            id
+                            number
+                            title
+                            shortDescription
+                            url
+                            closed
+                            public
+                        }
+                    }
+                }
+            }
+            """
+            result = await _github_graphql(
+                query, {"owner": owner, "repo": repo, "first": first}
+            )
+            projects = (
+                result.get("repository", {}).get("projectsV2", {}).get("nodes", [])
+            )
+        elif org:
+            # Organization projects
+            query = """
+            query($org: String!, $first: Int!) {
+                organization(login: $org) {
+                    projectsV2(first: $first) {
+                        nodes {
+                            id
+                            number
+                            title
+                            shortDescription
+                            url
+                            closed
+                            public
+                        }
+                    }
+                }
+            }
+            """
+            result = await _github_graphql(query, {"org": org, "first": first})
+            projects = (
+                result.get("organization", {}).get("projectsV2", {}).get("nodes", [])
+            )
+        elif user:
+            # User projects
+            query = """
+            query($user: String!, $first: Int!) {
+                user(login: $user) {
+                    projectsV2(first: $first) {
+                        nodes {
+                            id
+                            number
+                            title
+                            shortDescription
+                            url
+                            closed
+                            public
+                        }
+                    }
+                }
+            }
+            """
+            result = await _github_graphql(query, {"user": user, "first": first})
+            projects = result.get("user", {}).get("projectsV2", {}).get("nodes", [])
+        else:
+            return "Error: Provide owner+repo, org, or user"
+
+        return json.dumps({"projects": projects, "count": len(projects)}, indent=2)
+    except Exception as e:
+        return f"Error: {e}"
+
+
+async def get_project(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Get details of a GitHub Project v2 including fields and items."""
+    owner = args.get("owner")
+    project_number = args.get("project_number")
+    include_items = args.get("include_items", True)
+    items_first = min(args.get("items_first", 50), 100)
+
+    if not owner or not project_number:
+        return "Error: owner and project_number are required"
+
+    try:
+        items_fragment = """
+            items(first: $itemsFirst) {
+                nodes {
+                    id
+                    content {
+                        ... on Issue { number title state url }
+                        ... on PullRequest { number title state url }
+                        ... on DraftIssue { title }
+                    }
+                    fieldValues(first: 10) {
+                        nodes {
+                            ... on ProjectV2ItemFieldTextValue {
+                                text
+                                field { ... on ProjectV2Field { name } }
+                            }
+                            ... on ProjectV2ItemFieldNumberValue {
+                                number
+                                field { ... on ProjectV2Field { name } }
+                            }
+                            ... on ProjectV2ItemFieldSingleSelectValue {
+                                name
+                                field { ... on ProjectV2SingleSelectField { name } }
+                            }
+                            ... on ProjectV2ItemFieldDateValue {
+                                date
+                                field { ... on ProjectV2Field { name } }
+                            }
+                        }
+                    }
+                }
+            }
+        """ if include_items else ""
+
+        # First try as org, then as user
+        for owner_type in ["organization", "user"]:
+            query = f"""
+            query($owner: String!, $number: Int!, $itemsFirst: Int!) {{
+                {owner_type}(login: $owner) {{
+                    projectV2(number: $number) {{
+                        id
+                        number
+                        title
+                        shortDescription
+                        url
+                        closed
+                        public
+                        fields(first: 20) {{
+                            nodes {{
+                                ... on ProjectV2Field {{
+                                    id
+                                    name
+                                    dataType
+                                }}
+                                ... on ProjectV2SingleSelectField {{
+                                    id
+                                    name
+                                    dataType
+                                    options {{
+                                        id
+                                        name
+                                        color
+                                    }}
+                                }}
+                                ... on ProjectV2IterationField {{
+                                    id
+                                    name
+                                    dataType
+                                }}
+                            }}
+                        }}
+                        {items_fragment}
+                    }}
+                }}
+            }}
+            """
+            try:
+                result = await _github_graphql(
+                    query,
+                    {
+                        "owner": owner,
+                        "number": project_number,
+                        "itemsFirst": items_first,
+                    },
+                )
+                project = result.get(owner_type, {}).get("projectV2")
+                if project:
+                    return json.dumps(project, indent=2)
+            except ValueError as e:
+                if "Could not resolve" not in str(e):
+                    raise
+                continue
+
+        return f"Error: Project #{project_number} not found for {owner}"
+    except Exception as e:
+        return f"Error: {e}"
+
+
+async def get_project_fields(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Get the fields (columns) of a GitHub Project v2, including Status options."""
+    owner = args.get("owner")
+    project_number = args.get("project_number")
+
+    if not owner or not project_number:
+        return "Error: owner and project_number are required"
+
+    try:
+        for owner_type in ["organization", "user"]:
+            query = f"""
+            query($owner: String!, $number: Int!) {{
+                {owner_type}(login: $owner) {{
+                    projectV2(number: $number) {{
+                        id
+                        title
+                        fields(first: 30) {{
+                            nodes {{
+                                ... on ProjectV2Field {{
+                                    id
+                                    name
+                                    dataType
+                                }}
+                                ... on ProjectV2SingleSelectField {{
+                                    id
+                                    name
+                                    dataType
+                                    options {{
+                                        id
+                                        name
+                                        color
+                                        description
+                                    }}
+                                }}
+                                ... on ProjectV2IterationField {{
+                                    id
+                                    name
+                                    dataType
+                                    configuration {{
+                                        iterations {{
+                                            id
+                                            title
+                                            startDate
+                                            duration
+                                        }}
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }}
+                }}
+            }}
+            """
+            try:
+                result = await _github_graphql(
+                    query, {"owner": owner, "number": project_number}
+                )
+                project = result.get(owner_type, {}).get("projectV2")
+                if project:
+                    fields = project.get("fields", {}).get("nodes", [])
+                    return json.dumps(
+                        {
+                            "project_id": project["id"],
+                            "project_title": project["title"],
+                            "fields": fields,
+                            "field_count": len(fields),
+                        },
+                        indent=2,
+                    )
+            except ValueError as e:
+                if "Could not resolve" not in str(e):
+                    raise
+                continue
+
+        return f"Error: Project #{project_number} not found for {owner}"
+    except Exception as e:
+        return f"Error: {e}"
+
+
+async def add_item_to_project(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Add an issue or PR to a GitHub Project v2."""
+    project_id = args.get("project_id")
+    content_id = args.get("content_id")
+    owner = args.get("owner")
+    repo = args.get("repo")
+    issue_number = args.get("issue_number")
+
+    # Get content_id from issue/PR if not provided directly
+    if not content_id and owner and repo and issue_number:
+        try:
+            # Get the node ID of the issue/PR
+            query = """
+            query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                    issueOrPullRequest(number: $number) {
+                        ... on Issue { id }
+                        ... on PullRequest { id }
+                    }
+                }
+            }
+            """
+            result = await _github_graphql(
+                query, {"owner": owner, "repo": repo, "number": issue_number}
+            )
+            content_id = (
+                result.get("repository", {})
+                .get("issueOrPullRequest", {})
+                .get("id")
+            )
+        except Exception as e:
+            return f"Error getting issue/PR ID: {e}"
+
+    if not project_id:
+        return "Error: project_id is required"
+    if not content_id:
+        return "Error: content_id or (owner, repo, issue_number) is required"
+
+    try:
+        mutation = """
+        mutation($projectId: ID!, $contentId: ID!) {
+            addProjectV2ItemById(input: {
+                projectId: $projectId,
+                contentId: $contentId
+            }) {
+                item {
+                    id
+                }
+            }
+        }
+        """
+        result = await _github_graphql(
+            mutation, {"projectId": project_id, "contentId": content_id}
+        )
+        item_id = result.get("addProjectV2ItemById", {}).get("item", {}).get("id")
+        return json.dumps(
+            {"success": True, "item_id": item_id, "message": "Item added to project"},
+            indent=2,
+        )
+    except Exception as e:
+        return f"Error: {e}"
+
+
+async def update_project_item_field(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Update a field value for an item in a GitHub Project v2.
+
+    Use this to change Status, Priority, or other single-select fields.
+    """
+    project_id = args.get("project_id")
+    item_id = args.get("item_id")
+    field_id = args.get("field_id")
+    value = args.get("value")
+    option_id = args.get("option_id")
+
+    if not project_id or not item_id or not field_id:
+        return "Error: project_id, item_id, and field_id are required"
+
+    if not value and not option_id:
+        return "Error: value or option_id is required"
+
+    try:
+        # For single-select fields, use singleSelectOptionId
+        if option_id:
+            mutation = """
+            mutation(
+                $projectId: ID!,
+                $itemId: ID!,
+                $fieldId: ID!,
+                $optionId: String!
+            ) {
+                updateProjectV2ItemFieldValue(input: {
+                    projectId: $projectId
+                    itemId: $itemId
+                    fieldId: $fieldId
+                    value: { singleSelectOptionId: $optionId }
+                }) {
+                    projectV2Item {
+                        id
+                    }
+                }
+            }
+            """
+            await _github_graphql(
+                mutation,
+                {
+                    "projectId": project_id,
+                    "itemId": item_id,
+                    "fieldId": field_id,
+                    "optionId": option_id,
+                },
+            )
+        else:
+            # For text/number fields
+            mutation = """
+            mutation(
+                $projectId: ID!,
+                $itemId: ID!,
+                $fieldId: ID!,
+                $value: String!
+            ) {
+                updateProjectV2ItemFieldValue(input: {
+                    projectId: $projectId
+                    itemId: $itemId
+                    fieldId: $fieldId
+                    value: { text: $value }
+                }) {
+                    projectV2Item {
+                        id
+                    }
+                }
+            }
+            """
+            await _github_graphql(
+                mutation,
+                {
+                    "projectId": project_id,
+                    "itemId": item_id,
+                    "fieldId": field_id,
+                    "value": str(value),
+                },
+            )
+
+        return json.dumps({"success": True, "message": "Field value updated"}, indent=2)
+    except Exception as e:
+        return f"Error: {e}"
+
+
+async def list_project_items(args: dict[str, Any], ctx: ToolContext) -> str:
+    """List items in a GitHub Project v2."""
+    owner = args.get("owner")
+    project_number = args.get("project_number")
+    first = min(args.get("first", 50), 100)
+    status_filter = args.get("status")
+
+    if not owner or not project_number:
+        return "Error: owner and project_number are required"
+
+    try:
+        for owner_type in ["organization", "user"]:
+            query = f"""
+            query($owner: String!, $number: Int!, $first: Int!) {{
+                {owner_type}(login: $owner) {{
+                    projectV2(number: $number) {{
+                        id
+                        title
+                        items(first: $first) {{
+                            nodes {{
+                                id
+                                content {{
+                                    ... on Issue {{
+                                        number
+                                        title
+                                        state
+                                        url
+                                        repository {{ nameWithOwner }}
+                                    }}
+                                    ... on PullRequest {{
+                                        number
+                                        title
+                                        state
+                                        url
+                                        repository {{ nameWithOwner }}
+                                    }}
+                                    ... on DraftIssue {{
+                                        title
+                                    }}
+                                }}
+                                fieldValues(first: 10) {{
+                                    nodes {{
+                                        ... on ProjectV2ItemFieldTextValue {{
+                                            text
+                                            field {{ ... on ProjectV2Field {{ name }} }}
+                                        }}
+                                        ... on ProjectV2ItemFieldNumberValue {{
+                                            number
+                                            field {{ ... on ProjectV2Field {{ name }} }}
+                                        }}
+                                        ... on ProjectV2ItemFieldSingleSelectValue {{
+                                            name
+                                            field {{
+                                                ... on ProjectV2SingleSelectField {{ name }}
+                                            }}
+                                        }}
+                                        ... on ProjectV2ItemFieldDateValue {{
+                                            date
+                                            field {{ ... on ProjectV2Field {{ name }} }}
+                                        }}
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }}
+                }}
+            }}
+            """
+            try:
+                result = await _github_graphql(
+                    query, {"owner": owner, "number": project_number, "first": first}
+                )
+                project = result.get(owner_type, {}).get("projectV2")
+                if project:
+                    items = project.get("items", {}).get("nodes", [])
+
+                    # Simplify the output
+                    simplified = []
+                    for item in items:
+                        content = item.get("content", {}) or {}
+                        field_values = {}
+                        for fv in item.get("fieldValues", {}).get("nodes", []):
+                            field = fv.get("field", {})
+                            field_name = field.get("name") if field else None
+                            if field_name:
+                                val = (
+                                    fv.get("text")
+                                    or fv.get("name")
+                                    or fv.get("number")
+                                    or fv.get("date")
+                                )
+                                field_values[field_name] = val
+
+                        # Apply status filter if provided
+                        if status_filter:
+                            item_status = field_values.get("Status", "")
+                            if item_status.lower() != status_filter.lower():
+                                continue
+
+                        simplified.append(
+                            {
+                                "item_id": item.get("id"),
+                                "type": "Issue" if "state" in content else "DraftIssue",
+                                "number": content.get("number"),
+                                "title": content.get("title"),
+                                "state": content.get("state"),
+                                "url": content.get("url"),
+                                "repo": content.get("repository", {}).get(
+                                    "nameWithOwner"
+                                ),
+                                "fields": field_values,
+                            }
+                        )
+
+                    return json.dumps(
+                        {
+                            "project_id": project["id"],
+                            "project_title": project["title"],
+                            "items": simplified,
+                            "count": len(simplified),
+                        },
+                        indent=2,
+                    )
+            except ValueError as e:
+                if "Could not resolve" not in str(e):
+                    raise
+                continue
+
+        return f"Error: Project #{project_number} not found for {owner}"
+    except Exception as e:
+        return f"Error: {e}"
+
+
+async def remove_item_from_project(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Remove an item from a GitHub Project v2."""
+    project_id = args.get("project_id")
+    item_id = args.get("item_id")
+
+    if not project_id or not item_id:
+        return "Error: project_id and item_id are required"
+
+    try:
+        mutation = """
+        mutation($projectId: ID!, $itemId: ID!) {
+            deleteProjectV2Item(input: {projectId: $projectId, itemId: $itemId}) {
+                deletedItemId
+            }
+        }
+        """
+        result = await _github_graphql(
+            mutation, {"projectId": project_id, "itemId": item_id}
+        )
+        deleted_id = result.get("deleteProjectV2Item", {}).get("deletedItemId")
+        return json.dumps(
+            {
+                "success": True,
+                "deleted_item_id": deleted_id,
+                "message": "Item removed from project",
+            },
+            indent=2,
+        )
+    except Exception as e:
+        return f"Error: {e}"
+
+
+# =============================================================================
 # Tool Definitions
 # =============================================================================
 
@@ -2145,6 +2783,129 @@ TOOLS = [
             "required": ["owner", "repo"],
         },
         handler=unstar_repository,
+    ),
+    # Projects v2 (GraphQL API)
+    ToolDef(
+        name="github_list_projects",
+        description="List GitHub Projects v2 for a repository, organization, or user. Uses GraphQL API.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "owner": {"type": "string", "description": "Repository owner, org name, or username"},
+                "repo": {"type": "string", "description": "Repository name (omit for org/user projects)"},
+                "type": {
+                    "type": "string",
+                    "enum": ["repo", "org", "user"],
+                    "description": "Project scope: repo, org, or user (default: repo if repo provided, else org)",
+                },
+                "first": {"type": "integer", "description": "Number of projects to fetch (default 20, max 100)"},
+            },
+            "required": ["owner"],
+        },
+        handler=list_projects,
+    ),
+    ToolDef(
+        name="github_get_project",
+        description="Get detailed information about a GitHub Project v2 including fields and items.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "Project node ID (from list_projects) or project number",
+                },
+                "owner": {
+                    "type": "string",
+                    "description": "Owner (required if using project number instead of node ID)",
+                },
+                "type": {
+                    "type": "string",
+                    "enum": ["repo", "org", "user"],
+                    "description": "Project scope (required if using project number)",
+                },
+                "repo": {"type": "string", "description": "Repo name (required if type is 'repo')"},
+                "include_items": {
+                    "type": "boolean",
+                    "description": "Include project items (default true)",
+                },
+                "items_first": {"type": "integer", "description": "Number of items to fetch (default 50)"},
+            },
+            "required": ["project_id"],
+        },
+        handler=get_project,
+    ),
+    ToolDef(
+        name="github_get_project_fields",
+        description="Get field definitions for a project, including Status options and custom fields.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "Project node ID"},
+            },
+            "required": ["project_id"],
+        },
+        handler=get_project_fields,
+    ),
+    ToolDef(
+        name="github_add_item_to_project",
+        description="Add an issue or pull request to a GitHub Project v2.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "Project node ID"},
+                "content_id": {
+                    "type": "string",
+                    "description": "Issue or PR node ID to add to the project",
+                },
+            },
+            "required": ["project_id", "content_id"],
+        },
+        handler=add_item_to_project,
+    ),
+    ToolDef(
+        name="github_update_project_item_field",
+        description="Update a field value for an item in a GitHub Project v2 (e.g., change Status).",
+        parameters={
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "Project node ID"},
+                "item_id": {"type": "string", "description": "Project item node ID"},
+                "field_id": {"type": "string", "description": "Field node ID (from get_project_fields)"},
+                "value": {
+                    "type": "object",
+                    "description": "Field value object. For single select: {singleSelectOptionId: 'option_id'}. For text: {text: 'value'}. For number: {number: 123}. For date: {date: 'YYYY-MM-DD'}.",
+                },
+            },
+            "required": ["project_id", "item_id", "field_id", "value"],
+        },
+        handler=update_project_item_field,
+    ),
+    ToolDef(
+        name="github_list_project_items",
+        description="List items in a GitHub Project v2 with their field values.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "Project node ID"},
+                "first": {"type": "integer", "description": "Number of items to fetch (default 50, max 100)"},
+                "after": {"type": "string", "description": "Cursor for pagination"},
+            },
+            "required": ["project_id"],
+        },
+        handler=list_project_items,
+    ),
+    ToolDef(
+        name="github_remove_item_from_project",
+        description="Remove an item from a GitHub Project v2.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "Project node ID"},
+                "item_id": {"type": "string", "description": "Project item node ID to remove"},
+            },
+            "required": ["project_id", "item_id"],
+        },
+        handler=remove_item_from_project,
     ),
 ]
 
