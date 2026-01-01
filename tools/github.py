@@ -1504,12 +1504,16 @@ async def list_projects(args: dict[str, Any], ctx: ToolContext) -> str:
     """List GitHub Projects v2 for a repo, org, or user."""
     owner = args.get("owner")
     repo = args.get("repo")
-    org = args.get("org")
-    user = args.get("user")
+    project_type = args.get("type")
     first = min(args.get("first", 20), 100)
 
+    # Determine project scope
+    # If type is explicitly set, use it; otherwise infer from repo presence
+    if project_type is None:
+        project_type = "repo" if repo else "org"
+
     try:
-        if repo and owner:
+        if project_type == "repo" and repo and owner:
             # Repository projects
             query = """
             query($owner: String!, $repo: String!, $first: Int!) {
@@ -1534,8 +1538,8 @@ async def list_projects(args: dict[str, Any], ctx: ToolContext) -> str:
             projects = (
                 result.get("repository", {}).get("projectsV2", {}).get("nodes", [])
             )
-        elif org:
-            # Organization projects
+        elif project_type == "org" and owner:
+            # Organization projects (owner is the org name)
             query = """
             query($org: String!, $first: Int!) {
                 organization(login: $org) {
@@ -1553,12 +1557,12 @@ async def list_projects(args: dict[str, Any], ctx: ToolContext) -> str:
                 }
             }
             """
-            result = await _github_graphql(query, {"org": org, "first": first})
+            result = await _github_graphql(query, {"org": owner, "first": first})
             projects = (
                 result.get("organization", {}).get("projectsV2", {}).get("nodes", [])
             )
-        elif user:
-            # User projects
+        elif project_type == "user" and owner:
+            # User projects (owner is the username)
             query = """
             query($user: String!, $first: Int!) {
                 user(login: $user) {
@@ -1576,10 +1580,10 @@ async def list_projects(args: dict[str, Any], ctx: ToolContext) -> str:
                 }
             }
             """
-            result = await _github_graphql(query, {"user": user, "first": first})
+            result = await _github_graphql(query, {"user": owner, "first": first})
             projects = result.get("user", {}).get("projectsV2", {}).get("nodes", [])
         else:
-            return "Error: Provide owner+repo, org, or user"
+            return "Error: Provide owner (and repo for repo projects, or set type to 'org' or 'user')"
 
         return json.dumps({"projects": projects, "count": len(projects)}, indent=2)
     except Exception as e:
@@ -1588,13 +1592,26 @@ async def list_projects(args: dict[str, Any], ctx: ToolContext) -> str:
 
 async def get_project(args: dict[str, Any], ctx: ToolContext) -> str:
     """Get details of a GitHub Project v2 including fields and items."""
+    project_id = args.get("project_id")
     owner = args.get("owner")
-    project_number = args.get("project_number")
+    project_type = args.get("type", "org")  # org or user
     include_items = args.get("include_items", True)
     items_first = min(args.get("items_first", 50), 100)
 
-    if not owner or not project_number:
-        return "Error: owner and project_number are required"
+    if not project_id:
+        return "Error: project_id is required"
+
+    # Determine if project_id is a node ID or project number
+    is_node_id = isinstance(project_id, str) and project_id.startswith("PVT_")
+
+    if not is_node_id:
+        # It's a project number, need owner
+        if not owner:
+            return "Error: owner is required when using project number"
+        try:
+            project_number = int(project_id)
+        except ValueError:
+            return "Error: project_id must be a node ID (PVT_...) or a project number"
 
     try:
         items_fragment = """
@@ -1630,12 +1647,12 @@ async def get_project(args: dict[str, Any], ctx: ToolContext) -> str:
             }
         """ if include_items else ""
 
-        # First try as org, then as user
-        for owner_type in ["organization", "user"]:
+        if is_node_id:
+            # Query by node ID directly
             query = f"""
-            query($owner: String!, $number: Int!, $itemsFirst: Int!) {{
-                {owner_type}(login: $owner) {{
-                    projectV2(number: $number) {{
+            query($id: ID!, $itemsFirst: Int!) {{
+                node(id: $id) {{
+                    ... on ProjectV2 {{
                         id
                         number
                         title
@@ -1672,24 +1689,81 @@ async def get_project(args: dict[str, Any], ctx: ToolContext) -> str:
                 }}
             }}
             """
-            try:
-                result = await _github_graphql(
-                    query,
-                    {
-                        "owner": owner,
-                        "number": project_number,
-                        "itemsFirst": items_first,
-                    },
-                )
-                project = result.get(owner_type, {}).get("projectV2")
-                if project:
-                    return json.dumps(project, indent=2)
-            except ValueError as e:
-                if "Could not resolve" not in str(e):
-                    raise
-                continue
+            result = await _github_graphql(
+                query, {"id": project_id, "itemsFirst": items_first}
+            )
+            project = result.get("node")
+            if project:
+                return json.dumps(project, indent=2)
+            return f"Error: Project {project_id} not found"
+        else:
+            # Query by project number - try org first, then user
+            owner_types = (
+                [project_type] if project_type in ["org", "user"]
+                else ["organization", "user"]
+            )
+            owner_type_map = {"org": "organization", "user": "user"}
 
-        return f"Error: Project #{project_number} not found for {owner}"
+            for ot in owner_types:
+                owner_type = owner_type_map.get(ot, ot)
+                query = f"""
+                query($owner: String!, $number: Int!, $itemsFirst: Int!) {{
+                    {owner_type}(login: $owner) {{
+                        projectV2(number: $number) {{
+                            id
+                            number
+                            title
+                            shortDescription
+                            url
+                            closed
+                            public
+                            fields(first: 20) {{
+                                nodes {{
+                                    ... on ProjectV2Field {{
+                                        id
+                                        name
+                                        dataType
+                                    }}
+                                    ... on ProjectV2SingleSelectField {{
+                                        id
+                                        name
+                                        dataType
+                                        options {{
+                                            id
+                                            name
+                                            color
+                                        }}
+                                    }}
+                                    ... on ProjectV2IterationField {{
+                                        id
+                                        name
+                                        dataType
+                                    }}
+                                }}
+                            }}
+                            {items_fragment}
+                        }}
+                    }}
+                }}
+                """
+                try:
+                    result = await _github_graphql(
+                        query,
+                        {
+                            "owner": owner,
+                            "number": project_number,
+                            "itemsFirst": items_first,
+                        },
+                    )
+                    project = result.get(owner_type, {}).get("projectV2")
+                    if project:
+                        return json.dumps(project, indent=2)
+                except ValueError as e:
+                    if "Could not resolve" not in str(e):
+                        raise
+                    continue
+
+            return f"Error: Project #{project_number} not found for {owner}"
     except Exception as e:
         return f"Error: {e}"
 
