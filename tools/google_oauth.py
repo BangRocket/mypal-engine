@@ -27,13 +27,14 @@ GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 
-# Scopes for Google Workspace (Sheets, Drive, Docs, Calendar)
+# Scopes for Google Workspace (Sheets, Drive, Docs, Calendar, Gmail)
 GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.readonly",  # Read access to all Drive files
     "https://www.googleapis.com/auth/drive.file",      # Write access to app-created files
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/calendar",        # Full calendar access
+    "https://www.googleapis.com/auth/gmail.readonly",  # Read-only email access for monitoring
 ]
 
 

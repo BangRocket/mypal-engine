@@ -959,3 +959,101 @@ def anthropic_to_openai_response(msg: anthropic.types.Message) -> dict:
         result["tool_calls"] = tool_calls
 
     return result
+
+
+# ============== Tool Description Generator ==============
+
+
+async def generate_tool_description(
+    tool_name: str,
+    args: dict,
+    max_words: int = 7,
+) -> str | None:
+    """Generate a short, specific description of a tool call using Haiku.
+
+    Uses the low tier (Haiku-class) model for fast, cheap descriptions.
+
+    Args:
+        tool_name: Name of the tool being called
+        args: Tool arguments
+        max_words: Maximum words in description (default 7)
+
+    Returns:
+        Short description (3-7 words) or None if generation fails
+    """
+    import asyncio
+
+    # Summarize args to keep prompt short
+    args_summary = json.dumps(args, default=str)
+    if len(args_summary) > 200:
+        args_summary = args_summary[:200] + "..."
+
+    prompt = f"""Describe what this tool call does in {max_words} words or fewer. Be specific and use action verbs.
+
+Tool: {tool_name}
+Args: {args_summary}
+
+Examples:
+- execute_python with code="df.describe()" -> "Analyzing dataframe statistics"
+- web_search with query="python async tutorial" -> "Searching Python async tutorials"
+- read_local_file with path="config.json" -> "Reading config file"
+
+Your description (no quotes, no period):"""
+
+    try:
+        provider = os.getenv("LLM_PROVIDER", "openrouter").lower()
+
+        # Use low tier for speed and cost
+        if provider == "anthropic":
+            client = _get_anthropic_client()
+            model = get_model_for_tier("low", "anthropic")
+
+            # Run in thread pool since Anthropic client is sync
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: client.messages.create(
+                    model=model,
+                    max_tokens=50,
+                    messages=[{"role": "user", "content": prompt}],
+                ),
+            )
+            text = response.content[0].text.strip()
+        else:
+            # Use OpenAI-compatible client
+            if provider == "nanogpt":
+                client = _get_nanogpt_client()
+            elif provider == "openai":
+                client = _get_custom_openai_client()
+            else:  # openrouter
+                client = _get_openrouter_client()
+
+            model = get_model_for_tier("low", provider)
+
+            # Run in thread pool
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: client.chat.completions.create(
+                    model=model,
+                    max_tokens=50,
+                    messages=[{"role": "user", "content": prompt}],
+                ),
+            )
+            text = response.choices[0].message.content.strip()
+
+        # Clean up response
+        text = text.strip('"\'')
+        if text.endswith("."):
+            text = text[:-1]
+
+        # Validate length
+        words = text.split()
+        if len(words) > max_words + 2:  # Allow a bit of slack
+            text = " ".join(words[:max_words])
+
+        return text
+
+    except Exception:
+        # Silently fail - description is optional
+        return None
