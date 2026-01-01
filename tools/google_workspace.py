@@ -51,6 +51,11 @@ You can interact with Google Sheets, Drive, and Docs for connected users.
 - `google_drive_download` - Download file content
 - `google_drive_create_folder` - Create a folder
 - `google_drive_share` - Share a file with someone
+- `google_drive_move` - Move a file to a different folder
+- `google_drive_copy` - Copy a file
+- `google_drive_rename` - Rename a file
+- `google_drive_delete` - Delete a file
+- `google_drive_get_file` - Get file metadata
 
 **Google Docs:**
 - `google_docs_create` - Create a new document
@@ -607,6 +612,181 @@ async def drive_share(args: dict[str, Any], ctx: ToolContext) -> str:
         return f"Error: {e}"
 
 
+async def drive_move(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Move a file to a different folder."""
+    file_id = args.get("file_id")
+    folder_id = args.get("folder_id")
+
+    if not file_id:
+        return "Error: file_id is required"
+    if not folder_id:
+        return "Error: folder_id (destination folder) is required"
+
+    try:
+        # First get current parents to remove them
+        metadata = await _google_request(
+            ctx.user_id,
+            "GET",
+            f"{DRIVE_API_URL}/files/{file_id}",
+            params={"fields": "name,parents"},
+        )
+        current_parents = metadata.get("parents", [])
+
+        # Move file: add new parent, remove old parents
+        data = await _google_request(
+            ctx.user_id,
+            "PATCH",
+            f"{DRIVE_API_URL}/files/{file_id}",
+            params={
+                "addParents": folder_id,
+                "removeParents": ",".join(current_parents) if current_parents else None,
+                "fields": "id,name,parents",
+            },
+        )
+        return json.dumps(
+            {
+                "file_id": data.get("id"),
+                "name": data.get("name"),
+                "new_parent": folder_id,
+                "moved": True,
+            },
+            indent=2,
+        )
+    except Exception as e:
+        return f"Error: {e}"
+
+
+async def drive_copy(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Copy a file."""
+    file_id = args.get("file_id")
+    new_name = args.get("name")
+    folder_id = args.get("folder_id")
+
+    if not file_id:
+        return "Error: file_id is required"
+
+    try:
+        body: dict[str, Any] = {}
+        if new_name:
+            body["name"] = new_name
+        if folder_id:
+            body["parents"] = [folder_id]
+
+        data = await _google_request(
+            ctx.user_id,
+            "POST",
+            f"{DRIVE_API_URL}/files/{file_id}/copy",
+            json_data=body if body else None,
+        )
+        return json.dumps(
+            {
+                "new_file_id": data.get("id"),
+                "name": data.get("name"),
+                "copied": True,
+            },
+            indent=2,
+        )
+    except Exception as e:
+        return f"Error: {e}"
+
+
+async def drive_rename(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Rename a file."""
+    file_id = args.get("file_id")
+    new_name = args.get("name")
+
+    if not file_id:
+        return "Error: file_id is required"
+    if not new_name:
+        return "Error: name (new name) is required"
+
+    try:
+        data = await _google_request(
+            ctx.user_id,
+            "PATCH",
+            f"{DRIVE_API_URL}/files/{file_id}",
+            json_data={"name": new_name},
+        )
+        return json.dumps(
+            {
+                "file_id": data.get("id"),
+                "name": data.get("name"),
+                "renamed": True,
+            },
+            indent=2,
+        )
+    except Exception as e:
+        return f"Error: {e}"
+
+
+async def drive_delete(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Delete a file (move to trash)."""
+    file_id = args.get("file_id")
+    permanent = args.get("permanent", False)
+
+    if not file_id:
+        return "Error: file_id is required"
+
+    try:
+        if permanent:
+            # Permanently delete (no trash)
+            await _google_request(
+                ctx.user_id,
+                "DELETE",
+                f"{DRIVE_API_URL}/files/{file_id}",
+            )
+            return json.dumps({"file_id": file_id, "deleted": True, "permanent": True}, indent=2)
+        else:
+            # Move to trash
+            data = await _google_request(
+                ctx.user_id,
+                "PATCH",
+                f"{DRIVE_API_URL}/files/{file_id}",
+                json_data={"trashed": True},
+            )
+            return json.dumps(
+                {"file_id": data.get("id"), "deleted": True, "trashed": True},
+                indent=2,
+            )
+    except Exception as e:
+        return f"Error: {e}"
+
+
+async def drive_get_file(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Get file metadata."""
+    file_id = args.get("file_id")
+
+    if not file_id:
+        return "Error: file_id is required"
+
+    try:
+        data = await _google_request(
+            ctx.user_id,
+            "GET",
+            f"{DRIVE_API_URL}/files/{file_id}",
+            params={
+                "fields": "id,name,mimeType,size,createdTime,modifiedTime,parents,webViewLink,sharingUser,owners,shared"
+            },
+        )
+        return json.dumps(
+            {
+                "id": data.get("id"),
+                "name": data.get("name"),
+                "mime_type": data.get("mimeType"),
+                "size": data.get("size"),
+                "created": data.get("createdTime"),
+                "modified": data.get("modifiedTime"),
+                "parents": data.get("parents"),
+                "url": data.get("webViewLink"),
+                "shared": data.get("shared"),
+                "owners": [o.get("emailAddress") for o in data.get("owners", [])],
+            },
+            indent=2,
+        )
+    except Exception as e:
+        return f"Error: {e}"
+
+
 # =============================================================================
 # Google Docs Tools
 # =============================================================================
@@ -952,6 +1132,79 @@ TOOLS = [
             "required": ["file_id", "email"],
         },
         handler=drive_share,
+        requires=["google_oauth"],
+    ),
+    ToolDef(
+        name="google_drive_move",
+        description="Move a file to a different folder.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "file_id": {"type": "string", "description": "File ID to move"},
+                "folder_id": {"type": "string", "description": "Destination folder ID"},
+            },
+            "required": ["file_id", "folder_id"],
+        },
+        handler=drive_move,
+        requires=["google_oauth"],
+    ),
+    ToolDef(
+        name="google_drive_copy",
+        description="Copy a file. Optionally give it a new name or place in a folder.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "file_id": {"type": "string", "description": "File ID to copy"},
+                "name": {"type": "string", "description": "New name for the copy (optional)"},
+                "folder_id": {"type": "string", "description": "Folder to place copy in (optional)"},
+            },
+            "required": ["file_id"],
+        },
+        handler=drive_copy,
+        requires=["google_oauth"],
+    ),
+    ToolDef(
+        name="google_drive_rename",
+        description="Rename a file or folder.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "file_id": {"type": "string", "description": "File ID to rename"},
+                "name": {"type": "string", "description": "New name"},
+            },
+            "required": ["file_id", "name"],
+        },
+        handler=drive_rename,
+        requires=["google_oauth"],
+    ),
+    ToolDef(
+        name="google_drive_delete",
+        description="Delete a file (moves to trash by default, use permanent=true to delete forever).",
+        parameters={
+            "type": "object",
+            "properties": {
+                "file_id": {"type": "string", "description": "File ID to delete"},
+                "permanent": {
+                    "type": "boolean",
+                    "description": "Permanently delete instead of moving to trash (default: false)",
+                },
+            },
+            "required": ["file_id"],
+        },
+        handler=drive_delete,
+        requires=["google_oauth"],
+    ),
+    ToolDef(
+        name="google_drive_get_file",
+        description="Get detailed metadata about a file (size, dates, sharing status, etc.).",
+        parameters={
+            "type": "object",
+            "properties": {
+                "file_id": {"type": "string", "description": "File ID to get info for"},
+            },
+            "required": ["file_id"],
+        },
+        handler=drive_get_file,
         requires=["google_oauth"],
     ),
     # Docs tools

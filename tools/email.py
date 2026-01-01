@@ -155,7 +155,7 @@ async def send_email(args: dict[str, Any], ctx: ToolContext) -> str:
     try:
         from email_monitor import send_email_smtp
 
-        success, error = send_email_smtp(to_addr, subject, body)
+        success, error = await send_email_smtp(to_addr, subject, body)
         if success:
             return f"Email sent successfully to {to_addr}"
         return f"Error sending email: {error}"
