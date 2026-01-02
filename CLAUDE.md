@@ -394,6 +394,46 @@ Standalone FastAPI service for OAuth callbacks and API endpoints. Runs separatel
 4. Set environment variables
 5. Update `GOOGLE_REDIRECT_URI` on both services to use the API service URL
 
+### Release Dashboard
+
+Standalone FastAPI service for tracking releases across stage/main/prod and triggering promotion workflows.
+
+**Location:** `release_dashboard/`
+
+**Environment Variables:**
+- `DATABASE_URL` - PostgreSQL connection string (shared with main app)
+- `GITHUB_CLIENT_ID` - GitHub OAuth App client ID
+- `GITHUB_CLIENT_SECRET` - GitHub OAuth App client secret
+- `GITHUB_REDIRECT_URI` - OAuth callback URL (e.g., https://release.up.railway.app/oauth/callback)
+- `GITHUB_REPO_OWNER` - Repository owner (e.g., "BangRocket")
+- `GITHUB_REPO_NAME` - Repository name (e.g., "mypalclara")
+- `SESSION_SECRET` - Cookie signing secret (auto-generated if not set)
+- `WORKFLOW_STAGE_TO_MAIN` - Workflow filename (default: "promote-to-main.yml")
+- `WORKFLOW_MAIN_TO_PROD` - Workflow filename (default: "promote-to-prod.yml")
+
+**Features:**
+- GitHub OAuth with collaborator check (only repo collaborators can access)
+- Three-column view showing stage/main/prod with current commit SHAs
+- Commit diffs showing what's pending promotion between environments
+- One-click buttons to trigger promote-to-main and promote-to-prod workflows
+- Deployment timeline with status, who triggered, and release tags
+
+**Endpoints:**
+- `GET /` - Main dashboard (requires auth)
+- `GET /health` - Health check
+- `GET /login` - Redirect to GitHub OAuth
+- `GET /oauth/callback` - OAuth callback handler
+- `GET /logout` - Clear session
+- `POST /api/promote/stage-to-main` - Trigger stage to main workflow
+- `POST /api/promote/main-to-prod` - Trigger main to prod workflow
+
+**Railway Deployment:**
+1. Create new service from `release_dashboard/` directory
+2. Set root directory to `release_dashboard`
+3. Enable public networking and note the domain
+4. Create a GitHub OAuth App at https://github.com/settings/developers
+5. Set environment variables including `GITHUB_REDIRECT_URI` to the Railway domain + `/oauth/callback`
+
 ### Claude Code Integration (Discord Bot)
 Clara can delegate complex coding tasks to Claude Code, an autonomous AI coding agent.
 
