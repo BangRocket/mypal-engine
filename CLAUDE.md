@@ -164,6 +164,14 @@ poetry run python scripts/migrate_to_postgres.py --all
 - `DISCORD_CHANNEL_HISTORY_LIMIT` - Max messages to fetch from channel (default: 50)
 - `DISCORD_MONITOR_PORT` - Monitor dashboard port (default: 8001)
 - `DISCORD_MONITOR_ENABLED` - Enable monitor dashboard (default: true)
+- `DISCORD_LOG_CHANNEL_ID` - Channel ID to mirror console logs to (optional)
+
+**Console Log Mirroring:**
+When `DISCORD_LOG_CHANNEL_ID` is set, all console log output is mirrored to the specified Discord channel. Each log line becomes a separate message. Special events are highlighted:
+- 🟢 Bot started
+- 🔴 Bot shutting down
+- 🟡 Bot disconnected
+- 🔄 Bot reconnected/resumed
 
 **Stop Phrases:**
 Users can interrupt Clara mid-task by sending a stop phrase (e.g., "@Clara stop" or "@Clara nevermind"). This immediately cancels the current task and clears any queued requests for that channel. Useful when Clara is taking too long or working on the wrong thing.
