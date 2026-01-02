@@ -336,12 +336,25 @@ class MemoryManager:
             search_query = search_query[-MAX_SEARCH_QUERY_CHARS:]
             print(f"[mem0] Truncated search query to {MAX_SEARCH_QUERY_CHARS} chars")
 
-        user_res = MEM0.search(search_query, user_id=user_id)
-        proj_res = MEM0.search(
-            search_query,
-            user_id=user_id,
-            filters={"project_id": project_id},
-        )
+        try:
+            user_res = MEM0.search(search_query, user_id=user_id)
+        except Exception as e:
+            print(f"[mem0] ERROR searching user memories: {e}")
+            import traceback
+            traceback.print_exc()
+            user_res = {"results": []}
+
+        try:
+            proj_res = MEM0.search(
+                search_query,
+                user_id=user_id,
+                filters={"project_id": project_id},
+            )
+        except Exception as e:
+            print(f"[mem0] ERROR searching project memories: {e}")
+            import traceback
+            traceback.print_exc()
+            proj_res = {"results": []}
 
         user_mems = [r["memory"] for r in user_res.get("results", [])]
         proj_mems = [r["memory"] for r in proj_res.get("results", [])]
@@ -439,12 +452,26 @@ class MemoryManager:
                 p.get("name") for p in participants if p.get("name")
             ]
 
-        result = MEM0.add(
-            history_slice,
-            user_id=user_id,
-            metadata=metadata,
-        )
-        print(f"[mem0] Added memories: {result}")
+        try:
+            result = MEM0.add(
+                history_slice,
+                user_id=user_id,
+                metadata=metadata,
+            )
+            # Check for errors in result
+            if isinstance(result, dict):
+                if result.get("error"):
+                    print(f"[mem0] ERROR adding memories: {result.get('error')}")
+                elif result.get("results"):
+                    print(f"[mem0] Added {len(result.get('results', []))} memories")
+                else:
+                    print(f"[mem0] Add result: {result}")
+            else:
+                print(f"[mem0] Added memories: {result}")
+        except Exception as e:
+            print(f"[mem0] ERROR adding memories: {e}")
+            import traceback
+            traceback.print_exc()
 
     # ---------- prompt building ----------
 
