@@ -342,89 +342,28 @@ class MemoryManager:
             search_query = search_query[-MAX_SEARCH_QUERY_CHARS:]
             print(f"[mem0] Truncated search query to {MAX_SEARCH_QUERY_CHARS} chars")
 
-        # Memory bucket logic:
-        # - Personal memories (from DMs): tagged with source_type="personal"
-        # - Project memories (from servers): tagged with source_type="project" + project_id
-        #
-        # In DMs: personal first (full limit), then project (reduced limit)
-        # In servers: project first (full limit), then personal (reduced limit)
-
-        user_mems: list[str] = []
-        proj_mems: list[str] = []
-
-        # Primary bucket (full retrieval)
         try:
-            if is_dm:
-                # In DMs: prioritize personal memories
-                primary_res = MEM0.search(
-                    search_query,
-                    user_id=user_id,
-                    filters={"source_type": "personal"},
-                )
-            else:
-                # In servers: prioritize project memories
-                primary_res = MEM0.search(
-                    search_query,
-                    user_id=user_id,
-                    filters={"project_id": project_id, "source_type": "project"},
-                )
-            primary_mems = [r["memory"] for r in primary_res.get("results", [])]
+            user_res = MEM0.search(search_query, user_id=user_id)
         except Exception as e:
-            print(f"[mem0] ERROR searching primary memories: {e}")
+            print(f"[mem0] ERROR searching user memories: {e}")
             import traceback
             traceback.print_exc()
-            primary_mems = []
+            user_res = {"results": []}
 
-        # Secondary bucket (reduced retrieval for cross-pollination)
         try:
-            if is_dm:
-                # In DMs: also fetch some project context
-                secondary_res = MEM0.search(
-                    search_query,
-                    user_id=user_id,
-                    filters={"source_type": "project"},
-                    limit=10,  # Reduced limit for secondary
-                )
-            else:
-                # In servers: also fetch some personal context
-                secondary_res = MEM0.search(
-                    search_query,
-                    user_id=user_id,
-                    filters={"source_type": "personal"},
-                    limit=10,  # Reduced limit for secondary
-                )
-            secondary_mems = [r["memory"] for r in secondary_res.get("results", [])]
+            proj_res = MEM0.search(
+                search_query,
+                user_id=user_id,
+                filters={"project_id": project_id},
+            )
         except Exception as e:
-            print(f"[mem0] ERROR searching secondary memories: {e}")
+            print(f"[mem0] ERROR searching project memories: {e}")
             import traceback
             traceback.print_exc()
-            secondary_mems = []
+            proj_res = {"results": []}
 
-        # Also search untagged legacy memories (no source_type filter)
-        try:
-            legacy_res = MEM0.search(search_query, user_id=user_id, limit=10)
-            legacy_mems = [r["memory"] for r in legacy_res.get("results", [])]
-        except Exception as e:
-            print(f"[mem0] ERROR searching legacy memories: {e}")
-            legacy_mems = []
-
-        # Assign to user_mems and proj_mems based on context
-        if is_dm:
-            # In DMs: personal is primary, project is secondary
-            user_mems = primary_mems
-            proj_mems = secondary_mems
-            # Add unique legacy memories to user bucket
-            for mem in legacy_mems:
-                if mem not in user_mems:
-                    user_mems.append(mem)
-        else:
-            # In servers: project is primary, personal is secondary
-            proj_mems = primary_mems
-            user_mems = secondary_mems
-            # Add unique legacy memories to project bucket
-            for mem in legacy_mems:
-                if mem not in proj_mems:
-                    proj_mems.append(mem)
+        user_mems = [r["memory"] for r in user_res.get("results", [])]
+        proj_mems = [r["memory"] for r in proj_res.get("results", [])]
 
         # Also search for memories about each participant
         if participants:
@@ -526,12 +465,26 @@ class MemoryManager:
                 p.get("name") for p in participants if p.get("name")
             ]
 
-        result = MEM0.add(
-            history_slice,
-            user_id=user_id,
-            metadata=metadata,
-        )
-        print(f"[mem0] Added memories: {result}")
+        try:
+            result = MEM0.add(
+                history_slice,
+                user_id=user_id,
+                metadata=metadata,
+            )
+            # Check for errors in result
+            if isinstance(result, dict):
+                if result.get("error"):
+                    print(f"[mem0] ERROR adding memories: {result.get('error')}")
+                elif result.get("results"):
+                    print(f"[mem0] Added {len(result.get('results', []))} memories")
+                else:
+                    print(f"[mem0] Add result: {result}")
+            else:
+                print(f"[mem0] Added memories: {result}")
+        except Exception as e:
+            print(f"[mem0] ERROR adding memories: {e}")
+            import traceback
+            traceback.print_exc()
 
     # ---------- prompt building ----------
 
