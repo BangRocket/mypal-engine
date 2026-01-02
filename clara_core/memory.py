@@ -387,8 +387,8 @@ class MemoryManager:
                 except Exception as e:
                     print(f"[mem0] Error searching participant {p_id}: {e}")
 
-        # Extract contact-related memories with source info from legacy search
-        for r in legacy_res.get("results", []):
+        # Extract contact-related memories with source info
+        for r in user_res.get("results", []):
             metadata = r.get("metadata", {})
             if metadata.get("contact_id"):
                 contact_name = metadata.get(
