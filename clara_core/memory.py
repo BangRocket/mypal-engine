@@ -313,14 +313,20 @@ class MemoryManager:
         project_id: str,
         user_message: str,
         participants: list[dict] | None = None,
+        is_dm: bool = False,
     ) -> tuple[list[str], list[str]]:
         """Fetch relevant memories from mem0.
+
+        Memory bucket logic:
+        - DMs: Prioritize personal memories, include project memories secondarily
+        - Servers: Prioritize project memories, include personal with lower weight
 
         Args:
             user_id: The user making the request
             project_id: Project context
             user_message: The message to search for relevant memories
             participants: List of {"id": str, "name": str} for conversation members
+            is_dm: Whether this is a DM conversation (changes retrieval priority)
 
         Returns:
             Tuple of (user_memories, project_memories)
@@ -336,12 +342,25 @@ class MemoryManager:
             search_query = search_query[-MAX_SEARCH_QUERY_CHARS:]
             print(f"[mem0] Truncated search query to {MAX_SEARCH_QUERY_CHARS} chars")
 
-        user_res = MEM0.search(search_query, user_id=user_id)
-        proj_res = MEM0.search(
-            search_query,
-            user_id=user_id,
-            filters={"project_id": project_id},
-        )
+        try:
+            user_res = MEM0.search(search_query, user_id=user_id)
+        except Exception as e:
+            print(f"[mem0] ERROR searching user memories: {e}")
+            import traceback
+            traceback.print_exc()
+            user_res = {"results": []}
+
+        try:
+            proj_res = MEM0.search(
+                search_query,
+                user_id=user_id,
+                filters={"project_id": project_id},
+            )
+        except Exception as e:
+            print(f"[mem0] ERROR searching project memories: {e}")
+            import traceback
+            traceback.print_exc()
+            proj_res = {"results": []}
 
         user_mems = [r["memory"] for r in user_res.get("results", [])]
         proj_mems = [r["memory"] for r in proj_res.get("results", [])]
@@ -368,8 +387,8 @@ class MemoryManager:
                 except Exception as e:
                     print(f"[mem0] Error searching participant {p_id}: {e}")
 
-        # Extract contact-related memories with source info
-        for r in user_res.get("results", []):
+        # Extract contact-related memories with source info from legacy search
+        for r in legacy_res.get("results", []):
             metadata = r.get("metadata", {})
             if metadata.get("contact_id"):
                 contact_name = metadata.get(
@@ -400,6 +419,7 @@ class MemoryManager:
         user_message: str,
         assistant_reply: str,
         participants: list[dict] | None = None,
+        is_dm: bool = False,
     ) -> None:
         """Send conversation slice to mem0 for memory extraction.
 
@@ -410,6 +430,7 @@ class MemoryManager:
             user_message: Current user message
             assistant_reply: Clara's response
             participants: List of {"id": str, "name": str} for people mentioned
+            is_dm: Whether this is a DM conversation (stores as "personal" vs "project")
         """
         from config.mem0 import MEM0
 
@@ -430,7 +451,12 @@ class MemoryManager:
         ]
 
         # Store with participant metadata for cross-user search
-        metadata = {"project_id": project_id}
+        # Tag source type: "personal" for DMs, "project" for server channels
+        source_type = "personal" if is_dm else "project"
+        metadata = {
+            "project_id": project_id,
+            "source_type": source_type,
+        }
         if participants:
             metadata["participant_ids"] = [
                 p.get("id") for p in participants if p.get("id")
@@ -439,12 +465,26 @@ class MemoryManager:
                 p.get("name") for p in participants if p.get("name")
             ]
 
-        result = MEM0.add(
-            history_slice,
-            user_id=user_id,
-            metadata=metadata,
-        )
-        print(f"[mem0] Added memories: {result}")
+        try:
+            result = MEM0.add(
+                history_slice,
+                user_id=user_id,
+                metadata=metadata,
+            )
+            # Check for errors in result
+            if isinstance(result, dict):
+                if result.get("error"):
+                    print(f"[mem0] ERROR adding memories: {result.get('error')}")
+                elif result.get("results"):
+                    print(f"[mem0] Added {len(result.get('results', []))} memories")
+                else:
+                    print(f"[mem0] Add result: {result}")
+            else:
+                print(f"[mem0] Added memories: {result}")
+        except Exception as e:
+            print(f"[mem0] ERROR adding memories: {e}")
+            import traceback
+            traceback.print_exc()
 
     # ---------- prompt building ----------
 
