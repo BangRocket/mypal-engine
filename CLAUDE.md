@@ -102,7 +102,7 @@ Optional tier-specific model overrides:
 - `NANOGPT_MODEL_HIGH`, `NANOGPT_MODEL_MID`, `NANOGPT_MODEL_LOW`
 - `CUSTOM_OPENAI_MODEL_HIGH`, `CUSTOM_OPENAI_MODEL_MID`, `CUSTOM_OPENAI_MODEL_LOW`
 - `ANTHROPIC_MODEL_HIGH`, `ANTHROPIC_MODEL_MID`, `ANTHROPIC_MODEL_LOW`
-- `MODEL_TIER` - Default tier when not specified (default: "mid")
+- `MODEL_TIER` - Default tier when not specified. If not set, uses the base model (e.g., `ANTHROPIC_MODEL`). Set to "high", "mid", or "low" to enable tier-based defaults.
 - `AUTO_TIER_SELECTION` - Enable automatic tier selection based on message complexity (default: false)
 
 **Auto Tier Selection:**

@@ -175,9 +175,7 @@ def _get_openai_tool_client() -> OpenAI:
         # Determine defaults based on main LLM provider
         if provider == "openai":
             default_key = os.getenv("CUSTOM_OPENAI_API_KEY")
-            default_url = os.getenv(
-                "CUSTOM_OPENAI_BASE_URL", "https://api.openai.com/v1"
-            )
+            default_url = os.getenv("CUSTOM_OPENAI_BASE_URL", "https://api.openai.com/v1")
         elif provider == "nanogpt":
             default_key = os.getenv("NANOGPT_API_KEY")
             default_url = "https://nano-gpt.com/api/v1"
@@ -191,8 +189,7 @@ def _get_openai_tool_client() -> OpenAI:
 
         if not api_key:
             raise RuntimeError(
-                "No API key found for tool calling. "
-                "Set TOOL_API_KEY or configure your main LLM provider."
+                "No API key found for tool calling. " "Set TOOL_API_KEY or configure your main LLM provider."
             )
 
         # Build client config
@@ -268,10 +265,7 @@ def _get_anthropic_tool_client() -> Anthropic:
         base_url = os.getenv("TOOL_BASE_URL") or os.getenv("ANTHROPIC_BASE_URL")
 
         if not api_key:
-            raise RuntimeError(
-                "No API key found for Anthropic tool calling. "
-                "Set TOOL_API_KEY or ANTHROPIC_API_KEY."
-            )
+            raise RuntimeError("No API key found for Anthropic tool calling. " "Set TOOL_API_KEY or ANTHROPIC_API_KEY.")
 
         client_kwargs: dict = {"api_key": api_key}
         if base_url:
@@ -334,9 +328,7 @@ def get_model_for_tier(tier: ModelTier, provider: str | None = None) -> str:
         # Fall back to base model for mid tier, or defaults
         if tier == "mid":
             return os.getenv("OPENROUTER_MODEL", DEFAULT_MODELS["openrouter"]["mid"])
-        return DEFAULT_MODELS["openrouter"].get(
-            tier, DEFAULT_MODELS["openrouter"]["mid"]
-        )
+        return DEFAULT_MODELS["openrouter"].get(tier, DEFAULT_MODELS["openrouter"]["mid"])
 
     elif provider == "nanogpt":
         tier_model = os.getenv(f"NANOGPT_MODEL_{tier_upper}")
@@ -366,20 +358,27 @@ def get_model_for_tier(tier: ModelTier, provider: str | None = None) -> str:
         raise ValueError(f"Unknown provider: {provider}")
 
 
-def get_current_tier() -> ModelTier:
-    """Get the current default tier from environment."""
-    tier = os.getenv("MODEL_TIER", DEFAULT_TIER).lower()
+def get_current_tier() -> ModelTier | None:
+    """Get the current default tier from environment.
+
+    Returns None if MODEL_TIER is not explicitly set, allowing callers
+    to fall back to the base model instead of assuming "mid" tier.
+    """
+    tier = os.getenv("MODEL_TIER", "").lower()
     if tier in ("high", "mid", "low"):
         return tier  # type: ignore
-    return DEFAULT_TIER
+    return None
 
 
 def get_tier_info() -> dict:
     """Get information about configured tiers for current provider."""
     provider = os.getenv("LLM_PROVIDER", "openrouter").lower()
+    current_tier = get_current_tier()
     return {
         "provider": provider,
-        "current_tier": get_current_tier(),
+        "current_tier": current_tier,
+        "default_model": get_base_model(provider),
+        "using_tiers": current_tier is not None,
         "models": {
             "high": get_model_for_tier("high", provider),
             "mid": get_model_for_tier("mid", provider),
@@ -402,11 +401,16 @@ def make_llm(tier: ModelTier | None = None) -> Callable[[list[dict[str, str]]], 
 
     Args:
         tier: Optional model tier ("high", "mid", "low").
-              If None, uses the default tier from MODEL_TIER env var or "mid".
+              If None, uses MODEL_TIER env var if set, otherwise uses the base model.
     """
     provider = os.getenv("LLM_PROVIDER", "openrouter").lower()
     effective_tier = tier or get_current_tier()
-    model = get_model_for_tier(effective_tier, provider)
+
+    # If no tier specified and MODEL_TIER not set, use base model
+    if effective_tier is None:
+        model = get_base_model(provider)
+    else:
+        model = get_model_for_tier(effective_tier, provider)
 
     if provider == "openrouter":
         return _make_openrouter_llm_with_model(model)
@@ -515,11 +519,16 @@ def make_llm_streaming(
 
     Args:
         tier: Optional model tier ("high", "mid", "low").
-              If None, uses the default tier from MODEL_TIER env var or "mid".
+              If None, uses MODEL_TIER env var if set, otherwise uses the base model.
     """
     provider = os.getenv("LLM_PROVIDER", "openrouter").lower()
     effective_tier = tier or get_current_tier()
-    model = get_model_for_tier(effective_tier, provider)
+
+    # If no tier specified and MODEL_TIER not set, use base model
+    if effective_tier is None:
+        model = get_base_model(provider)
+    else:
+        model = get_model_for_tier(effective_tier, provider)
 
     if provider == "openrouter":
         return _make_openrouter_llm_streaming_with_model(model)
@@ -643,9 +652,7 @@ def _convert_tools_to_claude_format(tools: list[dict]) -> list[dict]:
                 {
                     "name": func.get("name"),
                     "description": func.get("description", ""),
-                    "input_schema": func.get(
-                        "parameters", {"type": "object", "properties": {}}
-                    ),
+                    "input_schema": func.get("parameters", {"type": "object", "properties": {}}),
                 }
             )
         else:
@@ -708,9 +715,7 @@ def _convert_messages_to_claude_format(messages: list[dict]) -> list[dict]:
                         "type": "tool_use",
                         "id": tc.get("id"),
                         "name": tc.get("function", {}).get("name"),
-                        "input": json.loads(
-                            tc.get("function", {}).get("arguments", "{}")
-                        ),
+                        "input": json.loads(tc.get("function", {}).get("arguments", "{}")),
                     }
                 )
 
@@ -770,8 +775,8 @@ def _get_tool_model(tier: ModelTier | None = None) -> str:
     This ensures tools always have sufficient capability (never haiku).
 
     Args:
-        tier: Optional tier override. If None, uses default tier.
-              "low" tier is bumped to use the base model.
+        tier: Optional tier override. If None, uses MODEL_TIER env var if set,
+              otherwise uses base model. "low" tier is bumped to use the base model.
     """
     provider = os.getenv("LLM_PROVIDER", "openrouter").lower()
 
@@ -781,6 +786,11 @@ def _get_tool_model(tier: ModelTier | None = None) -> str:
 
     # For other tiers (high, mid, None), use tier-based selection
     effective_tier = tier or get_current_tier()
+
+    # If no tier specified and MODEL_TIER not set, use base model
+    if effective_tier is None:
+        return get_base_model(provider)
+
     return get_model_for_tier(effective_tier, provider)
 
 
@@ -838,7 +848,7 @@ def make_llm_with_tools_anthropic(
     Args:
         tools: List of tool definitions in OpenAI format (will be converted).
         tier: Optional model tier ("high", "mid", "low").
-              If None, uses the default tier from MODEL_TIER env var or "mid".
+              If None, uses MODEL_TIER env var if set, otherwise uses base model.
               "low" tier is bumped to use the base model.
 
     Returns:
@@ -851,7 +861,11 @@ def make_llm_with_tools_anthropic(
         model = get_base_model("anthropic")
     else:
         effective_tier = tier or get_current_tier()
-        model = get_model_for_tier(effective_tier, "anthropic")
+        # If no tier specified and MODEL_TIER not set, use base model
+        if effective_tier is None:
+            model = get_base_model("anthropic")
+        else:
+            model = get_model_for_tier(effective_tier, "anthropic")
 
     def llm(messages: list[dict]) -> anthropic.types.Message:
         # Extract system messages (Anthropic handles it separately)
@@ -1043,7 +1057,7 @@ Your description (no quotes, no period):"""
             text = response.choices[0].message.content.strip()
 
         # Clean up response
-        text = text.strip('"\'')
+        text = text.strip("\"'")
         if text.endswith("."):
             text = text[:-1]
 
