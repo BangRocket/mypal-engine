@@ -313,14 +313,20 @@ class MemoryManager:
         project_id: str,
         user_message: str,
         participants: list[dict] | None = None,
+        is_dm: bool = False,
     ) -> tuple[list[str], list[str]]:
         """Fetch relevant memories from mem0.
+
+        Memory bucket logic:
+        - DMs: Prioritize personal memories, include project memories secondarily
+        - Servers: Prioritize project memories, include personal with lower weight
 
         Args:
             user_id: The user making the request
             project_id: Project context
             user_message: The message to search for relevant memories
             participants: List of {"id": str, "name": str} for conversation members
+            is_dm: Whether this is a DM conversation (changes retrieval priority)
 
         Returns:
             Tuple of (user_memories, project_memories)
@@ -381,8 +387,8 @@ class MemoryManager:
                 except Exception as e:
                     print(f"[mem0] Error searching participant {p_id}: {e}")
 
-        # Extract contact-related memories with source info
-        for r in user_res.get("results", []):
+        # Extract contact-related memories with source info from legacy search
+        for r in legacy_res.get("results", []):
             metadata = r.get("metadata", {})
             if metadata.get("contact_id"):
                 contact_name = metadata.get(
@@ -413,6 +419,7 @@ class MemoryManager:
         user_message: str,
         assistant_reply: str,
         participants: list[dict] | None = None,
+        is_dm: bool = False,
     ) -> None:
         """Send conversation slice to mem0 for memory extraction.
 
@@ -423,6 +430,7 @@ class MemoryManager:
             user_message: Current user message
             assistant_reply: Clara's response
             participants: List of {"id": str, "name": str} for people mentioned
+            is_dm: Whether this is a DM conversation (stores as "personal" vs "project")
         """
         from config.mem0 import MEM0
 
@@ -443,7 +451,12 @@ class MemoryManager:
         ]
 
         # Store with participant metadata for cross-user search
-        metadata = {"project_id": project_id}
+        # Tag source type: "personal" for DMs, "project" for server channels
+        source_type = "personal" if is_dm else "project"
+        metadata = {
+            "project_id": project_id,
+            "source_type": source_type,
+        }
         if participants:
             metadata["participant_ids"] = [
                 p.get("id") for p in participants if p.get("id")
