@@ -396,7 +396,7 @@ Standalone FastAPI service for OAuth callbacks and API endpoints. Runs separatel
 
 ### Release Dashboard
 
-Standalone FastAPI service for tracking releases across stage/main/prod and triggering promotion workflows.
+Standalone FastAPI service for tracking releases across stage/main and triggering deployment workflows.
 
 **Location:** `release_dashboard/`
 
@@ -408,14 +408,14 @@ Standalone FastAPI service for tracking releases across stage/main/prod and trig
 - `GITHUB_REPO_OWNER` - Repository owner (e.g., "BangRocket")
 - `GITHUB_REPO_NAME` - Repository name (e.g., "mypalclara")
 - `SESSION_SECRET` - Cookie signing secret (auto-generated if not set)
-- `WORKFLOW_STAGE_TO_MAIN` - Workflow filename (default: "promote-to-main.yml")
-- `WORKFLOW_MAIN_TO_PROD` - Workflow filename (default: "promote-to-prod.yml")
+- `WORKFLOW_DEPLOY` - Workflow filename (default: "promote-to-main.yml")
 
 **Features:**
 - GitHub OAuth with collaborator check (only repo collaborators can access)
-- Three-column view showing stage/main/prod with current commit SHAs
-- Commit diffs showing what's pending promotion between environments
-- One-click buttons to trigger promote-to-main and promote-to-prod workflows
+- Two-column view showing stage (development) and main (production)
+- Commit diffs showing what's pending deployment from stage to main
+- One-click deploy button to trigger the deployment workflow
+- Creates release tags on successful deployment (format: `v{YYYY.MM.DD}-{sha}`)
 - Deployment timeline with status, who triggered, and release tags
 
 **Endpoints:**
@@ -424,8 +424,7 @@ Standalone FastAPI service for tracking releases across stage/main/prod and trig
 - `GET /login` - Redirect to GitHub OAuth
 - `GET /oauth/callback` - OAuth callback handler
 - `GET /logout` - Clear session
-- `POST /api/promote/stage-to-main` - Trigger stage to main workflow
-- `POST /api/promote/main-to-prod` - Trigger main to prod workflow
+- `POST /api/deploy` - Trigger stage to main deployment
 
 **Railway Deployment:**
 1. Create new service from `release_dashboard/` directory
