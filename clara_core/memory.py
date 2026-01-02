@@ -313,14 +313,20 @@ class MemoryManager:
         project_id: str,
         user_message: str,
         participants: list[dict] | None = None,
+        is_dm: bool = False,
     ) -> tuple[list[str], list[str]]:
         """Fetch relevant memories from mem0.
+
+        Memory bucket logic:
+        - DMs: Prioritize personal memories, include project memories secondarily
+        - Servers: Prioritize project memories, include personal with lower weight
 
         Args:
             user_id: The user making the request
             project_id: Project context
             user_message: The message to search for relevant memories
             participants: List of {"id": str, "name": str} for conversation members
+            is_dm: Whether this is a DM conversation (changes retrieval priority)
 
         Returns:
             Tuple of (user_memories, project_memories)
@@ -336,15 +342,89 @@ class MemoryManager:
             search_query = search_query[-MAX_SEARCH_QUERY_CHARS:]
             print(f"[mem0] Truncated search query to {MAX_SEARCH_QUERY_CHARS} chars")
 
-        user_res = MEM0.search(search_query, user_id=user_id)
-        proj_res = MEM0.search(
-            search_query,
-            user_id=user_id,
-            filters={"project_id": project_id},
-        )
+        # Memory bucket logic:
+        # - Personal memories (from DMs): tagged with source_type="personal"
+        # - Project memories (from servers): tagged with source_type="project" + project_id
+        #
+        # In DMs: personal first (full limit), then project (reduced limit)
+        # In servers: project first (full limit), then personal (reduced limit)
 
-        user_mems = [r["memory"] for r in user_res.get("results", [])]
-        proj_mems = [r["memory"] for r in proj_res.get("results", [])]
+        user_mems: list[str] = []
+        proj_mems: list[str] = []
+
+        # Primary bucket (full retrieval)
+        try:
+            if is_dm:
+                # In DMs: prioritize personal memories
+                primary_res = MEM0.search(
+                    search_query,
+                    user_id=user_id,
+                    filters={"source_type": "personal"},
+                )
+            else:
+                # In servers: prioritize project memories
+                primary_res = MEM0.search(
+                    search_query,
+                    user_id=user_id,
+                    filters={"project_id": project_id, "source_type": "project"},
+                )
+            primary_mems = [r["memory"] for r in primary_res.get("results", [])]
+        except Exception as e:
+            print(f"[mem0] ERROR searching primary memories: {e}")
+            import traceback
+            traceback.print_exc()
+            primary_mems = []
+
+        # Secondary bucket (reduced retrieval for cross-pollination)
+        try:
+            if is_dm:
+                # In DMs: also fetch some project context
+                secondary_res = MEM0.search(
+                    search_query,
+                    user_id=user_id,
+                    filters={"source_type": "project"},
+                    limit=10,  # Reduced limit for secondary
+                )
+            else:
+                # In servers: also fetch some personal context
+                secondary_res = MEM0.search(
+                    search_query,
+                    user_id=user_id,
+                    filters={"source_type": "personal"},
+                    limit=10,  # Reduced limit for secondary
+                )
+            secondary_mems = [r["memory"] for r in secondary_res.get("results", [])]
+        except Exception as e:
+            print(f"[mem0] ERROR searching secondary memories: {e}")
+            import traceback
+            traceback.print_exc()
+            secondary_mems = []
+
+        # Also search untagged legacy memories (no source_type filter)
+        try:
+            legacy_res = MEM0.search(search_query, user_id=user_id, limit=10)
+            legacy_mems = [r["memory"] for r in legacy_res.get("results", [])]
+        except Exception as e:
+            print(f"[mem0] ERROR searching legacy memories: {e}")
+            legacy_mems = []
+
+        # Assign to user_mems and proj_mems based on context
+        if is_dm:
+            # In DMs: personal is primary, project is secondary
+            user_mems = primary_mems
+            proj_mems = secondary_mems
+            # Add unique legacy memories to user bucket
+            for mem in legacy_mems:
+                if mem not in user_mems:
+                    user_mems.append(mem)
+        else:
+            # In servers: project is primary, personal is secondary
+            proj_mems = primary_mems
+            user_mems = secondary_mems
+            # Add unique legacy memories to project bucket
+            for mem in legacy_mems:
+                if mem not in proj_mems:
+                    proj_mems.append(mem)
 
         # Also search for memories about each participant
         if participants:
@@ -368,8 +448,8 @@ class MemoryManager:
                 except Exception as e:
                     print(f"[mem0] Error searching participant {p_id}: {e}")
 
-        # Extract contact-related memories with source info
-        for r in user_res.get("results", []):
+        # Extract contact-related memories with source info from legacy search
+        for r in legacy_res.get("results", []):
             metadata = r.get("metadata", {})
             if metadata.get("contact_id"):
                 contact_name = metadata.get(
@@ -400,6 +480,7 @@ class MemoryManager:
         user_message: str,
         assistant_reply: str,
         participants: list[dict] | None = None,
+        is_dm: bool = False,
     ) -> None:
         """Send conversation slice to mem0 for memory extraction.
 
@@ -410,6 +491,7 @@ class MemoryManager:
             user_message: Current user message
             assistant_reply: Clara's response
             participants: List of {"id": str, "name": str} for people mentioned
+            is_dm: Whether this is a DM conversation (stores as "personal" vs "project")
         """
         from config.mem0 import MEM0
 
@@ -430,7 +512,12 @@ class MemoryManager:
         ]
 
         # Store with participant metadata for cross-user search
-        metadata = {"project_id": project_id}
+        # Tag source type: "personal" for DMs, "project" for server channels
+        source_type = "personal" if is_dm else "project"
+        metadata = {
+            "project_id": project_id,
+            "source_type": source_type,
+        }
         if participants:
             metadata["participant_ids"] = [
                 p.get("id") for p in participants if p.get("id")
