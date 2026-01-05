@@ -138,18 +138,14 @@ async def _github_graphql(query: str, variables: dict | None = None) -> dict:
             try:
                 error_data = response.json()
                 if "errors" in error_data:
-                    error_msg = "; ".join(
-                        e.get("message", str(e)) for e in error_data["errors"]
-                    )
+                    error_msg = "; ".join(e.get("message", str(e)) for e in error_data["errors"])
             except Exception:
                 pass
             raise ValueError(f"GitHub GraphQL error ({response.status_code}): {error_msg}")
 
         data = response.json()
         if "errors" in data:
-            error_msg = "; ".join(
-                e.get("message", str(e)) for e in data["errors"]
-            )
+            error_msg = "; ".join(e.get("message", str(e)) for e in data["errors"])
             raise ValueError(f"GitHub GraphQL error: {error_msg}")
 
         return data.get("data", {})
@@ -178,16 +174,9 @@ async def search_users(args: dict[str, Any], ctx: ToolContext) -> str:
     per_page = min(args.get("per_page", 10), 100)
 
     try:
-        result = await _github_request(
-            "GET", "/search/users", params={"q": query, "per_page": per_page}
-        )
-        users = [
-            {"login": u["login"], "url": u["html_url"], "type": u["type"]}
-            for u in result.get("items", [])
-        ]
-        return json.dumps(
-            {"total_count": result.get("total_count", 0), "users": users}, indent=2
-        )
+        result = await _github_request("GET", "/search/users", params={"q": query, "per_page": per_page})
+        users = [{"login": u["login"], "url": u["html_url"], "type": u["type"]} for u in result.get("items", [])]
+        return json.dumps({"total_count": result.get("total_count", 0), "users": users}, indent=2)
     except Exception as e:
         return f"Error: {e}"
 
@@ -284,9 +273,7 @@ async def fork_repository(args: dict[str, Any], ctx: ToolContext) -> str:
         data["organization"] = args["organization"]
 
     try:
-        result = await _github_request(
-            "POST", f"/repos/{owner}/{repo}/forks", json_data=data
-        )
+        result = await _github_request("POST", f"/repos/{owner}/{repo}/forks", json_data=data)
         return json.dumps(
             {
                 "forked": True,
@@ -312,16 +299,11 @@ async def get_file_contents(args: dict[str, Any], ctx: ToolContext) -> str:
         params["ref"] = args["ref"]
 
     try:
-        result = await _github_request(
-            "GET", f"/repos/{owner}/{repo}/contents/{path}", params=params
-        )
+        result = await _github_request("GET", f"/repos/{owner}/{repo}/contents/{path}", params=params)
 
         if isinstance(result, list):
             # Directory listing
-            items = [
-                {"name": item["name"], "type": item["type"], "path": item["path"]}
-                for item in result
-            ]
+            items = [{"name": item["name"], "type": item["type"], "path": item["path"]} for item in result]
             return json.dumps({"type": "directory", "items": items}, indent=2)
         else:
             # File content
@@ -365,18 +347,14 @@ async def create_or_update_file(args: dict[str, Any], ctx: ToolContext) -> str:
         data["sha"] = args["sha"]
     else:
         try:
-            existing = await _github_request(
-                "GET", f"/repos/{owner}/{repo}/contents/{path}"
-            )
+            existing = await _github_request("GET", f"/repos/{owner}/{repo}/contents/{path}")
             if isinstance(existing, dict) and existing.get("sha"):
                 data["sha"] = existing["sha"]
         except Exception:
             pass  # File doesn't exist, creating new
 
     try:
-        result = await _github_request(
-            "PUT", f"/repos/{owner}/{repo}/contents/{path}", json_data=data
-        )
+        result = await _github_request("PUT", f"/repos/{owner}/{repo}/contents/{path}", json_data=data)
         return json.dumps(
             {
                 "success": True,
@@ -406,12 +384,8 @@ async def delete_file(args: dict[str, Any], ctx: ToolContext) -> str:
         data["branch"] = args["branch"]
 
     try:
-        result = await _github_request(
-            "DELETE", f"/repos/{owner}/{repo}/contents/{path}", json_data=data
-        )
-        return json.dumps(
-            {"deleted": True, "commit_sha": result["commit"]["sha"]}, indent=2
-        )
+        result = await _github_request("DELETE", f"/repos/{owner}/{repo}/contents/{path}", json_data=data)
+        return json.dumps({"deleted": True, "commit_sha": result["commit"]["sha"]}, indent=2)
     except Exception as e:
         return f"Error: {e}"
 
@@ -426,12 +400,8 @@ async def list_branches(args: dict[str, Any], ctx: ToolContext) -> str:
     per_page = min(args.get("per_page", 30), 100)
 
     try:
-        result = await _github_request(
-            "GET", f"/repos/{owner}/{repo}/branches", params={"per_page": per_page}
-        )
-        branches = [
-            {"name": b["name"], "protected": b.get("protected", False)} for b in result
-        ]
+        result = await _github_request("GET", f"/repos/{owner}/{repo}/branches", params={"per_page": per_page})
+        branches = [{"name": b["name"], "protected": b.get("protected", False)} for b in result]
         return json.dumps(branches, indent=2)
     except Exception as e:
         return f"Error: {e}"
@@ -449,9 +419,7 @@ async def create_branch(args: dict[str, Any], ctx: ToolContext) -> str:
 
     try:
         # Get the SHA of the source branch
-        ref_result = await _github_request(
-            "GET", f"/repos/{owner}/{repo}/git/refs/heads/{from_branch}"
-        )
+        ref_result = await _github_request("GET", f"/repos/{owner}/{repo}/git/refs/heads/{from_branch}")
         sha = ref_result["object"]["sha"]
 
         # Create the new branch
@@ -482,9 +450,7 @@ async def list_commits(args: dict[str, Any], ctx: ToolContext) -> str:
         params["path"] = args["path"]
 
     try:
-        result = await _github_request(
-            "GET", f"/repos/{owner}/{repo}/commits", params=params
-        )
+        result = await _github_request("GET", f"/repos/{owner}/{repo}/commits", params=params)
         commits = [
             {
                 "sha": c["sha"][:7],
@@ -515,10 +481,7 @@ async def get_commit(args: dict[str, Any], ctx: ToolContext) -> str:
                 "message": result["commit"]["message"],
                 "author": result["commit"]["author"],
                 "stats": result.get("stats"),
-                "files": [
-                    {"filename": f["filename"], "status": f["status"]}
-                    for f in result.get("files", [])
-                ],
+                "files": [{"filename": f["filename"], "status": f["status"]} for f in result.get("files", [])],
             },
             indent=2,
         )
@@ -535,9 +498,7 @@ async def search_code(args: dict[str, Any], ctx: ToolContext) -> str:
     per_page = min(args.get("per_page", 10), 100)
 
     try:
-        result = await _github_request(
-            "GET", "/search/code", params={"q": query, "per_page": per_page}
-        )
+        result = await _github_request("GET", "/search/code", params={"q": query, "per_page": per_page})
         items = [
             {
                 "name": item["name"],
@@ -547,9 +508,7 @@ async def search_code(args: dict[str, Any], ctx: ToolContext) -> str:
             }
             for item in result.get("items", [])
         ]
-        return json.dumps(
-            {"total_count": result.get("total_count", 0), "items": items}, indent=2
-        )
+        return json.dumps({"total_count": result.get("total_count", 0), "items": items}, indent=2)
     except Exception as e:
         return f"Error: {e}"
 
@@ -569,12 +528,9 @@ async def get_repository_tree(args: dict[str, Any], ctx: ToolContext) -> str:
         if recursive:
             params["recursive"] = "1"
 
-        result = await _github_request(
-            "GET", f"/repos/{owner}/{repo}/git/trees/{tree_sha}", params=params
-        )
+        result = await _github_request("GET", f"/repos/{owner}/{repo}/git/trees/{tree_sha}", params=params)
         tree = [
-            {"path": item["path"], "type": item["type"], "size": item.get("size")}
-            for item in result.get("tree", [])
+            {"path": item["path"], "type": item["type"], "size": item.get("size")} for item in result.get("tree", [])
         ]
         return json.dumps({"sha": result["sha"], "tree": tree}, indent=2)
     except Exception as e:
@@ -603,12 +559,11 @@ async def list_issues(args: dict[str, Any], ctx: ToolContext) -> str:
         params["assignee"] = args["assignee"]
 
     try:
-        result = await _github_request(
-            "GET", f"/repos/{owner}/{repo}/issues", params=params
-        )
+        result = await _github_request("GET", f"/repos/{owner}/{repo}/issues", params=params)
         issues = [
             {
                 "number": i["number"],
+                "node_id": i.get("node_id"),
                 "title": i["title"],
                 "state": i["state"],
                 "user": i["user"]["login"],
@@ -632,12 +587,11 @@ async def get_issue(args: dict[str, Any], ctx: ToolContext) -> str:
         return "Error: owner, repo, and issue_number are required"
 
     try:
-        result = await _github_request(
-            "GET", f"/repos/{owner}/{repo}/issues/{issue_number}"
-        )
+        result = await _github_request("GET", f"/repos/{owner}/{repo}/issues/{issue_number}")
         return json.dumps(
             {
                 "number": result["number"],
+                "node_id": result.get("node_id"),
                 "title": result["title"],
                 "state": result["state"],
                 "body": result.get("body", ""),
@@ -671,9 +625,7 @@ async def create_issue(args: dict[str, Any], ctx: ToolContext) -> str:
         data["assignees"] = args["assignees"]
 
     try:
-        result = await _github_request(
-            "POST", f"/repos/{owner}/{repo}/issues", json_data=data
-        )
+        result = await _github_request("POST", f"/repos/{owner}/{repo}/issues", json_data=data)
         return json.dumps(
             {
                 "created": True,
@@ -710,9 +662,7 @@ async def update_issue(args: dict[str, Any], ctx: ToolContext) -> str:
         return "Error: at least one field to update is required"
 
     try:
-        result = await _github_request(
-            "PATCH", f"/repos/{owner}/{repo}/issues/{issue_number}", json_data=data
-        )
+        result = await _github_request("PATCH", f"/repos/{owner}/{repo}/issues/{issue_number}", json_data=data)
         return json.dumps(
             {
                 "updated": True,
@@ -741,9 +691,7 @@ async def add_issue_comment(args: dict[str, Any], ctx: ToolContext) -> str:
             f"/repos/{owner}/{repo}/issues/{issue_number}/comments",
             json_data={"body": body},
         )
-        return json.dumps(
-            {"created": True, "id": result["id"], "url": result["html_url"]}, indent=2
-        )
+        return json.dumps({"created": True, "id": result["id"], "url": result["html_url"]}, indent=2)
     except Exception as e:
         return f"Error: {e}"
 
@@ -787,25 +735,20 @@ async def search_issues(args: dict[str, Any], ctx: ToolContext) -> str:
     per_page = min(args.get("per_page", 20), 100)
 
     try:
-        result = await _github_request(
-            "GET", "/search/issues", params={"q": query, "per_page": per_page}
-        )
+        result = await _github_request("GET", "/search/issues", params={"q": query, "per_page": per_page})
         items = [
             {
                 "number": i["number"],
+                "node_id": i.get("node_id"),
                 "title": i["title"],
                 "state": i["state"],
-                "repository": i["repository_url"].split("/")[-2:]
-                if "repository_url" in i
-                else None,
+                "repository": i["repository_url"].split("/")[-2:] if "repository_url" in i else None,
                 "url": i["html_url"],
                 "is_pr": "pull_request" in i,
             }
             for i in result.get("items", [])
         ]
-        return json.dumps(
-            {"total_count": result.get("total_count", 0), "items": items}, indent=2
-        )
+        return json.dumps({"total_count": result.get("total_count", 0), "items": items}, indent=2)
     except Exception as e:
         return f"Error: {e}"
 
@@ -832,9 +775,7 @@ async def list_pull_requests(args: dict[str, Any], ctx: ToolContext) -> str:
         params["head"] = args["head"]
 
     try:
-        result = await _github_request(
-            "GET", f"/repos/{owner}/{repo}/pulls", params=params
-        )
+        result = await _github_request("GET", f"/repos/{owner}/{repo}/pulls", params=params)
         prs = [
             {
                 "number": pr["number"],
@@ -862,9 +803,7 @@ async def get_pull_request(args: dict[str, Any], ctx: ToolContext) -> str:
         return "Error: owner, repo, and pull_number are required"
 
     try:
-        result = await _github_request(
-            "GET", f"/repos/{owner}/{repo}/pulls/{pull_number}"
-        )
+        result = await _github_request("GET", f"/repos/{owner}/{repo}/pulls/{pull_number}")
         return json.dumps(
             {
                 "number": result["number"],
@@ -906,9 +845,7 @@ async def create_pull_request(args: dict[str, Any], ctx: ToolContext) -> str:
         data["draft"] = args["draft"]
 
     try:
-        result = await _github_request(
-            "POST", f"/repos/{owner}/{repo}/pulls", json_data=data
-        )
+        result = await _github_request("POST", f"/repos/{owner}/{repo}/pulls", json_data=data)
         return json.dumps(
             {
                 "created": True,
@@ -943,9 +880,7 @@ async def update_pull_request(args: dict[str, Any], ctx: ToolContext) -> str:
         return "Error: at least one field to update is required"
 
     try:
-        result = await _github_request(
-            "PATCH", f"/repos/{owner}/{repo}/pulls/{pull_number}", json_data=data
-        )
+        result = await _github_request("PATCH", f"/repos/{owner}/{repo}/pulls/{pull_number}", json_data=data)
         return json.dumps(
             {
                 "updated": True,
@@ -976,9 +911,7 @@ async def merge_pull_request(args: dict[str, Any], ctx: ToolContext) -> str:
         data["merge_method"] = args["merge_method"]  # merge, squash, rebase
 
     try:
-        result = await _github_request(
-            "PUT", f"/repos/{owner}/{repo}/pulls/{pull_number}/merge", json_data=data
-        )
+        result = await _github_request("PUT", f"/repos/{owner}/{repo}/pulls/{pull_number}/merge", json_data=data)
         return json.dumps(
             {
                 "merged": result.get("merged", True),
@@ -1021,9 +954,7 @@ async def list_pull_request_files(args: dict[str, Any], ctx: ToolContext) -> str
         return "Error: owner, repo, and pull_number are required"
 
     try:
-        result = await _github_request(
-            "GET", f"/repos/{owner}/{repo}/pulls/{pull_number}/files"
-        )
+        result = await _github_request("GET", f"/repos/{owner}/{repo}/pulls/{pull_number}/files")
         files = [
             {
                 "filename": f["filename"],
@@ -1082,9 +1013,7 @@ async def list_workflow_runs(args: dict[str, Any], ctx: ToolContext) -> str:
         params["status"] = args["status"]
 
     try:
-        result = await _github_request(
-            "GET", f"/repos/{owner}/{repo}/actions/runs", params=params
-        )
+        result = await _github_request("GET", f"/repos/{owner}/{repo}/actions/runs", params=params)
         runs = [
             {
                 "id": r["id"],
@@ -1112,9 +1041,7 @@ async def get_workflow_run(args: dict[str, Any], ctx: ToolContext) -> str:
         return "Error: owner, repo, and run_id are required"
 
     try:
-        result = await _github_request(
-            "GET", f"/repos/{owner}/{repo}/actions/runs/{run_id}"
-        )
+        result = await _github_request("GET", f"/repos/{owner}/{repo}/actions/runs/{run_id}")
         return json.dumps(
             {
                 "id": result["id"],
@@ -1168,9 +1095,7 @@ async def cancel_workflow_run(args: dict[str, Any], ctx: ToolContext) -> str:
         return "Error: owner, repo, and run_id are required"
 
     try:
-        await _github_request(
-            "POST", f"/repos/{owner}/{repo}/actions/runs/{run_id}/cancel"
-        )
+        await _github_request("POST", f"/repos/{owner}/{repo}/actions/runs/{run_id}/cancel")
         return json.dumps({"cancelled": True, "run_id": run_id}, indent=2)
     except Exception as e:
         return f"Error: {e}"
@@ -1185,9 +1110,7 @@ async def rerun_workflow(args: dict[str, Any], ctx: ToolContext) -> str:
         return "Error: owner, repo, and run_id are required"
 
     try:
-        await _github_request(
-            "POST", f"/repos/{owner}/{repo}/actions/runs/{run_id}/rerun"
-        )
+        await _github_request("POST", f"/repos/{owner}/{repo}/actions/runs/{run_id}/rerun")
         return json.dumps({"rerun": True, "run_id": run_id}, indent=2)
     except Exception as e:
         return f"Error: {e}"
@@ -1283,18 +1206,14 @@ async def update_gist(args: dict[str, Any], ctx: ToolContext) -> str:
     if args.get("description"):
         data["description"] = args["description"]
     if args.get("files"):
-        data["files"] = {
-            name: {"content": content} for name, content in args["files"].items()
-        }
+        data["files"] = {name: {"content": content} for name, content in args["files"].items()}
 
     if not data:
         return "Error: at least description or files is required"
 
     try:
         result = await _github_request("PATCH", f"/gists/{gist_id}", json_data=data)
-        return json.dumps(
-            {"updated": True, "id": result["id"], "url": result["html_url"]}, indent=2
-        )
+        return json.dumps({"updated": True, "id": result["id"], "url": result["html_url"]}, indent=2)
     except Exception as e:
         return f"Error: {e}"
 
@@ -1327,9 +1246,7 @@ async def list_releases(args: dict[str, Any], ctx: ToolContext) -> str:
     per_page = min(args.get("per_page", 10), 100)
 
     try:
-        result = await _github_request(
-            "GET", f"/repos/{owner}/{repo}/releases", params={"per_page": per_page}
-        )
+        result = await _github_request("GET", f"/repos/{owner}/{repo}/releases", params={"per_page": per_page})
         releases = [
             {
                 "id": r["id"],
@@ -1355,9 +1272,7 @@ async def get_latest_release(args: dict[str, Any], ctx: ToolContext) -> str:
         return "Error: owner and repo are required"
 
     try:
-        result = await _github_request(
-            "GET", f"/repos/{owner}/{repo}/releases/latest"
-        )
+        result = await _github_request("GET", f"/repos/{owner}/{repo}/releases/latest")
         return json.dumps(
             {
                 "tag_name": result["tag_name"],
@@ -1368,8 +1283,7 @@ async def get_latest_release(args: dict[str, Any], ctx: ToolContext) -> str:
                 "created_at": result["created_at"],
                 "url": result["html_url"],
                 "assets": [
-                    {"name": a["name"], "download_url": a["browser_download_url"]}
-                    for a in result.get("assets", [])
+                    {"name": a["name"], "download_url": a["browser_download_url"]} for a in result.get("assets", [])
                 ],
             },
             indent=2,
@@ -1388,9 +1302,7 @@ async def list_tags(args: dict[str, Any], ctx: ToolContext) -> str:
     per_page = min(args.get("per_page", 20), 100)
 
     try:
-        result = await _github_request(
-            "GET", f"/repos/{owner}/{repo}/tags", params={"per_page": per_page}
-        )
+        result = await _github_request("GET", f"/repos/{owner}/{repo}/tags", params={"per_page": per_page})
         tags = [{"name": t["name"], "sha": t["commit"]["sha"][:7]} for t in result]
         return json.dumps(tags, indent=2)
     except Exception as e:
@@ -1450,9 +1362,7 @@ async def list_starred_repos(args: dict[str, Any], ctx: ToolContext) -> str:
     sort = args.get("sort", "created")
 
     try:
-        result = await _github_request(
-            "GET", "/user/starred", params={"per_page": per_page, "sort": sort}
-        )
+        result = await _github_request("GET", "/user/starred", params={"per_page": per_page, "sort": sort})
         repos = [
             {
                 "full_name": r["full_name"],
@@ -1532,12 +1442,8 @@ async def list_projects(args: dict[str, Any], ctx: ToolContext) -> str:
                 }
             }
             """
-            result = await _github_graphql(
-                query, {"owner": owner, "repo": repo, "first": first}
-            )
-            projects = (
-                result.get("repository", {}).get("projectsV2", {}).get("nodes", [])
-            )
+            result = await _github_graphql(query, {"owner": owner, "repo": repo, "first": first})
+            projects = result.get("repository", {}).get("projectsV2", {}).get("nodes", [])
         elif project_type == "org" and owner:
             # Organization projects (owner is the org name)
             query = """
@@ -1558,9 +1464,7 @@ async def list_projects(args: dict[str, Any], ctx: ToolContext) -> str:
             }
             """
             result = await _github_graphql(query, {"org": owner, "first": first})
-            projects = (
-                result.get("organization", {}).get("projectsV2", {}).get("nodes", [])
-            )
+            projects = result.get("organization", {}).get("projectsV2", {}).get("nodes", [])
         elif project_type == "user" and owner:
             # User projects (owner is the username)
             query = """
@@ -1614,7 +1518,8 @@ async def get_project(args: dict[str, Any], ctx: ToolContext) -> str:
             return "Error: project_id must be a node ID (PVT_...) or a project number"
 
     try:
-        items_fragment = """
+        items_fragment = (
+            """
             items(first: $itemsFirst) {
                 nodes {
                     id
@@ -1645,7 +1550,10 @@ async def get_project(args: dict[str, Any], ctx: ToolContext) -> str:
                     }
                 }
             }
-        """ if include_items else ""
+        """
+            if include_items
+            else ""
+        )
 
         if is_node_id:
             # Query by node ID directly
@@ -1689,19 +1597,14 @@ async def get_project(args: dict[str, Any], ctx: ToolContext) -> str:
                 }}
             }}
             """
-            result = await _github_graphql(
-                query, {"id": project_id, "itemsFirst": items_first}
-            )
+            result = await _github_graphql(query, {"id": project_id, "itemsFirst": items_first})
             project = result.get("node")
             if project:
                 return json.dumps(project, indent=2)
             return f"Error: Project {project_id} not found"
         else:
             # Query by project number - try org first, then user
-            owner_types = (
-                [project_type] if project_type in ["org", "user"]
-                else ["organization", "user"]
-            )
+            owner_types = [project_type] if project_type in ["org", "user"] else ["organization", "user"]
             owner_type_map = {"org": "organization", "user": "user"}
 
             for ot in owner_types:
@@ -1822,9 +1725,7 @@ async def get_project_fields(args: dict[str, Any], ctx: ToolContext) -> str:
             }}
             """
             try:
-                result = await _github_graphql(
-                    query, {"owner": owner, "number": project_number}
-                )
+                result = await _github_graphql(query, {"owner": owner, "number": project_number})
                 project = result.get(owner_type, {}).get("projectV2")
                 if project:
                     fields = project.get("fields", {}).get("nodes", [])
@@ -1869,14 +1770,8 @@ async def add_item_to_project(args: dict[str, Any], ctx: ToolContext) -> str:
                 }
             }
             """
-            result = await _github_graphql(
-                query, {"owner": owner, "repo": repo, "number": issue_number}
-            )
-            content_id = (
-                result.get("repository", {})
-                .get("issueOrPullRequest", {})
-                .get("id")
-            )
+            result = await _github_graphql(query, {"owner": owner, "repo": repo, "number": issue_number})
+            content_id = result.get("repository", {}).get("issueOrPullRequest", {}).get("id")
         except Exception as e:
             return f"Error getting issue/PR ID: {e}"
 
@@ -1898,9 +1793,7 @@ async def add_item_to_project(args: dict[str, Any], ctx: ToolContext) -> str:
             }
         }
         """
-        result = await _github_graphql(
-            mutation, {"projectId": project_id, "contentId": content_id}
-        )
+        result = await _github_graphql(mutation, {"projectId": project_id, "contentId": content_id})
         item_id = result.get("addProjectV2ItemById", {}).get("item", {}).get("id")
         return json.dumps(
             {"success": True, "item_id": item_id, "message": "Item added to project"},
@@ -2063,9 +1956,7 @@ async def list_project_items(args: dict[str, Any], ctx: ToolContext) -> str:
             }}
             """
             try:
-                result = await _github_graphql(
-                    query, {"owner": owner, "number": project_number, "first": first}
-                )
+                result = await _github_graphql(query, {"owner": owner, "number": project_number, "first": first})
                 project = result.get(owner_type, {}).get("projectV2")
                 if project:
                     items = project.get("items", {}).get("nodes", [])
@@ -2079,12 +1970,7 @@ async def list_project_items(args: dict[str, Any], ctx: ToolContext) -> str:
                             field = fv.get("field", {})
                             field_name = field.get("name") if field else None
                             if field_name:
-                                val = (
-                                    fv.get("text")
-                                    or fv.get("name")
-                                    or fv.get("number")
-                                    or fv.get("date")
-                                )
+                                val = fv.get("text") or fv.get("name") or fv.get("number") or fv.get("date")
                                 field_values[field_name] = val
 
                         # Apply status filter if provided
@@ -2101,9 +1987,7 @@ async def list_project_items(args: dict[str, Any], ctx: ToolContext) -> str:
                                 "title": content.get("title"),
                                 "state": content.get("state"),
                                 "url": content.get("url"),
-                                "repo": content.get("repository", {}).get(
-                                    "nameWithOwner"
-                                ),
+                                "repo": content.get("repository", {}).get("nameWithOwner"),
                                 "fields": field_values,
                             }
                         )
@@ -2143,9 +2027,7 @@ async def remove_item_from_project(args: dict[str, Any], ctx: ToolContext) -> st
             }
         }
         """
-        result = await _github_graphql(
-            mutation, {"projectId": project_id, "itemId": item_id}
-        )
+        result = await _github_graphql(mutation, {"projectId": project_id, "itemId": item_id})
         deleted_id = result.get("deleteProjectV2Item", {}).get("deletedItemId")
         return json.dumps(
             {
