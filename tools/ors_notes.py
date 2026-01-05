@@ -77,9 +77,7 @@ async def ors_list_notes(args: dict[str, Any], ctx: ToolContext) -> str:
                 if n.expires_at < datetime.now(UTC).replace(tzinfo=None):
                     status.append("expired")
                 else:
-                    hours_left = (
-                        n.expires_at - datetime.now(UTC).replace(tzinfo=None)
-                    ).total_seconds() / 3600
+                    hours_left = (n.expires_at - datetime.now(UTC).replace(tzinfo=None)).total_seconds() / 3600
                     status.append(f"expires in {hours_left:.0f}h")
 
             status_str = f" ({', '.join(status)})" if status else ""
@@ -96,6 +94,47 @@ async def ors_list_notes(args: dict[str, Any], ctx: ToolContext) -> str:
         return header + "\n\n".join(result)
 
 
+def _find_note_by_partial_id(session, user_id: str, partial_id: str) -> tuple[ProactiveNote | None, str | None]:
+    """Find a note by partial ID with helpful error messages.
+
+    Returns: (note, error_message) - one will always be None
+    """
+    partial_id = partial_id.strip().lower()
+
+    # Try exact match first
+    note = (
+        session.query(ProactiveNote)
+        .filter(
+            ProactiveNote.user_id == user_id,
+            ProactiveNote.id == partial_id,
+        )
+        .first()
+    )
+    if note:
+        return note, None
+
+    # Try prefix match (case-insensitive)
+    matches = (
+        session.query(ProactiveNote)
+        .filter(
+            ProactiveNote.user_id == user_id,
+            ProactiveNote.id.ilike(f"{partial_id}%"),
+        )
+        .limit(5)
+        .all()
+    )
+
+    if not matches:
+        return None, f"No notes found matching '{partial_id}'. Use ors_list_notes to see available notes."
+
+    if len(matches) == 1:
+        return matches[0], None
+
+    # Multiple matches - show them
+    match_list = "\n".join(f"  • {n.id[:12]}... - {n.note[:40]}..." for n in matches)
+    return None, f"Multiple notes match '{partial_id}':\n{match_list}\nPlease use more characters to be specific."
+
+
 async def ors_view_note(args: dict[str, Any], ctx: ToolContext) -> str:
     """View details of a specific note."""
     note_id = args.get("note_id", "")
@@ -103,18 +142,9 @@ async def ors_view_note(args: dict[str, Any], ctx: ToolContext) -> str:
         return "Error: note_id is required"
 
     with SessionLocal() as session:
-        # Support partial ID matching
-        note = (
-            session.query(ProactiveNote)
-            .filter(
-                ProactiveNote.user_id == ctx.user_id,
-                ProactiveNote.id.startswith(note_id),
-            )
-            .first()
-        )
-
-        if not note:
-            return f"Note not found with ID starting with '{note_id}'"
+        note, error = _find_note_by_partial_id(session, ctx.user_id, note_id)
+        if error:
+            return error
 
         # Format full note details
         lines = [
@@ -151,17 +181,9 @@ async def ors_archive_note(args: dict[str, Any], ctx: ToolContext) -> str:
         return "Error: note_id is required"
 
     with SessionLocal() as session:
-        note = (
-            session.query(ProactiveNote)
-            .filter(
-                ProactiveNote.user_id == ctx.user_id,
-                ProactiveNote.id.startswith(note_id),
-            )
-            .first()
-        )
-
-        if not note:
-            return f"Note not found with ID starting with '{note_id}'"
+        note, error = _find_note_by_partial_id(session, ctx.user_id, note_id)
+        if error:
+            return error
 
         if note.archived == "true":
             return "This note is already archived."
@@ -192,9 +214,7 @@ async def ors_add_note(args: dict[str, Any], ctx: ToolContext) -> str:
         try:
             hours = int(expires_hours)
             if 1 <= hours <= 168:
-                expires_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(
-                    hours=hours
-                )
+                expires_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=hours)
         except ValueError:
             return "Error: expires_hours must be a number between 1 and 168"
 
@@ -222,11 +242,7 @@ async def ors_open_threads(args: dict[str, Any], ctx: ToolContext) -> str:
     thread_content = args.get("thread")
 
     with SessionLocal() as session:
-        pattern = (
-            session.query(UserInteractionPattern)
-            .filter(UserInteractionPattern.user_id == ctx.user_id)
-            .first()
-        )
+        pattern = session.query(UserInteractionPattern).filter(UserInteractionPattern.user_id == ctx.user_id).first()
 
         if not pattern:
             return "No interaction history found yet."
@@ -302,8 +318,7 @@ TOOLS = [
     ToolDef(
         name="ors_view_note",
         description=(
-            "View full details of a specific note by ID. "
-            "Supports partial ID matching (first few characters)."
+            "View full details of a specific note by ID. " "Supports partial ID matching (first few characters)."
         ),
         parameters={
             "type": "object",
@@ -320,8 +335,7 @@ TOOLS = [
     ToolDef(
         name="ors_archive_note",
         description=(
-            "Archive a note that's no longer relevant. "
-            "Use when user says something is resolved or outdated."
+            "Archive a note that's no longer relevant. " "Use when user says something is resolved or outdated."
         ),
         parameters={
             "type": "object",
@@ -338,8 +352,7 @@ TOOLS = [
     ToolDef(
         name="ors_add_note",
         description=(
-            "Add a note to track something about the user. "
-            "Use for explicit reminders, follow-ups, or observations."
+            "Add a note to track something about the user. " "Use for explicit reminders, follow-ups, or observations."
         ),
         parameters={
             "type": "object",
