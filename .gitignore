@@ -67,3 +67,7 @@ frontend/.vercel/
 clara_files/
 
 .env.remote
+
+.env.railway
+
+chats/
