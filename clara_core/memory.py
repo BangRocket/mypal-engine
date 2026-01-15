@@ -24,7 +24,8 @@ if TYPE_CHECKING:
 CONTEXT_MESSAGE_COUNT = 15  # Reduced from 20 to save tokens
 SUMMARY_INTERVAL = 10
 MAX_SEARCH_QUERY_CHARS = 6000
-MAX_MEMORIES_PER_TYPE = 50  # Limit memories to reduce token usage
+MAX_KEY_MEMORIES = 15  # Key memories always included in every request
+MAX_MEMORIES_PER_TYPE = 35  # Limit per type (50 total - 15 reserved for key memories)
 
 # Paths for initial profile loading
 BASE_DIR = Path(__file__).parent.parent
@@ -132,22 +133,32 @@ class MemoryManager:
 
     Handles:
     - Thread and message persistence
-    - mem0 semantic memory integration
+    - mem0 semantic memory integration (with entity-scoped memory)
     - Session summaries
     - Prompt building with full context
+
+    Entity Scoping:
+    - user_id: The human user (e.g., "discord-271274659385835521")
+    - agent_id: The bot persona (e.g., "clara", "flo")
 
     This is a singleton - use MemoryManager.get_instance() after initialization.
     """
 
     _instance: ClassVar["MemoryManager | None"] = None
 
-    def __init__(self, llm_callable: Callable[[list[dict]], str]):
+    def __init__(
+        self,
+        llm_callable: Callable[[list[dict]], str],
+        agent_id: str = "clara",
+    ):
         """Initialize MemoryManager.
 
         Args:
             llm_callable: Function that takes messages and returns LLM response
+            agent_id: Bot persona identifier for entity-scoped memory (default: "clara")
         """
         self.llm = llm_callable
+        self.agent_id = agent_id
 
     @classmethod
     def get_instance(cls) -> "MemoryManager":
@@ -163,18 +174,26 @@ class MemoryManager:
         return cls._instance
 
     @classmethod
-    def initialize(cls, llm_callable: Callable[[list[dict]], str]) -> "MemoryManager":
+    def initialize(
+        cls,
+        llm_callable: Callable[[list[dict]], str],
+        agent_id: str | None = None,
+    ) -> "MemoryManager":
         """Initialize the singleton MemoryManager.
 
         Args:
             llm_callable: Function that takes messages and returns LLM response
+            agent_id: Bot persona identifier. If None, uses BOT_NAME env var or "clara".
 
         Returns:
             The initialized MemoryManager instance
         """
         if cls._instance is None:
-            cls._instance = cls(llm_callable=llm_callable)
-            print("[memory] MemoryManager initialized")
+            # Get agent_id from BOT_NAME env var if not provided
+            if agent_id is None:
+                agent_id = os.getenv("BOT_NAME", "clara").lower()
+            cls._instance = cls(llm_callable=llm_callable, agent_id=agent_id)
+            print(f"[memory] MemoryManager initialized (agent_id={agent_id})")
         return cls._instance
 
     @classmethod
@@ -317,9 +336,12 @@ class MemoryManager:
     ) -> tuple[list[str], list[str]]:
         """Fetch relevant memories from mem0.
 
-        Memory bucket logic:
-        - DMs: Prioritize personal memories, include project memories secondarily
-        - Servers: Prioritize project memories, include personal with lower weight
+        Uses entity-scoped memory with user_id + agent_id for proper isolation.
+
+        Memory retrieval:
+        1. First fetch "key" memories (is_key=true) - always included
+        2. Then fetch relevant memories via semantic search
+        3. Combine with key memories first, then relevant (deduplicated)
 
         Args:
             user_id: The user making the request
@@ -336,14 +358,33 @@ class MemoryManager:
         if MEM0 is None:
             return [], []
 
+        # 1. Fetch key memories first (always included)
+        key_mems: list[str] = []
+        try:
+            key_res = MEM0.get_all(
+                user_id=user_id,
+                agent_id=self.agent_id,
+                filters={"is_key": "true"},  # String "true" to match JSON boolean
+                limit=MAX_KEY_MEMORIES,
+            )
+            for r in key_res.get("results", []):
+                key_mems.append(f"[KEY] {r['memory']}")
+        except Exception as e:
+            print(f"[mem0] ERROR fetching key memories: {e}")
+
         # Truncate search query if too long
         search_query = user_message
         if len(search_query) > MAX_SEARCH_QUERY_CHARS:
             search_query = search_query[-MAX_SEARCH_QUERY_CHARS:]
             print(f"[mem0] Truncated search query to {MAX_SEARCH_QUERY_CHARS} chars")
 
+        # 2. Entity-scoped search: user_id + agent_id
         try:
-            user_res = MEM0.search(search_query, user_id=user_id)
+            user_res = MEM0.search(
+                search_query,
+                user_id=user_id,
+                agent_id=self.agent_id,
+            )
         except Exception as e:
             print(f"[mem0] ERROR searching user memories: {e}")
             import traceback
@@ -354,6 +395,7 @@ class MemoryManager:
             proj_res = MEM0.search(
                 search_query,
                 user_id=user_id,
+                agent_id=self.agent_id,
                 filters={"project_id": project_id},
             )
         except Exception as e:
@@ -362,7 +404,15 @@ class MemoryManager:
             traceback.print_exc()
             proj_res = {"results": []}
 
-        user_mems = [r["memory"] for r in user_res.get("results", [])]
+        # Build user memories: key first, then relevant (deduplicated)
+        user_mems = list(key_mems)  # Start with key memories
+        key_texts = {m.replace("[KEY] ", "") for m in key_mems}  # For dedup
+
+        for r in user_res.get("results", []):
+            mem = r["memory"]
+            if mem not in key_texts:  # Don't duplicate key memories
+                user_mems.append(mem)
+
         proj_mems = [r["memory"] for r in proj_res.get("results", [])]
 
         # Also search for memories about each participant
@@ -377,10 +427,11 @@ class MemoryManager:
                     p_search = MEM0.search(
                         f"{p_name} {search_query[:500]}",
                         user_id=user_id,
+                        agent_id=self.agent_id,
                     )
                     for r in p_search.get("results", []):
                         mem = r["memory"]
-                        if mem not in user_mems:
+                        if mem not in key_texts and mem not in user_mems:
                             labeled_mem = f"[About {p_name}]: {mem}"
                             if labeled_mem not in user_mems:
                                 user_mems.append(labeled_mem)
@@ -398,15 +449,18 @@ class MemoryManager:
                 if mem_text not in user_mems:
                     user_mems.append(mem_text)
 
-        # Limit memories to reduce token usage (keep most relevant)
-        if len(user_mems) > MAX_MEMORIES_PER_TYPE:
-            user_mems = user_mems[:MAX_MEMORIES_PER_TYPE]
+        # Limit non-key memories to reduce token usage
+        # Key memories (at start) are always kept, limit the rest
+        num_key = len(key_mems)
+        if len(user_mems) > num_key + MAX_MEMORIES_PER_TYPE:
+            user_mems = user_mems[:num_key + MAX_MEMORIES_PER_TYPE]
         if len(proj_mems) > MAX_MEMORIES_PER_TYPE:
             proj_mems = proj_mems[:MAX_MEMORIES_PER_TYPE]
 
         if user_mems or proj_mems:
             print(
-                f"[mem0] Found {len(user_mems)} user memories, "
+                f"[mem0] Found {len(key_mems)} key memories, "
+                f"{len(user_mems) - len(key_mems)} user memories, "
                 f"{len(proj_mems)} project memories"
             )
         return user_mems, proj_mems
@@ -469,6 +523,7 @@ class MemoryManager:
             result = MEM0.add(
                 history_slice,
                 user_id=user_id,
+                agent_id=self.agent_id,
                 metadata=metadata,
             )
             # Check for errors in result
