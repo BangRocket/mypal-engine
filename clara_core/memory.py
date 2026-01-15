@@ -615,12 +615,14 @@ class MemoryManager:
         if context_parts:
             messages.append({"role": "system", "content": "\n\n".join(context_parts)})
 
-        # Add recent messages with timestamps for temporal awareness
+        # Add recent messages (only user messages get timestamps to avoid Clara mimicking the format)
         for m in recent_msgs:
-            timestamp = _format_message_timestamp(getattr(m, "created_at", None))
-            if timestamp:
-                # Prefix content with timestamp for context
-                content = f"[{timestamp}] {m.content}"
+            if m.role == "user":
+                timestamp = _format_message_timestamp(getattr(m, "created_at", None))
+                if timestamp:
+                    content = f"[{timestamp}] {m.content}"
+                else:
+                    content = m.content
             else:
                 content = m.content
             messages.append({"role": m.role, "content": content})
