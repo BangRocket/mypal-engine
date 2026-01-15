@@ -568,6 +568,95 @@ class MemoryManager:
             import traceback
             traceback.print_exc()
 
+    # ---------- emotional context ----------
+
+    def fetch_emotional_context(
+        self,
+        user_id: str,
+        limit: int = 3,
+        max_age_days: int = 7,
+    ) -> list[dict]:
+        """
+        Fetch recent emotional context memories for session warmth.
+
+        Retrieves emotional summaries from recent conversations to help
+        calibrate tone at session start.
+
+        Args:
+            user_id: The user to fetch emotional context for
+            limit: Maximum number of emotional context memories to return
+            max_age_days: Only return context from the last N days
+
+        Returns:
+            List of emotional context dicts with keys:
+            - memory: The formatted emotional summary text
+            - timestamp: When the conversation ended
+            - arc: Emotional arc (stable, improving, declining, volatile)
+            - energy: Energy level (stressed, focused, casual, etc.)
+            - channel_name: Where the conversation happened
+            - is_dm: Whether it was a DM
+        """
+        from datetime import timedelta
+
+        from config.mem0 import MEM0
+
+        if MEM0 is None:
+            return []
+
+        try:
+            # Search for emotional_context memories
+            results = MEM0.get_all(
+                user_id=user_id,
+                agent_id=self.agent_id,
+                limit=limit * 2,  # Fetch extra to filter by age
+            )
+
+            emotional_contexts = []
+            cutoff = datetime.now(UTC) - timedelta(days=max_age_days)
+
+            for r in results.get("results", []):
+                metadata = r.get("metadata", {})
+
+                # Only include emotional_context type memories
+                if metadata.get("memory_type") != "emotional_context":
+                    continue
+
+                # Parse and filter by timestamp
+                timestamp_str = metadata.get("timestamp")
+                if timestamp_str:
+                    try:
+                        timestamp = datetime.fromisoformat(
+                            timestamp_str.replace("Z", "+00:00")
+                        )
+                        if timestamp < cutoff:
+                            continue
+                    except (ValueError, TypeError):
+                        timestamp = None
+                else:
+                    timestamp = None
+
+                emotional_contexts.append({
+                    "memory": r.get("memory", ""),
+                    "timestamp": timestamp_str,
+                    "arc": metadata.get("emotional_arc", "stable"),
+                    "energy": metadata.get("energy_level", "neutral"),
+                    "channel_name": metadata.get("channel_name", "unknown"),
+                    "is_dm": metadata.get("is_dm", False),
+                    "ending_sentiment": metadata.get("ending_sentiment", 0.0),
+                })
+
+            # Sort by timestamp descending (most recent first)
+            emotional_contexts.sort(
+                key=lambda x: x.get("timestamp") or "",
+                reverse=True,
+            )
+
+            return emotional_contexts[:limit]
+
+        except Exception as e:
+            print(f"[mem0] Error fetching emotional context: {e}")
+            return []
+
     # ---------- prompt building ----------
 
     def build_prompt(
@@ -577,6 +666,7 @@ class MemoryManager:
         thread_summary: str | None,
         recent_msgs: list["Message"],
         user_message: str,
+        emotional_context: list[dict] | None = None,
     ) -> list[dict[str, str]]:
         """Build the full prompt for the LLM.
 
@@ -586,6 +676,7 @@ class MemoryManager:
             thread_summary: Optional thread summary
             recent_msgs: Recent messages in the conversation
             user_message: Current user message
+            emotional_context: Optional emotional context from recent sessions
 
         Returns:
             List of messages ready for LLM
@@ -604,6 +695,12 @@ class MemoryManager:
         if proj_mems:
             proj_block = "\n".join(f"- {m}" for m in proj_mems)
             context_parts.append(f"PROJECT MEMORIES:\n{proj_block}")
+
+        # Add emotional context from recent sessions (for tone calibration)
+        if emotional_context:
+            emotional_block = self._format_emotional_context(emotional_context)
+            if emotional_block:
+                context_parts.append(f"RECENT EMOTIONAL CONTEXT:\n{emotional_block}")
 
         if thread_summary:
             context_parts.append(f"THREAD SUMMARY:\n{thread_summary}")
@@ -629,3 +726,76 @@ class MemoryManager:
 
         messages.append({"role": "user", "content": user_message})
         return messages
+
+    def _format_emotional_context(self, emotional_context: list[dict]) -> str:
+        """
+        Format emotional context for inclusion in the system prompt.
+
+        Only includes non-neutral contexts to avoid noise. Includes channel
+        hints so Clara understands the source (work channel vs personal DM).
+
+        Args:
+            emotional_context: List of emotional context dicts from fetch_emotional_context
+
+        Returns:
+            Formatted string for the prompt, or empty string if nothing meaningful
+        """
+        if not emotional_context:
+            return ""
+
+        lines = []
+        for ctx in emotional_context:
+            memory = ctx.get("memory", "")
+            arc = ctx.get("arc", "stable")
+            energy = ctx.get("energy", "neutral")
+            channel_name = ctx.get("channel_name", "")
+            is_dm = ctx.get("is_dm", False)
+            timestamp_str = ctx.get("timestamp", "")
+
+            # Skip stable/neutral contexts - not worth mentioning
+            if arc == "stable" and energy in ("neutral", "casual"):
+                continue
+
+            # Format channel hint
+            if is_dm:
+                channel_hint = "DM"
+            elif channel_name:
+                channel_hint = channel_name if channel_name.startswith("#") else f"#{channel_name}"
+            else:
+                channel_hint = "unknown"
+
+            # Format time hint
+            time_hint = self._format_relative_time(timestamp_str)
+
+            # Build the line with channel and time hints
+            if time_hint:
+                lines.append(f"- [{channel_hint}, {time_hint}] {memory}")
+            else:
+                lines.append(f"- [{channel_hint}] {memory}")
+
+        return "\n".join(lines) if lines else ""
+
+    def _format_relative_time(self, timestamp_str: str | None) -> str:
+        """Format a timestamp as relative time (e.g., '2h ago', 'yesterday')."""
+        if not timestamp_str:
+            return ""
+
+        try:
+            timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+            now = datetime.now(UTC)
+            delta = now - timestamp
+
+            if delta.days > 1:
+                return f"{delta.days} days ago"
+            elif delta.days == 1:
+                return "yesterday"
+            elif delta.seconds >= 3600:
+                hours = delta.seconds // 3600
+                return f"{hours}h ago"
+            elif delta.seconds >= 60:
+                mins = delta.seconds // 60
+                return f"{mins}m ago"
+            else:
+                return "just now"
+        except (ValueError, TypeError):
+            return ""
