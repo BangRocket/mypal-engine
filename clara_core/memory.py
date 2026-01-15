@@ -11,9 +11,12 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
+
+# Timezone for message timestamps (defaults to America/New_York)
+DEFAULT_TIMEZONE = os.getenv("DEFAULT_TIMEZONE", "America/New_York")
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session as OrmSession
@@ -40,6 +43,30 @@ def _has_generated_memories() -> bool:
         return False
     memory_files = ["profile_bio.json", "interaction_style.json", "project_seed.json"]
     return any((GENERATED_DIR / f).exists() for f in memory_files)
+
+
+def _format_message_timestamp(dt: datetime | None) -> str:
+    """Format a message timestamp for display in conversation history.
+
+    Returns short time format like "10:43 PM" in the configured timezone.
+    """
+    if dt is None:
+        return ""
+
+    try:
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo(DEFAULT_TIMEZONE)
+        # Convert to local timezone if UTC
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        local_dt = dt.astimezone(tz)
+        return local_dt.strftime("%-I:%M %p")
+    except Exception:
+        # Fallback to UTC
+        if dt.tzinfo is None:
+            return dt.strftime("%H:%M UTC")
+        return dt.strftime("%-I:%M %p")
 
 
 def _generate_memories_from_profile() -> dict | None:
@@ -588,8 +615,15 @@ class MemoryManager:
         if context_parts:
             messages.append({"role": "system", "content": "\n\n".join(context_parts)})
 
+        # Add recent messages with timestamps for temporal awareness
         for m in recent_msgs:
-            messages.append({"role": m.role, "content": m.content})
+            timestamp = _format_message_timestamp(getattr(m, "created_at", None))
+            if timestamp:
+                # Prefix content with timestamp for context
+                content = f"[{timestamp}] {m.content}"
+            else:
+                content = m.content
+            messages.append({"role": m.role, "content": content})
 
         messages.append({"role": "user", "content": user_message})
         return messages
