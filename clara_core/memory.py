@@ -667,6 +667,7 @@ class MemoryManager:
         recent_msgs: list["Message"],
         user_message: str,
         emotional_context: list[dict] | None = None,
+        recurring_topics: list[dict] | None = None,
     ) -> list[dict[str, str]]:
         """Build the full prompt for the LLM.
 
@@ -677,6 +678,7 @@ class MemoryManager:
             recent_msgs: Recent messages in the conversation
             user_message: Current user message
             emotional_context: Optional emotional context from recent sessions
+            recurring_topics: Optional recurring topic patterns from fetch_topic_recurrence
 
         Returns:
             List of messages ready for LLM
@@ -701,6 +703,12 @@ class MemoryManager:
             emotional_block = self._format_emotional_context(emotional_context)
             if emotional_block:
                 context_parts.append(f"RECENT EMOTIONAL CONTEXT:\n{emotional_block}")
+
+        # Add recurring topic patterns (for awareness of what keeps coming up)
+        if recurring_topics:
+            topic_block = self._format_topic_recurrence(recurring_topics)
+            if topic_block:
+                context_parts.append(f"RECURRING TOPICS:\n{topic_block}")
 
         if thread_summary:
             context_parts.append(f"THREAD SUMMARY:\n{thread_summary}")
@@ -799,3 +807,79 @@ class MemoryManager:
                 return "just now"
         except (ValueError, TypeError):
             return ""
+
+    def fetch_topic_recurrence(
+        self,
+        user_id: str,
+        lookback_days: int = 14,
+        min_mentions: int = 2,
+    ) -> list[dict]:
+        """
+        Fetch recurring topic patterns for a user.
+
+        Wrapper around topic_recurrence.fetch_topic_recurrence that uses
+        the MemoryManager's agent_id.
+
+        Args:
+            user_id: The user to fetch topic recurrence for
+            lookback_days: How many days to look back
+            min_mentions: Minimum mentions to consider a topic recurring
+
+        Returns:
+            List of recurring topic patterns with keys:
+            - topic: The topic name
+            - topic_type: "entity" or "theme"
+            - mention_count: Number of times mentioned
+            - first_mentioned: Relative time string
+            - last_mentioned: Relative time string
+            - sentiment_trend: "stable", "improving", or "declining"
+            - avg_emotional_weight: "light", "moderate", or "heavy"
+            - pattern_note: Natural language description
+            - channels: List of channel names where mentioned
+        """
+        from clara_core.topic_recurrence import fetch_topic_recurrence
+
+        return fetch_topic_recurrence(
+            user_id=user_id,
+            lookback_days=lookback_days,
+            min_mentions=min_mentions,
+            agent_id=self.agent_id,
+        )
+
+    def _format_topic_recurrence(self, recurring_topics: list[dict]) -> str:
+        """
+        Format recurring topics for inclusion in the system prompt.
+
+        Only includes significant patterns - topics that have been mentioned
+        multiple times with non-trivial emotional weight or sentiment changes.
+
+        Args:
+            recurring_topics: List of topic patterns from fetch_topic_recurrence
+
+        Returns:
+            Formatted string for the prompt, or empty string if nothing meaningful
+        """
+        if not recurring_topics:
+            return ""
+
+        lines = []
+        for topic in recurring_topics[:3]:  # Max 3 topics
+            topic_name = topic.get("topic", "")
+            pattern_note = topic.get("pattern_note", "")
+            mention_count = topic.get("mention_count", 0)
+            sentiment_trend = topic.get("sentiment_trend", "stable")
+            avg_weight = topic.get("avg_emotional_weight", "light")
+
+            # Skip topics that aren't significant enough
+            if mention_count < 2:
+                continue
+            if sentiment_trend == "stable" and avg_weight == "light":
+                continue
+
+            # Build the line
+            if pattern_note:
+                lines.append(f"- {topic_name}: {pattern_note}")
+            else:
+                lines.append(f"- {topic_name}: mentioned {mention_count} times")
+
+        return "\n".join(lines) if lines else ""
