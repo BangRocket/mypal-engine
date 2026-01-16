@@ -3,6 +3,7 @@ name = "mypalclara"
 version = "0.6.0"
 description = "MyPalClara - AI assistant with session management and memory"
 authors = ["Joshua Heidorn <heidornj@icloud.com>"]
+license = "PolyForm-Noncommercial-1.0.0"
 readme = "README.md"
 package-mode = false
 
