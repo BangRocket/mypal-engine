@@ -39,6 +39,7 @@ requests = "^2.32.5"
 python-dotenv = "^1.0.1"
 imessage-reader = "^0.6.1"
 httpx = "^0.28.0"  # Async HTTP client for web search
+vaderSentiment = "^3.3.2"  # Sentiment analysis for emotional continuity
 
 # Discord bot
 py-cord = "^2.6.1"
