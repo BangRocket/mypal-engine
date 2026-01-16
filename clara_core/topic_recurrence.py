@@ -32,7 +32,7 @@ TOPIC_EXTRACTION_PROMPT = """Extract key topics from this conversation that migh
 
 **What to extract:**
 For each topic, provide:
-- topic: Normalized name (e.g., "job search" not "the job hunt", "mom" not "my mother")
+- topic: Normalized name using consistent, lowercase, singular forms. Prefer common phrasing (e.g., "job search" not "employment hunt" or "the job hunt", "mom" not "my mother")
 - topic_type: "entity" (person, place, project, company) or "theme" (ongoing concern, interest, goal)
 - context_snippet: Brief summary of how it came up (10-20 words)
 - emotional_weight: "light" (casual mention), "moderate" (some feeling), "heavy" (significant emotion)
@@ -40,8 +40,8 @@ For each topic, provide:
 **Rules:**
 1. Only extract topics with emotional significance OR specific enough to recur
 2. Skip generic topics like "work", "life", "stuff", "things"
-3. Normalize names: use consistent lowercase, singular forms
-4. Max 3 topics per conversation
+3. Use consistent normalization - same topic should always have the same name
+4. Max 3 unique topics per conversation
 
 **Respond in JSON:**
 {{
@@ -92,12 +92,12 @@ async def extract_topics_from_conversation(
             data = json.loads(json_match.group())
             topics = data.get("topics", [])
 
-            # Validate and normalize topics
+            # Validate and normalize topics (cap applied after dedup in extract_and_store_topics)
             valid_topics = []
             valid_weights = {"light", "moderate", "heavy"}
             valid_types = {"entity", "theme"}
 
-            for t in topics[:3]:  # Max 3 topics
+            for t in topics:
                 topic_name = t.get("topic", "").strip().lower()
                 if not topic_name or len(topic_name) < 2:
                     continue
@@ -224,6 +224,25 @@ async def extract_and_store_topics(
         conversation_sentiment=conversation_sentiment,
         llm_call=llm_call,
     )
+
+    # Dedupe topics by name (keep occurrence with highest weight)
+    # This handles cases where a topic is mentioned multiple times in one conversation
+    seen_topics: dict[str, dict] = {}
+    weight_order = {"light": 1, "moderate": 2, "heavy": 3}
+
+    for topic in topics:
+        name = topic["topic"]
+        if name not in seen_topics:
+            seen_topics[name] = topic
+        else:
+            # Keep the one with heavier emotional weight
+            current_weight = weight_order.get(seen_topics[name]["emotional_weight"], 0)
+            new_weight = weight_order.get(topic["emotional_weight"], 0)
+            if new_weight > current_weight:
+                seen_topics[name] = topic
+
+    # Cap at 3 unique topics after deduplication
+    topics = list(seen_topics.values())[:3]
 
     for topic in topics:
         store_topic_mention(
