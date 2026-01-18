@@ -18,8 +18,12 @@ from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Callable
 
+from config.logging import get_discord_handler, get_logger
+
 if TYPE_CHECKING:
     pass
+
+logger = get_logger("topic")
 
 
 # Topic extraction prompt for LLM
@@ -120,7 +124,7 @@ async def extract_topics_from_conversation(
             return valid_topics
 
     except Exception as e:
-        print(f"[topic] Failed to extract topics: {e}")
+        logger.warning(f"Failed to extract topics: {e}")
 
     return []
 
@@ -184,10 +188,10 @@ def store_topic_mention(
             agent_id=agent_id,
             metadata=metadata,
         )
-        print(f"[topic] Stored topic mention for {user_id}: {topic} ({emotional_weight})")
+        logger.info(f"Stored topic mention for {user_id}: {topic} ({emotional_weight})")
         return True
     except Exception as e:
-        print(f"[topic] Error storing topic mention: {e}")
+        logger.error(f"Error storing topic mention: {e}", exc_info=True)
         return False
 
 
@@ -244,8 +248,9 @@ async def extract_and_store_topics(
     # Cap at 3 unique topics after deduplication
     topics = list(seen_topics.values())[:3]
 
+    stored_topics = []
     for topic in topics:
-        store_topic_mention(
+        success = store_topic_mention(
             user_id=user_id,
             topic=topic["topic"],
             topic_type=topic["topic_type"],
@@ -257,8 +262,55 @@ async def extract_and_store_topics(
             is_dm=is_dm,
             agent_id=agent_id,
         )
+        if success:
+            stored_topics.append(topic)
+
+    # Send Discord embed summarizing extracted topics
+    if stored_topics:
+        _send_topics_embed(user_id, stored_topics, channel_name, is_dm)
 
     return topics
+
+
+def _send_topics_embed(
+    user_id: str,
+    topics: list[dict],
+    channel_name: str,
+    is_dm: bool,
+) -> None:
+    """Send a Discord embed when topics are extracted and stored."""
+    discord_handler = get_discord_handler()
+    if not discord_handler or not topics:
+        return
+
+    # Weight emoji mapping
+    weight_emoji = {
+        "light": "🔵",
+        "moderate": "🟡",
+        "heavy": "🔴",
+    }
+
+    # Format topics
+    topic_lines = []
+    for t in topics[:3]:
+        emoji = weight_emoji.get(t.get("emotional_weight", "moderate"), "🟡")
+        name = t.get("topic", "")
+        topic_type = t.get("topic_type", "theme")
+        type_badge = "👤" if topic_type == "entity" else "💭"
+        topic_lines.append(f"{emoji} {type_badge} **{name}**")
+
+    channel_hint = "DM" if is_dm else (channel_name if channel_name.startswith("#") else f"#{channel_name}")
+
+    # Extract short user ID
+    short_id = user_id.split("-")[-1][:8] if "-" in user_id else user_id[:8]
+
+    discord_handler.queue_embed(
+        title=f"Topics Extracted ({len(topics)})",
+        description="\n".join(topic_lines),
+        fields=[{"name": "Channel", "value": channel_hint, "inline": True}],
+        footer=f"user: {short_id}",
+        tag="topic",
+    )
 
 
 def fetch_topic_mentions(
@@ -327,7 +379,7 @@ def fetch_topic_mentions(
         return mentions
 
     except Exception as e:
-        print(f"[topic] Error fetching topic mentions: {e}")
+        logger.error(f"Error fetching topic mentions: {e}", exc_info=True)
         return []
 
 

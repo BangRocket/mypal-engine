@@ -15,6 +15,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from config.logging import get_discord_handler, get_logger
+
+# Module loggers
+logger = get_logger("mem0")
+thread_logger = get_logger("thread")
+memory_logger = get_logger("memory")
+
 # Timezone for message timestamps (defaults to America/New_York)
 DEFAULT_TIMEZONE = os.getenv("DEFAULT_TIMEZONE", "America/New_York")
 
@@ -72,7 +79,7 @@ def _format_message_timestamp(dt: datetime | None) -> str:
 def _generate_memories_from_profile() -> dict | None:
     """Generate structured memories from user_profile.txt using LLM extraction."""
     if not USER_PROFILE_PATH.exists():
-        print("[mem0] No user_profile.txt found, cannot generate memories")
+        logger.warning("No user_profile.txt found, cannot generate memories")
         return None
 
     from scripts.bootstrap_memory import (
@@ -82,7 +89,7 @@ def _generate_memories_from_profile() -> dict | None:
         write_json_files,
     )
 
-    print("[mem0] Generating memories from user_profile.txt...")
+    logger.info("Generating memories from user_profile.txt...")
     try:
         profile_text = USER_PROFILE_PATH.read_text()
         raw_memories = extract_memories_with_llm(profile_text)
@@ -91,10 +98,7 @@ def _generate_memories_from_profile() -> dict | None:
         write_json_files(memories, GENERATED_DIR)
         return memories
     except Exception as e:
-        print(f"[mem0] Error generating memories: {e}")
-        import traceback
-
-        traceback.print_exc()
+        logger.error(f"Error generating memories: {e}", exc_info=True)
         return None
 
 
@@ -110,15 +114,15 @@ def load_initial_profile(user_id: str) -> None:
 
     skip_profile = os.getenv("SKIP_PROFILE_LOAD", "true").lower() == "true"
     if skip_profile:
-        print("[mem0] Profile loading disabled (SKIP_PROFILE_LOAD=true)")
+        logger.debug("Profile loading disabled (SKIP_PROFILE_LOAD=true)")
         return
 
     if MEM0 is None:
-        print("[mem0] Skipping profile load - mem0 not available")
+        logger.warning("Skipping profile load - mem0 not available")
         return
 
     if PROFILE_LOADED_FLAG.exists():
-        print("[mem0] Profile already loaded (flag exists), skipping")
+        logger.debug("Profile already loaded (flag exists), skipping")
         return
 
     from src.bootstrap_memory import (
@@ -127,32 +131,29 @@ def load_initial_profile(user_id: str) -> None:
     )
 
     if _has_generated_memories():
-        print("[mem0] Loading from existing generated/*.json files...")
+        logger.info("Loading from existing generated/*.json files...")
         memories = load_existing_memories(GENERATED_DIR)
     else:
-        print("[mem0] No generated files found, extracting from profile...")
+        logger.info("No generated files found, extracting from profile...")
         memories = _generate_memories_from_profile()
         if not memories:
-            print("[mem0] Could not generate memories, skipping profile load")
+            logger.warning("Could not generate memories, skipping profile load")
             return
 
-    print("[mem0] Creating flag file to prevent duplicate loads...")
+    logger.debug("Creating flag file to prevent duplicate loads...")
     try:
         PROFILE_LOADED_FLAG.write_text(
             f"loading started at {datetime.now().isoformat()}"
         )
     except Exception as e:
-        print(f"[mem0] ERROR: Could not create flag file: {e}")
+        logger.error(f"Could not create flag file: {e}")
 
     try:
         apply_to_mem0(memories, user_id)
         PROFILE_LOADED_FLAG.write_text(f"completed at {datetime.now().isoformat()}")
-        print("[mem0] Profile loaded successfully")
+        logger.info("Profile loaded successfully")
     except Exception as e:
-        print(f"[mem0] Error applying memories to mem0: {e}")
-        import traceback
-
-        traceback.print_exc()
+        logger.error(f"Error applying memories to mem0: {e}", exc_info=True)
 
 
 class MemoryManager:
@@ -220,7 +221,7 @@ class MemoryManager:
             if agent_id is None:
                 agent_id = os.getenv("BOT_NAME", "clara").lower()
             cls._instance = cls(llm_callable=llm_callable, agent_id=agent_id)
-            print(f"[memory] MemoryManager initialized (agent_id={agent_id})")
+            memory_logger.info(f"MemoryManager initialized (agent_id={agent_id})")
         return cls._instance
 
     @classmethod
@@ -348,7 +349,7 @@ class MemoryManager:
         summary = self.llm(summary_prompt)
         thread.session_summary = summary
         db.commit()
-        print(f"[thread] Updated summary for thread {thread.id}")
+        thread_logger.info(f"Updated summary for thread {thread.id}")
         return summary
 
     # ---------- mem0 integration ----------
@@ -397,13 +398,13 @@ class MemoryManager:
             for r in key_res.get("results", []):
                 key_mems.append(f"[KEY] {r['memory']}")
         except Exception as e:
-            print(f"[mem0] ERROR fetching key memories: {e}")
+            logger.error(f"Error fetching key memories: {e}")
 
         # Truncate search query if too long
         search_query = user_message
         if len(search_query) > MAX_SEARCH_QUERY_CHARS:
             search_query = search_query[-MAX_SEARCH_QUERY_CHARS:]
-            print(f"[mem0] Truncated search query to {MAX_SEARCH_QUERY_CHARS} chars")
+            logger.debug(f"Truncated search query to {MAX_SEARCH_QUERY_CHARS} chars")
 
         # 2. Entity-scoped search: user_id + agent_id
         try:
@@ -413,9 +414,7 @@ class MemoryManager:
                 agent_id=self.agent_id,
             )
         except Exception as e:
-            print(f"[mem0] ERROR searching user memories: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Error searching user memories: {e}", exc_info=True)
             user_res = {"results": []}
 
         try:
@@ -426,9 +425,7 @@ class MemoryManager:
                 filters={"project_id": project_id},
             )
         except Exception as e:
-            print(f"[mem0] ERROR searching project memories: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Error searching project memories: {e}", exc_info=True)
             proj_res = {"results": []}
 
         # Build user memories: key first, then relevant (deduplicated)
@@ -463,7 +460,7 @@ class MemoryManager:
                             if labeled_mem not in user_mems:
                                 user_mems.append(labeled_mem)
                 except Exception as e:
-                    print(f"[mem0] Error searching participant {p_id}: {e}")
+                    logger.warning(f"Error searching participant {p_id}: {e}")
 
         # Extract contact-related memories with source info
         for r in user_res.get("results", []):
@@ -485,12 +482,69 @@ class MemoryManager:
             proj_mems = proj_mems[:MAX_MEMORIES_PER_TYPE]
 
         if user_mems or proj_mems:
-            print(
-                f"[mem0] Found {len(key_mems)} key memories, "
-                f"{len(user_mems) - len(key_mems)} user memories, "
+            logger.info(
+                f"Found {len(key_mems)} key, "
+                f"{len(user_mems) - len(key_mems)} user, "
                 f"{len(proj_mems)} project memories"
             )
+            # Send Discord embed with memory summary
+            self._send_memory_embed(
+                user_id=user_id,
+                key_count=len(key_mems),
+                user_count=len(user_mems) - len(key_mems),
+                proj_count=len(proj_mems),
+                sample_memories=user_mems[:3] if user_mems else [],
+            )
         return user_mems, proj_mems
+
+    def _send_memory_embed(
+        self,
+        user_id: str,
+        key_count: int,
+        user_count: int,
+        proj_count: int,
+        sample_memories: list[str],
+    ) -> None:
+        """Send a Discord embed with memory retrieval summary."""
+        discord_handler = get_discord_handler()
+        if not discord_handler:
+            return
+
+        total = key_count + user_count + proj_count
+        if total == 0:
+            return
+
+        # Format memory samples (truncate for embed)
+        sample_text = ""
+        if sample_memories:
+            samples = []
+            for mem in sample_memories[:3]:
+                # Remove [KEY] prefix for cleaner display
+                clean_mem = mem.replace("[KEY] ", "")
+                if len(clean_mem) > 60:
+                    clean_mem = clean_mem[:57] + "..."
+                samples.append(f"• {clean_mem}")
+            sample_text = "\n".join(samples)
+
+        # Build embed fields
+        fields = [
+            {"name": "Key", "value": str(key_count), "inline": True},
+            {"name": "User", "value": str(user_count), "inline": True},
+            {"name": "Project", "value": str(proj_count), "inline": True},
+        ]
+
+        # Extract short user ID for footer
+        _, short_id = self.parse_user_id(user_id)
+        if len(short_id) > 8:
+            short_id = short_id[:8]
+
+        discord_handler.queue_embed(
+            title=f"Memory Retrieval ({total} total)",
+            description=sample_text if sample_text else None,
+            fields=fields,
+            footer=f"user: {short_id}",
+            tag="mem0",
+        )
 
     def add_to_mem0(
         self,
@@ -556,17 +610,59 @@ class MemoryManager:
             # Check for errors in result
             if isinstance(result, dict):
                 if result.get("error"):
-                    print(f"[mem0] ERROR adding memories: {result.get('error')}")
+                    logger.error(f"Error adding memories: {result.get('error')}")
                 elif result.get("results"):
-                    print(f"[mem0] Added {len(result.get('results', []))} memories")
+                    count = len(result.get("results", []))
+                    logger.info(f"Added {count} memories")
+                    # Send Discord embed for memory extraction
+                    self._send_memory_added_embed(
+                        user_id=user_id,
+                        count=count,
+                        source_type=source_type,
+                        results=result.get("results", []),
+                    )
                 else:
-                    print(f"[mem0] Add result: {result}")
+                    logger.debug(f"Add result: {result}")
             else:
-                print(f"[mem0] Added memories: {result}")
+                logger.debug(f"Added memories: {result}")
         except Exception as e:
-            print(f"[mem0] ERROR adding memories: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Error adding memories: {e}", exc_info=True)
+
+    def _send_memory_added_embed(
+        self,
+        user_id: str,
+        count: int,
+        source_type: str,
+        results: list[dict],
+    ) -> None:
+        """Send a Discord embed when memories are extracted and stored."""
+        discord_handler = get_discord_handler()
+        if not discord_handler or count == 0:
+            return
+
+        # Format memory samples (truncate for embed)
+        sample_text = ""
+        if results:
+            samples = []
+            for r in results[:3]:
+                mem = r.get("memory", "")
+                if len(mem) > 60:
+                    mem = mem[:57] + "..."
+                samples.append(f"• {mem}")
+            sample_text = "\n".join(samples)
+
+        # Extract short user ID for footer
+        _, short_id = self.parse_user_id(user_id)
+        if len(short_id) > 8:
+            short_id = short_id[:8]
+
+        discord_handler.queue_embed(
+            title=f"Memory Extracted ({count} new)",
+            description=sample_text if sample_text else None,
+            fields=[{"name": "Source", "value": source_type, "inline": True}],
+            footer=f"user: {short_id}",
+            tag="mem0",
+        )
 
     # ---------- emotional context ----------
 
@@ -654,7 +750,7 @@ class MemoryManager:
             return emotional_contexts[:limit]
 
         except Exception as e:
-            print(f"[mem0] Error fetching emotional context: {e}")
+            logger.error(f"Error fetching emotional context: {e}", exc_info=True)
             return []
 
     # ---------- prompt building ----------

@@ -18,6 +18,9 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from clara_core.sentiment import analyze_sentiment
+from config.logging import get_discord_handler, get_logger
+
+logger = get_logger("emotional")
 
 if TYPE_CHECKING:
     pass
@@ -202,9 +205,17 @@ def finalize_conversation_emotional_context(
                 agent_id=agent_id,
                 metadata=metadata,
             )
-            print(f"[emotional] Stored emotional context for {user_id}: {arc} arc, {energy} energy")
+            logger.info(f"Stored emotional context for {user_id}: {arc} arc, {energy} energy")
+            # Send Discord embed for emotional context
+            _send_emotional_context_embed(
+                user_id=user_id,
+                arc=arc,
+                energy=energy,
+                channel_name=channel_name,
+                is_dm=is_dm,
+            )
         except Exception as e:
-            print(f"[emotional] Error storing emotional context: {e}")
+            logger.error(f"Error storing emotional context: {e}", exc_info=True)
 
     # Clear tracked sentiments for this conversation
     clear_conversation_sentiments(user_id, channel_id)
@@ -241,3 +252,49 @@ def has_pending_emotional_context(user_id: str, channel_id: str) -> bool:
     """Check if there's unfinalized emotional context for a conversation."""
     sentiments = get_conversation_sentiments(user_id, channel_id)
     return len(sentiments) > 0
+
+
+def _send_emotional_context_embed(
+    user_id: str,
+    arc: str,
+    energy: str,
+    channel_name: str,
+    is_dm: bool,
+) -> None:
+    """Send a Discord embed when emotional context is stored."""
+    discord_handler = get_discord_handler()
+    if not discord_handler:
+        return
+
+    # Arc emoji mapping
+    arc_emoji = {
+        "stable": "➡️",
+        "improving": "📈",
+        "declining": "📉",
+        "volatile": "〰️",
+    }
+
+    # Energy emoji mapping
+    energy_emoji = {
+        "stressed": "😰",
+        "focused": "🎯",
+        "casual": "😊",
+        "excited": "✨",
+        "tired": "😴",
+        "neutral": "😐",
+    }
+
+    arc_icon = arc_emoji.get(arc, "➡️")
+    energy_icon = energy_emoji.get(energy, "😐")
+    channel_hint = "DM" if is_dm else (channel_name if channel_name.startswith("#") else f"#{channel_name}")
+
+    # Extract short user ID
+    short_id = user_id.split("-")[-1][:8] if "-" in user_id else user_id[:8]
+
+    discord_handler.queue_embed(
+        title="Emotional Context Stored",
+        description=f"{arc_icon} **{arc}** arc • {energy_icon} **{energy}** energy",
+        fields=[{"name": "Channel", "value": channel_hint, "inline": True}],
+        footer=f"user: {short_id}",
+        tag="emotional",
+    )
