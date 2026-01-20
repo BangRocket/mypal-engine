@@ -61,6 +61,10 @@ playwright = "^1.49.0"
 claude-agent-sdk = "^0.1.18"
 imap-tools = "^1.11.0"
 
+# MCP (Model Context Protocol) plugin system
+mcp = "^1.0.0"  # Official MCP Python SDK
+gitpython = "^3.1.0"  # For cloning GitHub repos
+
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"
 ruff = "^0.8"
