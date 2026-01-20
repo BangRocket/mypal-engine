@@ -54,6 +54,14 @@ poetry run python clear_dbs.py --user <id> # Clear specific user
 ### Storage
 - `storage/local_files.py` - Local file storage system for persistent user files
 
+### MCP Plugin System
+- `clara_core/mcp/client.py` - MCPClient wrapper for connecting to MCP servers (stdio & HTTP transports)
+- `clara_core/mcp/manager.py` - MCPServerManager singleton for managing all server connections
+- `clara_core/mcp/installer.py` - Installation from npm, GitHub, Docker, or local paths
+- `clara_core/mcp/registry_adapter.py` - Bridge between MCP tools and Clara's ToolRegistry
+- `clara_core/mcp/models.py` - MCPServer SQLAlchemy model for configuration storage
+- `tools/mcp_management.py` - User-facing management tools (mcp_install, mcp_list, etc.)
+
 ### Memory System
 - **User memories**: Persistent facts/preferences per user (stored in mem0, searched via `_fetch_mem0_context`)
 - **Project memories**: Topic-specific context per project (filtered by project_id in mem0)
@@ -470,6 +478,46 @@ Clara can delegate complex coding tasks to Claude Code, an autonomous AI coding 
 @Clara Use Claude Code to add error handling to src/api/users.py
 @Clara claude_code: Write unit tests for the utils module in /path/to/project
 ```
+
+### MCP Plugin System (Discord Bot)
+Clara can install and use tools from external MCP (Model Context Protocol) servers, similar to Claude Code's `/plugins` command.
+
+**How It Works:**
+- MCP servers are installed from npm, GitHub, Docker, or local paths
+- Server configurations are stored in SQLite (`mcp_servers` table)
+- Tools from all connected servers are automatically registered with Clara
+- Tools use namespaced names: `{server_name}__{tool_name}` (e.g., `everything__echo`)
+
+**Installation Sources:**
+- **npm packages**: `@modelcontextprotocol/server-everything`
+- **GitHub repos**: `github.com/user/mcp-server`
+- **Docker images**: `ghcr.io/user/mcp-server:latest`
+- **Local paths**: `/path/to/mcp-server`
+
+**Management Tools:**
+- `mcp_install` - Install an MCP server from various sources
+- `mcp_uninstall` - Remove an installed server
+- `mcp_list` - List all installed servers and their tools
+- `mcp_enable` / `mcp_disable` - Toggle servers without uninstalling
+- `mcp_restart` - Restart a running server
+- `mcp_status` - Get detailed status of servers
+
+**Permissions (Discord):**
+Admin operations require one of:
+- Administrator permission
+- Manage Channels permission
+- Clara-Admin role
+
+**Example Usage in Discord:**
+```
+@Clara install the MCP server @modelcontextprotocol/server-everything
+@Clara list MCP servers
+@Clara use everything__echo to echo "Hello World"
+```
+
+**Dependencies:**
+- `mcp` - Official MCP Python SDK
+- `gitpython` - For cloning GitHub repos
 
 ### Organic Response System (ORS) - Proactive Conversations
 Clara can initiate conversations without user prompting when there's genuine reason to reach out.
