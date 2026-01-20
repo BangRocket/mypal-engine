@@ -67,8 +67,12 @@ def get_registry() -> ToolRegistry:
     return _registry
 
 
-def get_loader() -> ToolLoader:
+def get_loader(skip_modules: list[str] | None = None) -> ToolLoader:
     """Get the global tool loader singleton.
+
+    Args:
+        skip_modules: List of module names to skip (e.g., replaced by MCP servers).
+                     Only used on first call when creating the loader.
 
     Returns:
         The ToolLoader instance
@@ -76,22 +80,52 @@ def get_loader() -> ToolLoader:
     global _loader
     if _loader is None:
         tools_dir = Path(__file__).parent
-        _loader = ToolLoader(tools_dir, get_registry())
+        _loader = ToolLoader(tools_dir, get_registry(), skip_modules=skip_modules)
     return _loader
 
 
-async def init_tools(hot_reload: bool | None = None) -> dict[str, bool]:
+async def init_tools(
+    hot_reload: bool | None = None,
+    use_mcp_replacements: bool = True,
+) -> dict[str, bool]:
     """Initialize the tool system and load all tool modules.
 
     Args:
         hot_reload: Enable hot-reload watching. If None, reads from
                    TOOL_HOT_RELOAD env var (default: False)
+        use_mcp_replacements: If True, skip loading tool modules that have
+                             official MCP server replacements configured.
 
     Returns:
         Dict mapping module names to load success status
     """
-    loader = get_loader()
+    # Determine which modules to skip (replaced by MCP servers)
+    skip_modules = []
+    if use_mcp_replacements:
+        try:
+            from clara_core.core_tools import get_replaced_tool_modules
+
+            skip_modules = get_replaced_tool_modules()
+            if skip_modules:
+                print(f"[tools] Skipping modules replaced by MCP: {skip_modules}")
+        except ImportError:
+            pass  # clara_core.tools not available
+
+    # Also skip chat_history and system_logs - they're now in clara_core/tools
+    skip_modules.extend(["chat_history", "system_logs"])
+
+    loader = get_loader(skip_modules=skip_modules)
     results = await loader.load_all()
+
+    # Register Clara's core tools (chat_history, system_logs)
+    try:
+        from clara_core.core_tools import register_core_tools
+
+        registry = get_registry()
+        core_count = await register_core_tools(registry)
+        print(f"[tools] Registered {core_count} core tools from clara_core")
+    except ImportError as e:
+        print(f"[tools] Warning: Could not load core tools: {e}")
 
     # Determine hot-reload setting
     if hot_reload is None:
