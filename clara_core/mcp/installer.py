@@ -382,8 +382,9 @@ class MCPInstaller:
                 error="npx not found. Please install Node.js and npm.",
             )
 
-        # Build args: npx -y <package> [extra_args...]
-        server_args = ["-y", package]
+        # Build args: npx -y -q <package> [extra_args...]
+        # -q (--quiet) suppresses npm script output that pollutes JSON-RPC stream
+        server_args = ["-y", "-q", package]
         if extra_args:
             server_args.extend(extra_args)
 
@@ -490,6 +491,7 @@ class MCPInstaller:
                 logger.info(f"[MCP Installer] Trying npx {github_shorthand}...")
 
                 # Create server configuration for npx approach
+                # -q (--quiet) suppresses npm script output that pollutes JSON-RPC stream
                 server = MCPServerConfig(
                     name=server_name,
                     source_type="github",
@@ -497,7 +499,7 @@ class MCPInstaller:
                     source_url=f"https://github.com/{owner_repo[0]}/{owner_repo[1]}",
                     transport="stdio",
                     command="npx",
-                    args=["-y", github_shorthand],
+                    args=["-y", "-q", github_shorthand],
                     env=env or {},
                     installed_by=installed_by,
                 )
