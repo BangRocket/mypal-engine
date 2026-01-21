@@ -236,6 +236,7 @@ class MCPInstaller:
         name: str | None = None,
         env: dict[str, str] | None = None,
         installed_by: str | None = None,
+        args: list[str] | None = None,
     ) -> InstallResult:
         """Install an MCP server from a source.
 
@@ -250,6 +251,7 @@ class MCPInstaller:
             name: Optional custom name for the server (auto-detected if not provided)
             env: Optional environment variables for the server
             installed_by: Optional user ID who installed this server
+            args: Optional extra command-line arguments for the server
 
         Returns:
             InstallResult with success status and server info
@@ -258,7 +260,7 @@ class MCPInstaller:
         logger.info(f"[MCP Installer] Installing from {source_type}: {source}")
 
         if source_type == "npm":
-            return await self._install_npm(source, name, env, installed_by)
+            return await self._install_npm(source, name, env, installed_by, args)
         elif source_type == "github":
             return await self._install_github(source, name, env, installed_by)
         elif source_type == "docker":
@@ -353,6 +355,7 @@ class MCPInstaller:
         name: str | None,
         env: dict[str, str] | None,
         installed_by: str | None,
+        extra_args: list[str] | None = None,
     ) -> InstallResult:
         """Install an npm MCP server.
 
@@ -363,6 +366,7 @@ class MCPInstaller:
             name: Optional custom name
             env: Optional environment variables
             installed_by: Optional user ID
+            extra_args: Optional extra arguments to pass after the package name
         """
         server_name = name or self._generate_name(package, "npm")
 
@@ -378,6 +382,11 @@ class MCPInstaller:
                 error="npx not found. Please install Node.js and npm.",
             )
 
+        # Build args: npx -y <package> [extra_args...]
+        server_args = ["-y", package]
+        if extra_args:
+            server_args.extend(extra_args)
+
         # Create server configuration
         server = MCPServerConfig(
             name=server_name,
@@ -386,7 +395,7 @@ class MCPInstaller:
             source_url=package,
             transport="stdio",
             command="npx",
-            args=["-y", package],
+            args=server_args,
             env=env or {},
             installed_by=installed_by,
         )

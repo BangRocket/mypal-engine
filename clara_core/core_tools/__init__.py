@@ -42,7 +42,7 @@ OFFICIAL_MCP_SERVERS = [
     OfficialMCPServer(
         name="github",
         description="GitHub repository, issues, PRs, and file operations",
-        npm_package="@anthropic/github-mcp-server",
+        npm_package="@modelcontextprotocol/server-github",
         env_required=["GITHUB_TOKEN"],
         env_optional=[],
         replaces_tool="github",
@@ -52,7 +52,7 @@ OFFICIAL_MCP_SERVERS = [
         description="Azure DevOps work items, repos, pipelines, and wiki",
         npm_package="@azure-devops/mcp",
         env_required=["AZURE_DEVOPS_ORG", "AZURE_DEVOPS_PAT"],
-        env_optional=[],
+        env_optional=["AZURE_DEVOPS_TENANT"],
         replaces_tool="azure_devops",
     ),
     OfficialMCPServer(
@@ -195,12 +195,21 @@ async def setup_official_mcp_servers() -> dict[str, bool]:
                 if value:
                     env[var] = value
 
-            # Special handling for filesystem server - configure allowed paths
+            # Special handling for server args based on type
             args = None
             if server_config.name == "filesystem":
                 # Allow access to CLARA_FILES_DIR or current directory
                 files_dir = os.getenv("CLARA_FILES_DIR", "./clara_files")
                 args = [files_dir]
+            elif server_config.name == "azure-devops":
+                # Azure DevOps requires organization as positional arg and auth mode
+                org = os.getenv("AZURE_DEVOPS_ORG")
+                if org:
+                    args = [org, "--authentication", "env"]
+                    # Add tenant if provided
+                    tenant = os.getenv("AZURE_DEVOPS_TENANT")
+                    if tenant:
+                        args.extend(["--tenant", tenant])
 
             # Install the server
             logger.info(f"[core_tools] Installing official MCP server: {server_config.name}")
@@ -208,6 +217,7 @@ async def setup_official_mcp_servers() -> dict[str, bool]:
                 source=server_config.npm_package,
                 name=server_config.name,
                 env=env if env else None,
+                args=args,
             )
 
             if result.success:
