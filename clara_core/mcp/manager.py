@@ -637,7 +637,12 @@ class MCPServerManager:
         for config in configs:
             client = self._clients.get(config.name)
             if client:
-                statuses.append(client.get_status())
+                # Merge client status with config info
+                status = client.get_status()
+                status["enabled"] = config.enabled
+                status["source_type"] = config.source_type
+                status["status"] = "running" if client.is_connected else "error"
+                statuses.append(status)
             else:
                 statuses.append(
                     {
