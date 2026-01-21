@@ -26,9 +26,6 @@ from .embeds import (
 )
 from .views import ConfirmView, HelpSelectView
 
-if TYPE_CHECKING:
-    pass
-
 logger = logging.getLogger(__name__)
 
 
