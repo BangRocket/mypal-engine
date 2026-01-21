@@ -64,13 +64,6 @@ def _get_manager():
     return get_mcp_manager()
 
 
-def _get_adapter():
-    """Get the MCP registry adapter instance."""
-    from clara_core.mcp import get_mcp_adapter
-
-    return get_mcp_adapter()
-
-
 def _check_admin_permission(ctx: ToolContext) -> bool:
     """Check if user has admin permission for MCP operations.
 
@@ -167,17 +160,12 @@ async def mcp_install(args: dict[str, Any], ctx: ToolContext) -> str:
     )
 
     if result.success:
-        # Start the server and sync tools
+        # Start the server (tools are now served directly from manager)
         manager = _get_manager()
-        adapter = _get_adapter()
 
         if result.server:
             # Server was saved, try to start it
             await manager.start_server(result.server.name)
-
-            # Sync tools to registry
-            if adapter:
-                await adapter.register_server_tools(result.server.name)
 
             tool_names = [f"- {result.server.name}__{t['name']}" for t in result.server.get_tools()]
             tools_str = "\n".join(tool_names[:10])
@@ -209,12 +197,9 @@ async def mcp_uninstall(args: dict[str, Any], ctx: ToolContext) -> str:
 
     # Stop the server first
     manager = _get_manager()
-    adapter = _get_adapter()
 
     if server_name in manager:
         await manager.stop_server(server_name)
-        if adapter:
-            adapter.unregister_server_tools(server_name)
 
     # Uninstall
     installer = _get_installer()
@@ -275,13 +260,9 @@ async def mcp_enable(args: dict[str, Any], ctx: ToolContext) -> str:
         return "Error: No server name provided."
 
     manager = _get_manager()
-    adapter = _get_adapter()
 
     success = await manager.enable_server(server_name)
     if success:
-        # Sync tools
-        if adapter:
-            await adapter.register_server_tools(server_name)
         return f"Server '{server_name}' enabled and started."
     else:
         return f"Failed to enable server '{server_name}'. Check if it exists."
@@ -298,11 +279,6 @@ async def mcp_disable(args: dict[str, Any], ctx: ToolContext) -> str:
         return "Error: No server name provided."
 
     manager = _get_manager()
-    adapter = _get_adapter()
-
-    # Unregister tools first
-    if adapter:
-        adapter.unregister_server_tools(server_name)
 
     success = await manager.disable_server(server_name)
     if success:
@@ -322,17 +298,9 @@ async def mcp_restart(args: dict[str, Any], ctx: ToolContext) -> str:
         return "Error: No server name provided."
 
     manager = _get_manager()
-    adapter = _get_adapter()
-
-    # Unregister old tools
-    if adapter:
-        adapter.unregister_server_tools(server_name)
 
     success = await manager.restart_server(server_name)
     if success:
-        # Re-register tools
-        if adapter:
-            await adapter.register_server_tools(server_name)
         return f"Server '{server_name}' restarted successfully."
     else:
         return f"Failed to restart server '{server_name}'."
@@ -412,9 +380,7 @@ TOOLS = [
                 },
                 "env": {
                     "type": "string",
-                    "description": (
-                        "Optional environment variables as JSON object or KEY=VALUE,KEY2=VALUE2 format"
-                    ),
+                    "description": ("Optional environment variables as JSON object or KEY=VALUE,KEY2=VALUE2 format"),
                 },
             },
             "required": ["source"],

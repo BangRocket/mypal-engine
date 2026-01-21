@@ -405,16 +405,18 @@ class MCPServerManager:
                 if client:
                     statuses.append(client.get_status())
                 else:
-                    statuses.append({
-                        "name": server.name,
-                        "connected": False,
-                        "enabled": server.enabled,
-                        "transport": server.transport,
-                        "source_type": server.source_type,
-                        "tool_count": server.tool_count,
-                        "status": server.status,
-                        "last_error": server.last_error,
-                    })
+                    statuses.append(
+                        {
+                            "name": server.name,
+                            "connected": False,
+                            "enabled": server.enabled,
+                            "transport": server.transport,
+                            "source_type": server.source_type,
+                            "tool_count": server.tool_count,
+                            "status": server.status,
+                            "last_error": server.last_error,
+                        }
+                    )
 
         return statuses
 
@@ -478,3 +480,125 @@ class MCPServerManager:
     def __contains__(self, server_name: str) -> bool:
         """Check if a server is connected."""
         return server_name in self._clients
+
+    # --- Format Conversion Methods ---
+
+    def get_tools_openai_format(self) -> list[dict[str, Any]]:
+        """Get all MCP tools in OpenAI function format.
+
+        Returns:
+            List of tool definitions in OpenAI format for use in API calls
+        """
+        tools = []
+        for server_name, mcp_tool in self.get_all_tools():
+            namespaced_name = f"{server_name}__{mcp_tool.name}"
+
+            # Enhance description with server info
+            description = mcp_tool.description
+            if not description.endswith("."):
+                description += "."
+            description += f" (MCP: {server_name})"
+
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": namespaced_name,
+                        "description": description,
+                        "parameters": mcp_tool.input_schema,
+                    },
+                }
+            )
+        return tools
+
+    def get_tools_claude_format(self) -> list[dict[str, Any]]:
+        """Get all MCP tools in Claude native format.
+
+        Returns:
+            List of tool definitions in Anthropic Claude format
+        """
+        tools = []
+        for server_name, mcp_tool in self.get_all_tools():
+            namespaced_name = f"{server_name}__{mcp_tool.name}"
+
+            # Enhance description with server info
+            description = mcp_tool.description
+            if not description.endswith("."):
+                description += "."
+            description += f" (MCP: {server_name})"
+
+            tools.append(
+                {
+                    "name": namespaced_name,
+                    "description": description,
+                    "input_schema": mcp_tool.input_schema,
+                }
+            )
+        return tools
+
+    def get_mcp_system_prompt(self) -> str:
+        """Generate a system prompt describing available MCP tools.
+
+        Returns:
+            System prompt string listing MCP servers and their tools
+        """
+        if not self._clients:
+            return ""
+
+        lines = ["## MCP Plugin Tools\n"]
+        lines.append("The following tools are available from connected MCP servers:\n")
+
+        for server_name, client in self._clients.items():
+            if not client.is_connected:
+                continue
+
+            tool_names = client.get_tool_names()
+            if not tool_names:
+                continue
+
+            lines.append(f"### {server_name}")
+            for tool_name in tool_names:
+                namespaced = f"{server_name}__{tool_name}"
+                lines.append(f"- `{namespaced}`")
+            lines.append("")
+
+        if len(lines) <= 2:
+            return ""  # No connected servers with tools
+
+        lines.append("To use these tools, call them by their full namespaced name (e.g., `server__tool_name`).")
+        return "\n".join(lines)
+
+    def get_tool_schema(self, namespaced_name: str) -> dict[str, Any] | None:
+        """Get the parameter schema for a specific MCP tool.
+
+        Args:
+            namespaced_name: The namespaced tool name (server__tool)
+
+        Returns:
+            Input schema dict or None if tool not found
+        """
+        location = self.find_tool(namespaced_name)
+        if not location:
+            return None
+
+        server_name, tool_name = location
+        client = self._clients.get(server_name)
+        if not client:
+            return None
+
+        for tool in client.get_tools():
+            if tool.name == tool_name:
+                return tool.input_schema
+
+        return None
+
+    def is_mcp_tool(self, tool_name: str) -> bool:
+        """Check if a tool name is an MCP tool.
+
+        Args:
+            tool_name: Tool name to check
+
+        Returns:
+            True if it's a connected MCP tool
+        """
+        return self.find_tool(tool_name) is not None

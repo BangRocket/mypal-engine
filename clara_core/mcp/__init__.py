@@ -7,13 +7,12 @@ Usage:
     from clara_core.mcp import (
         MCPServerManager,
         MCPInstaller,
-        MCPRegistryAdapter,
         init_mcp,
         get_mcp_manager,
     )
 
     # Initialize the MCP system at startup
-    manager, adapter = await init_mcp(registry)
+    manager = await init_mcp()
 
     # Or get the singleton manager
     manager = get_mcp_manager()
@@ -24,21 +23,22 @@ Usage:
 
     # Call a tool
     result = await manager.call_tool("everything__echo", {"message": "Hello"})
+
+    # Get tools in OpenAI format for API calls
+    tools = manager.get_tools_openai_format()
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 from .client import MCPClient, MCPTool
 from .installer import InstallResult, MCPInstaller
 from .manager import MCPServerManager
 from .models import MCPServer
-from .registry_adapter import MCPRegistryAdapter, get_mcp_adapter, init_mcp_adapter
 
-if TYPE_CHECKING:
-    from tools._registry import ToolRegistry
+# Keep deprecated imports for backwards compatibility
+from .registry_adapter import MCPRegistryAdapter, get_mcp_adapter, init_mcp_adapter
 
 logger = logging.getLogger(__name__)
 
@@ -48,19 +48,20 @@ __all__ = [
     "MCPTool",
     "MCPServerManager",
     "MCPInstaller",
-    "MCPRegistryAdapter",
     "MCPServer",
     "InstallResult",
     # Initialization
     "init_mcp",
     "get_mcp_manager",
+    # Deprecated (kept for backwards compatibility)
+    "MCPRegistryAdapter",
     "get_mcp_adapter",
+    "init_mcp_adapter",
 ]
 
 
 # Global singleton references
 _manager: MCPServerManager | None = None
-_adapter: MCPRegistryAdapter | None = None
 _initialized: bool = False
 
 
@@ -76,27 +77,25 @@ def get_mcp_manager() -> MCPServerManager:
     return _manager
 
 
-async def init_mcp(registry: ToolRegistry) -> tuple[MCPServerManager, MCPRegistryAdapter]:
+async def init_mcp() -> MCPServerManager:
     """Initialize the MCP plugin system.
 
-    This should be called at application startup after the tool registry
-    is initialized. It will:
+    This should be called at application startup. It will:
     1. Create/get the MCPServerManager singleton
     2. Initialize all enabled MCP servers from the database
-    3. Create the registry adapter to bridge MCP tools to Clara
-    4. Register all discovered tools with the registry
 
-    Args:
-        registry: Clara's ToolRegistry instance
+    MCP tools are now served directly through the manager's format conversion
+    methods (get_tools_openai_format, get_tools_claude_format) rather than
+    through the registry adapter bridge pattern.
 
     Returns:
-        Tuple of (MCPServerManager, MCPRegistryAdapter)
+        MCPServerManager singleton
     """
-    global _manager, _adapter, _initialized
+    global _manager, _initialized
 
     if _initialized:
         logger.debug("[MCP] Already initialized")
-        return _manager, _adapter
+        return _manager
 
     logger.info("[MCP] Initializing MCP plugin system...")
 
@@ -107,18 +106,14 @@ async def init_mcp(registry: ToolRegistry) -> tuple[MCPServerManager, MCPRegistr
     init_results = await _manager.initialize()
     connected = sum(1 for v in init_results.values() if v)
     total = len(init_results)
-    logger.info(f"[MCP] Initialized {connected}/{total} servers")
 
-    # Create the registry adapter
-    _adapter = init_mcp_adapter(_manager, registry)
+    # Count total tools discovered
+    tool_count = sum(len(client.get_tools()) for client in _manager._clients.values() if client.is_connected)
 
-    # Sync all tools to the registry
-    tool_results = await _adapter.sync_all()
-    tool_count = sum(len(tools) for tools in tool_results.values())
-    logger.info(f"[MCP] Registered {tool_count} tools from {len(tool_results)} servers")
+    logger.info(f"[MCP] Initialized {connected}/{total} servers with {tool_count} tools")
 
     _initialized = True
-    return _manager, _adapter
+    return _manager
 
 
 async def shutdown_mcp() -> None:
@@ -127,13 +122,12 @@ async def shutdown_mcp() -> None:
     Should be called on application shutdown to cleanly disconnect
     from all MCP servers.
     """
-    global _manager, _adapter, _initialized
+    global _manager, _initialized
 
     if _manager:
         await _manager.shutdown()
 
     _manager = None
-    _adapter = None
     _initialized = False
     logger.info("[MCP] Shutdown complete")
 
