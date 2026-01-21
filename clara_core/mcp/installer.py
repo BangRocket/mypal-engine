@@ -421,6 +421,40 @@ class MCPInstaller:
             tools_discovered=server.tool_count,
         )
 
+    def _extract_github_owner_repo(self, source: str) -> tuple[str, str] | None:
+        """Extract owner/repo from a GitHub URL or shorthand.
+
+        Args:
+            source: GitHub URL (https://github.com/owner/repo) or shorthand (owner/repo)
+
+        Returns:
+            Tuple of (owner, repo) or None if couldn't parse
+        """
+        # Remove .git suffix if present
+        source = source.rstrip("/")
+        if source.endswith(".git"):
+            source = source[:-4]
+
+        # Handle full URLs
+        if "github.com" in source:
+            # https://github.com/owner/repo or git@github.com:owner/repo
+            if "github.com/" in source:
+                parts = source.split("github.com/")[-1].split("/")
+            elif "github.com:" in source:
+                parts = source.split("github.com:")[-1].split("/")
+            else:
+                return None
+
+            if len(parts) >= 2:
+                return (parts[0], parts[1])
+
+        # Handle shorthand (owner/repo)
+        elif "/" in source and source.count("/") == 1:
+            parts = source.split("/")
+            return (parts[0], parts[1])
+
+        return None
+
     async def _install_github(
         self,
         source: str,
@@ -430,7 +464,8 @@ class MCPInstaller:
     ) -> InstallResult:
         """Install an MCP server from a GitHub repository.
 
-        Clones the repo and detects how to run it based on config files.
+        First tries to install via npx (for npm packages), then falls back
+        to cloning and building locally.
 
         Args:
             source: GitHub URL or owner/repo
@@ -444,6 +479,53 @@ class MCPInstaller:
         if self._server_exists(server_name):
             return InstallResult(success=False, error=f"Server '{server_name}' already exists")
 
+        # Extract owner/repo for npx github: shorthand
+        owner_repo = self._extract_github_owner_repo(source)
+
+        # Try npx with github: shorthand first (for npm packages)
+        if owner_repo:
+            npx_path = shutil.which("npx")
+            if npx_path:
+                github_shorthand = f"github:{owner_repo[0]}/{owner_repo[1]}"
+                logger.info(f"[MCP Installer] Trying npx {github_shorthand}...")
+
+                # Create server configuration for npx approach
+                server = MCPServerConfig(
+                    name=server_name,
+                    source_type="github",
+                    display_name=owner_repo[1],
+                    source_url=f"https://github.com/{owner_repo[0]}/{owner_repo[1]}",
+                    transport="stdio",
+                    command="npx",
+                    args=["-y", github_shorthand],
+                    env=env or {},
+                    installed_by=installed_by,
+                )
+
+                # Test the connection
+                test_result = await self._test_server(server)
+
+                if test_result["success"]:
+                    # npx approach worked!
+                    server.set_tools(test_result.get("tools", []))
+                    self._save_server(server)
+
+                    logger.info(
+                        f"[MCP Installer] Installed GitHub server '{server_name}' via npx "
+                        f"with {server.tool_count} tools"
+                    )
+                    return InstallResult(
+                        success=True,
+                        server=server,
+                        tools_discovered=server.tool_count,
+                    )
+                else:
+                    logger.info(
+                        f"[MCP Installer] npx approach failed ({test_result.get('error')}), "
+                        "trying clone-and-build..."
+                    )
+
+        # Fall back to clone-and-build approach
         # Normalize GitHub URL
         if not source.startswith(("http://", "https://", "git@")):
             source = f"https://github.com/{source}"
