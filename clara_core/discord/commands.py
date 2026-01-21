@@ -4,11 +4,9 @@ Provides all slash commands for Clara administration and configuration.
 Uses Pycord's application commands system.
 """
 
-from __future__ import annotations
-
 import logging
 import os
-from typing import TYPE_CHECKING
+from typing import Optional
 
 import discord
 from discord import option
@@ -34,7 +32,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def get_guild_config(guild_id: str) -> GuildConfig | None:
+def get_guild_config(guild_id: str) -> Optional[GuildConfig]:
     """Get guild configuration from database."""
     with SessionLocal() as session:
         config = session.query(GuildConfig).filter(GuildConfig.guild_id == guild_id).first()
