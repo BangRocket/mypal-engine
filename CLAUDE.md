@@ -14,6 +14,12 @@ poetry install                    # Install dependencies
 poetry run python discord_bot.py  # Run Discord bot
 poetry run ruff check .           # Lint
 poetry run ruff format .          # Format
+
+# Daemon mode (Unix only)
+poetry run python discord_bot.py --daemon                    # Run in background
+poetry run python discord_bot.py --daemon --logfile bot.log  # With log file
+poetry run python discord_bot.py --status                    # Check if running
+poetry run python discord_bot.py --stop                      # Stop daemon
 ```
 
 ### Docker
@@ -484,9 +490,18 @@ Clara can install and use tools from external MCP (Model Context Protocol) serve
 
 **How It Works:**
 - MCP servers are installed from npm, GitHub, Docker, or local paths
-- Server configurations are stored in SQLite (`mcp_servers` table)
+- Server configurations are stored in SQLite/PostgreSQL (`mcp_servers` table)
+- Cloned repos and built servers are stored in `MCP_SERVERS_DIR` (default: `.mcp_servers/`)
 - Tools from all connected servers are automatically registered with Clara
 - Tools use namespaced names: `{server_name}__{tool_name}` (e.g., `everything__echo`)
+
+**Environment Variables:**
+- `MCP_SERVERS_DIR` - Directory for cloned repos and built servers (default: `.mcp_servers`)
+
+**Docker Configuration:**
+- MCP servers directory is mounted as a bind mount for external access
+- Set `MCP_SERVERS_PATH` to customize the host path (default: `./mcp_servers`)
+- Inside container, files are at `/app/mcp_servers`
 
 **Installation Sources:**
 - **npm packages**: `@modelcontextprotocol/server-everything`
