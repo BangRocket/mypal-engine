@@ -536,38 +536,6 @@ class MCPServerManager:
             )
         return tools
 
-    def get_mcp_system_prompt(self) -> str:
-        """Generate a system prompt describing available MCP tools.
-
-        Returns:
-            System prompt string listing MCP servers and their tools
-        """
-        if not self._clients:
-            return ""
-
-        lines = ["## MCP Plugin Tools\n"]
-        lines.append("The following tools are available from connected MCP servers:\n")
-
-        for server_name, client in self._clients.items():
-            if not client.is_connected:
-                continue
-
-            tool_names = client.get_tool_names()
-            if not tool_names:
-                continue
-
-            lines.append(f"### {server_name}")
-            for tool_name in tool_names:
-                namespaced = f"{server_name}__{tool_name}"
-                lines.append(f"- `{namespaced}`")
-            lines.append("")
-
-        if len(lines) <= 2:
-            return ""  # No connected servers with tools
-
-        lines.append("To use these tools, call them by their full namespaced name (e.g., `server__tool_name`).")
-        return "\n".join(lines)
-
     def get_tool_schema(self, namespaced_name: str) -> dict[str, Any] | None:
         """Get the parameter schema for a specific MCP tool.
 
