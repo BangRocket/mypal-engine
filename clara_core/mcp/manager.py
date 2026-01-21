@@ -607,17 +607,27 @@ class MCPServerManager:
         Returns:
             Status dict or None if not found
         """
+        # Get config first (needed for both cases)
+        config = self._get_config(server_name)
+
         client = self._clients.get(server_name)
         if client:
-            return client.get_status()
+            # Merge client status with config info
+            status = client.get_status()
+            if config:
+                status["enabled"] = config.enabled
+                status["source_type"] = config.source_type
+                status["status"] = "running" if client.is_connected else "error"
+            return status
 
         # Check storage for stopped servers
-        config = self._get_config(server_name)
         if config:
             return {
                 "name": config.name,
                 "connected": False,
+                "enabled": config.enabled,
                 "transport": config.transport,
+                "source_type": config.source_type,
                 "tool_count": config.tool_count,
                 "tools": [t["name"] for t in config.get_tools()],
                 "last_error": config.last_error,
