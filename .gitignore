@@ -71,3 +71,9 @@ clara_files/
 .env.railway
 
 chats/
+railway_backup/prod/clara_main.dump
+railway_backup/prod/clara_vectors.dump
+railway_backup/stage/clara_main.dump
+railway_backup/stage/clara_vectors.dump
+docs/mypalclara-domain-setup.md
+scripts/migrate_podman_to_docker.sh
