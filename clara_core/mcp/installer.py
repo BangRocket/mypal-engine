@@ -648,7 +648,8 @@ class MCPInstaller:
 
                 if "start" in scripts:
                     server.command = "npm"
-                    server.args = ["run", "start"]
+                    # --silent suppresses npm script output that pollutes JSON-RPC stream
+                    server.args = ["run", "--silent", "start"]
                 else:
                     server.command = "node"
                     server.args = [main]
