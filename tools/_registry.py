@@ -295,18 +295,35 @@ class ToolRegistry:
             return True
         return False
 
-    def get_system_prompts(self, platform: str | None = None) -> str:
-        """Get all system prompts concatenated.
+    def get_system_prompts(
+        self,
+        platform: str | None = None,
+        allowed_modules: list[str] | None = None,
+    ) -> str:
+        """Get system prompts concatenated, optionally filtered by module.
 
         Args:
             platform: Optional platform filter (not currently used but reserved)
+            allowed_modules: If provided, only include prompts from these modules.
+                            If None, includes all prompts (legacy behavior).
 
         Returns:
-            All system prompts joined with newlines
+            Filtered system prompts joined with newlines
         """
         if not self._system_prompts:
             return ""
-        return "\n\n".join(self._system_prompts.values())
+
+        if allowed_modules is not None:
+            allowed_set = set(allowed_modules)
+            prompts = [
+                prompt
+                for module, prompt in self._system_prompts.items()
+                if module in allowed_set
+            ]
+        else:
+            prompts = list(self._system_prompts.values())
+
+        return "\n\n".join(prompts)
 
     def __len__(self) -> int:
         """Return the number of registered tools."""
