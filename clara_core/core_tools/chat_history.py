@@ -1,4 +1,4 @@
-"""Chat history tools.
+"""Chat history tools - Clara core tool.
 
 Provides tools for searching and retrieving chat history.
 Tools: search_chat_history, get_chat_history
@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from ._base import ToolContext, ToolDef
+from tools._base import ToolContext, ToolDef
 
 MODULE_NAME = "chat_history"
 MODULE_VERSION = "1.0.0"
@@ -65,9 +65,7 @@ async def search_chat_history(args: dict[str, Any], ctx: ToolContext) -> str:
             # Check user filter
             if from_user:
                 author_name = msg.author.display_name.lower()
-                if from_user not in author_name and from_user not in str(
-                    msg.author.id
-                ):
+                if from_user not in author_name and from_user not in str(msg.author.id):
                     continue
 
             # Format match
@@ -153,9 +151,7 @@ TOOLS = [
                 },
                 "limit": {
                     "type": "integer",
-                    "description": (
-                        "Maximum messages to search through (default: 200, max: 1000)"
-                    ),
+                    "description": ("Maximum messages to search through (default: 200, max: 1000)"),
                 },
                 "from_user": {
                     "type": "string",
@@ -179,9 +175,7 @@ TOOLS = [
             "properties": {
                 "count": {
                     "type": "integer",
-                    "description": (
-                        "Number of messages to retrieve (default: 50, max: 200)"
-                    ),
+                    "description": ("Number of messages to retrieve (default: 50, max: 200)"),
                 },
                 "before_hours": {
                     "type": "number",
@@ -208,7 +202,7 @@ TOOLS = [
 
 async def initialize() -> None:
     """Initialize chat history module."""
-    print("[chat_history] Loaded (Discord-specific)")
+    pass  # No special initialization needed
 
 
 async def cleanup() -> None:

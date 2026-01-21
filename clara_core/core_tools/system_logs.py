@@ -1,4 +1,4 @@
-"""System logs tools.
+"""System logs tools - Clara core tool.
 
 Provides tools for searching and retrieving system logs from PostgreSQL.
 Tools: search_logs, get_recent_logs, get_error_logs
@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from ._base import ToolContext, ToolDef
+from tools._base import ToolContext, ToolDef
 
 MODULE_NAME = "system_logs"
 MODULE_VERSION = "1.0.0"
@@ -231,8 +231,7 @@ TOOLS = [
     ToolDef(
         name="get_recent_logs",
         description=(
-            "Get the most recent log entries. "
-            "Useful for seeing what just happened or monitoring activity."
+            "Get the most recent log entries. " "Useful for seeing what just happened or monitoring activity."
         ),
         parameters={
             "type": "object",
@@ -288,10 +287,10 @@ async def initialize() -> None:
 
     try:
         from db import SessionLocal
+
         _session_factory = SessionLocal
-        print("[system_logs] Loaded - connected to database")
-    except Exception as e:
-        print(f"[system_logs] Warning: Could not connect to database: {e}")
+    except Exception:
+        pass  # Database not available, tools will return error when used
 
 
 async def cleanup() -> None:

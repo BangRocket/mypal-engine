@@ -38,15 +38,22 @@ class ToolLoader:
         loader.start_watching()  # Enable hot-reload
     """
 
-    def __init__(self, tools_dir: Path, registry: ToolRegistry) -> None:
+    def __init__(
+        self,
+        tools_dir: Path,
+        registry: ToolRegistry,
+        skip_modules: list[str] | None = None,
+    ) -> None:
         """Initialize the loader.
 
         Args:
             tools_dir: Path to the tools/ directory
             registry: ToolRegistry instance to register tools with
+            skip_modules: List of module names to skip loading (e.g., replaced by MCP)
         """
         self.tools_dir = tools_dir
         self.registry = registry
+        self.skip_modules = set(skip_modules or [])
         self._modules: dict[str, ModuleType] = {}
         self._module_versions: dict[str, str] = {}
         self._module_mtimes: dict[str, float] = {}
@@ -67,6 +74,10 @@ class ToolLoader:
                 continue
             # Skip __pycache__ etc
             if f.name.startswith("__"):
+                continue
+            # Skip modules replaced by MCP servers
+            if f.stem in self.skip_modules:
+                print(f"[tools] Skipping {f.stem} (replaced by MCP server)")
                 continue
             modules.append(f.stem)
         return sorted(modules)
@@ -100,9 +111,7 @@ class ToolLoader:
 
         try:
             # Load the module
-            spec = importlib.util.spec_from_file_location(
-                f"tools.{module_name}", module_path
-            )
+            spec = importlib.util.spec_from_file_location(f"tools.{module_name}", module_path)
             if spec is None or spec.loader is None:
                 print(f"[tools] Failed to load spec for {module_name}")
                 return False
@@ -334,10 +343,7 @@ class ToolLoader:
 
     def get_loaded_modules(self) -> dict[str, str]:
         """Get dict of loaded module names to versions."""
-        return {
-            name: self._module_versions.get(name, "unknown")
-            for name in self._modules.keys()
-        }
+        return {name: self._module_versions.get(name, "unknown") for name in self._modules.keys()}
 
     async def shutdown(self) -> None:
         """Shutdown the loader, cleaning up all modules."""
