@@ -127,8 +127,8 @@ class ClaraCommands(commands.Cog):
             await ctx.respond(embed=create_error_embed("Error", str(e)))
 
     @mcp.command(name="status", description="Get detailed status of an MCP server")
-    @option("server", description="Server name (omit for overall status)", required=False)
-    async def mcp_status(self, ctx: discord.ApplicationContext, server: str | None = None):
+    @option("server", description="Server name (omit for overall status)", required=False, default=None)
+    async def mcp_status(self, ctx: discord.ApplicationContext, server: str = None):
         """Get detailed MCP server status."""
         await ctx.defer()
 
@@ -188,8 +188,8 @@ class ClaraCommands(commands.Cog):
             await ctx.respond(embed=create_error_embed("Error", str(e)))
 
     @mcp.command(name="tools", description="List tools from an MCP server")
-    @option("server", description="Server name (omit for all tools)", required=False)
-    async def mcp_tools(self, ctx: discord.ApplicationContext, server: str | None = None):
+    @option("server", description="Server name (omit for all tools)", required=False, default=None)
+    async def mcp_tools(self, ctx: discord.ApplicationContext, server: str = None):
         """List tools from MCP servers."""
         await ctx.defer()
 
@@ -234,9 +234,9 @@ class ClaraCommands(commands.Cog):
 
     @mcp.command(name="install", description="Install an MCP server (admin only)")
     @option("source", description="npm package, GitHub URL, or local path")
-    @option("name", description="Custom name for the server", required=False)
+    @option("name", description="Custom name for the server", required=False, default=None)
     @commands.has_permissions(administrator=True)
-    async def mcp_install(self, ctx: discord.ApplicationContext, source: str, name: str | None = None):
+    async def mcp_install(self, ctx: discord.ApplicationContext, source: str, name: str = None):
         """Install an MCP server."""
         await ctx.defer()
 
@@ -864,9 +864,10 @@ class ClaraCommands(commands.Cog):
         "topic",
         description="Help topic",
         required=False,
+        default=None,
         choices=["mcp", "model", "ors", "sandbox", "memory", "email"],
     )
-    async def clara_help(self, ctx: discord.ApplicationContext, topic: str | None = None):
+    async def clara_help(self, ctx: discord.ApplicationContext, topic: str = None):
         """Show help."""
         if topic:
             embed = create_help_embed(topic=topic, commands_info=HelpSelectView.TOPICS.get(topic, {}).get("commands"))
