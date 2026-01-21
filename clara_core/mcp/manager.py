@@ -1,41 +1,49 @@
 """MCP Server Manager for managing multiple MCP server connections.
 
 This module provides the MCPServerManager class which is responsible for:
-- Loading server configurations from the database
+- Loading server configurations from JSON files (default) or database
 - Starting and stopping MCP server connections
 - Managing the lifecycle of all MCP clients
 - Aggregating tools from all connected servers
+
+Storage modes:
+- JSON (default): Configs stored in .mcp_servers/{name}/config.json
+- Database: Configs stored in mcp_servers table (set MCP_USE_DATABASE=true)
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+import os
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from db import SessionLocal
-
 from .client import MCPClient, MCPTool
-from .models import MCPServer
+from .models import (
+    MCPServerConfig,
+    delete_server_config,
+    get_enabled_servers,
+    list_server_configs,
+    load_server_config,
+    save_server_config,
+    utcnow_iso,
+)
 
 if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
 
-
-def utcnow():
-    """Return current UTC time (naive, for SQLite compatibility)."""
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+# Toggle for database vs JSON storage (JSON is default)
+USE_DATABASE = os.getenv("MCP_USE_DATABASE", "").lower() in ("true", "1", "yes")
 
 
 class MCPServerManager:
     """Central manager for all MCP server connections.
 
     This singleton class manages the lifecycle of MCP clients, loading
-    configurations from the database and maintaining connections to
-    enabled servers.
+    configurations from JSON files (default) or database and maintaining
+    connections to enabled servers.
 
     Usage:
         manager = MCPServerManager.get_instance()
@@ -56,6 +64,7 @@ class MCPServerManager:
     def __init__(self) -> None:
         """Initialize the manager. Use get_instance() instead."""
         self._clients: dict[str, MCPClient] = {}  # server_name -> MCPClient
+        self._configs: dict[str, MCPServerConfig] = {}  # server_name -> config (for JSON mode)
         self._initialized = False
         self._lock = asyncio.Lock()
 
@@ -71,8 +80,240 @@ class MCPServerManager:
         """Reset the singleton instance. Useful for testing."""
         cls._instance = None
 
+    def _load_configs(self) -> list[MCPServerConfig]:
+        """Load all enabled server configs from storage."""
+        if USE_DATABASE:
+            return self._load_configs_from_db()
+        return get_enabled_servers()
+
+    def _load_configs_from_db(self) -> list[MCPServerConfig]:
+        """Load configs from database (legacy mode)."""
+        try:
+            from db import SessionLocal
+
+            # Import the SQLAlchemy model for database mode
+            from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
+            from sqlalchemy.orm import declarative_base
+
+            from db.models import Base
+
+            # Check if mcp_servers table exists in the database
+            with SessionLocal() as session:
+                # Query using raw SQL to avoid model dependency
+                result = session.execute(
+                    "SELECT name, source_type, display_name, source_url, transport, "
+                    "command, args, cwd, env, endpoint_url, docker_config, enabled, "
+                    "status, last_error, tool_count, tools_json, installed_by "
+                    "FROM mcp_servers WHERE enabled = true"
+                )
+
+                configs = []
+                for row in result:
+                    config = MCPServerConfig(
+                        name=row[0],
+                        source_type=row[1],
+                        display_name=row[2],
+                        source_url=row[3],
+                        transport=row[4] or "stdio",
+                        command=row[5],
+                        args=row[6] if isinstance(row[6], list) else [],
+                        cwd=row[7],
+                        env=row[8] if isinstance(row[8], dict) else {},
+                        endpoint_url=row[9],
+                        docker_config=row[10] if isinstance(row[10], dict) else {},
+                        enabled=row[11],
+                        status=row[12] or "stopped",
+                        last_error=row[13],
+                        tool_count=row[14] or 0,
+                        installed_by=row[16],
+                    )
+                    configs.append(config)
+
+                return configs
+
+        except Exception as e:
+            logger.warning(f"[MCP] Database mode failed, falling back to JSON: {e}")
+            return get_enabled_servers()
+
+    def _get_config(self, server_name: str) -> MCPServerConfig | None:
+        """Get a specific server config from storage."""
+        # Check in-memory cache first
+        if server_name in self._configs:
+            return self._configs[server_name]
+
+        if USE_DATABASE:
+            return self._get_config_from_db(server_name)
+        return load_server_config(server_name)
+
+    def _get_config_from_db(self, server_name: str) -> MCPServerConfig | None:
+        """Get a config from database (legacy mode)."""
+        try:
+            from db import SessionLocal
+
+            with SessionLocal() as session:
+                result = session.execute(
+                    "SELECT name, source_type, display_name, source_url, transport, "
+                    "command, args, cwd, env, endpoint_url, docker_config, enabled, "
+                    "status, last_error, tool_count, tools_json, installed_by "
+                    f"FROM mcp_servers WHERE name = :name",
+                    {"name": server_name},
+                ).first()
+
+                if not result:
+                    return None
+
+                return MCPServerConfig(
+                    name=result[0],
+                    source_type=result[1],
+                    display_name=result[2],
+                    source_url=result[3],
+                    transport=result[4] or "stdio",
+                    command=result[5],
+                    args=result[6] if isinstance(result[6], list) else [],
+                    cwd=result[7],
+                    env=result[8] if isinstance(result[8], dict) else {},
+                    endpoint_url=result[9],
+                    docker_config=result[10] if isinstance(result[10], dict) else {},
+                    enabled=result[11],
+                    status=result[12] or "stopped",
+                    last_error=result[13],
+                    tool_count=result[14] or 0,
+                    installed_by=result[16],
+                )
+        except Exception as e:
+            logger.warning(f"[MCP] Database lookup failed: {e}")
+            return load_server_config(server_name)
+
+    def _save_config(self, config: MCPServerConfig) -> bool:
+        """Save a server config to storage."""
+        # Update in-memory cache
+        self._configs[config.name] = config
+
+        if USE_DATABASE:
+            return self._save_config_to_db(config)
+        return save_server_config(config)
+
+    def _save_config_to_db(self, config: MCPServerConfig) -> bool:
+        """Save config to database (legacy mode)."""
+        try:
+            from db import SessionLocal
+
+            with SessionLocal() as session:
+                # Upsert using raw SQL
+                session.execute(
+                    """
+                    INSERT INTO mcp_servers (name, source_type, display_name, source_url,
+                        transport, command, args, cwd, env, endpoint_url, docker_config,
+                        enabled, status, last_error, tool_count, tools_json, installed_by)
+                    VALUES (:name, :source_type, :display_name, :source_url,
+                        :transport, :command, :args, :cwd, :env, :endpoint_url, :docker_config,
+                        :enabled, :status, :last_error, :tool_count, :tools_json, :installed_by)
+                    ON CONFLICT (name) DO UPDATE SET
+                        source_type = :source_type, display_name = :display_name,
+                        source_url = :source_url, transport = :transport, command = :command,
+                        args = :args, cwd = :cwd, env = :env, endpoint_url = :endpoint_url,
+                        docker_config = :docker_config, enabled = :enabled, status = :status,
+                        last_error = :last_error, tool_count = :tool_count, tools_json = :tools_json,
+                        installed_by = :installed_by, updated_at = CURRENT_TIMESTAMP
+                    """,
+                    {
+                        "name": config.name,
+                        "source_type": config.source_type,
+                        "display_name": config.display_name,
+                        "source_url": config.source_url,
+                        "transport": config.transport,
+                        "command": config.command,
+                        "args": config.args,
+                        "cwd": config.cwd,
+                        "env": config.env,
+                        "endpoint_url": config.endpoint_url,
+                        "docker_config": config.docker_config,
+                        "enabled": config.enabled,
+                        "status": config.status,
+                        "last_error": config.last_error,
+                        "tool_count": config.tool_count,
+                        "tools_json": config.tools,
+                        "installed_by": config.installed_by,
+                    },
+                )
+                session.commit()
+                return True
+        except Exception as e:
+            logger.warning(f"[MCP] Database save failed, using JSON fallback: {e}")
+            return save_server_config(config)
+
+    def _delete_config(self, server_name: str) -> bool:
+        """Delete a server config from storage."""
+        # Remove from in-memory cache
+        self._configs.pop(server_name, None)
+
+        if USE_DATABASE:
+            return self._delete_config_from_db(server_name)
+        return delete_server_config(server_name)
+
+    def _delete_config_from_db(self, server_name: str) -> bool:
+        """Delete config from database (legacy mode)."""
+        try:
+            from db import SessionLocal
+
+            with SessionLocal() as session:
+                session.execute(
+                    "DELETE FROM mcp_servers WHERE name = :name", {"name": server_name}
+                )
+                session.commit()
+                return True
+        except Exception as e:
+            logger.warning(f"[MCP] Database delete failed: {e}")
+            return delete_server_config(server_name)
+
+    def _list_all_configs(self) -> list[MCPServerConfig]:
+        """List all server configs (enabled and disabled)."""
+        if USE_DATABASE:
+            return self._list_all_configs_from_db()
+        return list_server_configs()
+
+    def _list_all_configs_from_db(self) -> list[MCPServerConfig]:
+        """List all configs from database."""
+        try:
+            from db import SessionLocal
+
+            with SessionLocal() as session:
+                result = session.execute(
+                    "SELECT name, source_type, display_name, source_url, transport, "
+                    "command, args, cwd, env, endpoint_url, docker_config, enabled, "
+                    "status, last_error, tool_count, tools_json, installed_by "
+                    "FROM mcp_servers"
+                )
+
+                configs = []
+                for row in result:
+                    config = MCPServerConfig(
+                        name=row[0],
+                        source_type=row[1],
+                        display_name=row[2],
+                        source_url=row[3],
+                        transport=row[4] or "stdio",
+                        command=row[5],
+                        args=row[6] if isinstance(row[6], list) else [],
+                        cwd=row[7],
+                        env=row[8] if isinstance(row[8], dict) else {},
+                        endpoint_url=row[9],
+                        docker_config=row[10] if isinstance(row[10], dict) else {},
+                        enabled=row[11],
+                        status=row[12] or "stopped",
+                        last_error=row[13],
+                        tool_count=row[14] or 0,
+                        installed_by=row[16],
+                    )
+                    configs.append(config)
+
+                return configs
+        except Exception as e:
+            logger.warning(f"[MCP] Database list failed: {e}")
+            return list_server_configs()
+
     async def initialize(self) -> dict[str, bool]:
-        """Initialize all enabled MCP servers from the database.
+        """Initialize all enabled MCP servers.
 
         Returns:
             Dict mapping server names to connection success status
@@ -85,51 +326,49 @@ class MCPServerManager:
             logger.info("[MCP] Initializing MCP server manager...")
             results = {}
 
-            # Load all enabled servers from database
-            with SessionLocal() as session:
-                servers = session.query(MCPServer).filter(MCPServer.enabled == True).all()  # noqa: E712
-                logger.info(f"[MCP] Found {len(servers)} enabled MCP servers")
+            # Load all enabled servers
+            configs = self._load_configs()
+            logger.info(f"[MCP] Found {len(configs)} enabled MCP servers")
 
-                for server in servers:
-                    # Detach from session to use outside the context
-                    session.expunge(server)
-                    results[server.name] = await self._start_server(server)
+            for config in configs:
+                self._configs[config.name] = config
+                results[config.name] = await self._start_server(config)
 
             self._initialized = True
             logger.info(f"[MCP] Initialization complete: {sum(results.values())}/{len(results)} servers connected")
             return results
 
-    async def _start_server(self, server: MCPServer) -> bool:
+    async def _start_server(self, config: MCPServerConfig) -> bool:
         """Start a single MCP server connection.
 
         Args:
-            server: MCPServer configuration
+            config: MCPServerConfig configuration
 
         Returns:
             True if connection was successful
         """
-        if server.name in self._clients:
-            logger.warning(f"[MCP] Server '{server.name}' already running")
-            return self._clients[server.name].is_connected
+        if config.name in self._clients:
+            logger.warning(f"[MCP] Server '{config.name}' already running")
+            return self._clients[config.name].is_connected
 
-        logger.info(f"[MCP] Starting server '{server.name}' ({server.source_type})")
+        logger.info(f"[MCP] Starting server '{config.name}' ({config.source_type})")
 
         try:
-            client = MCPClient(server)
+            client = MCPClient(config)
             success = await client.connect()
 
             if success:
-                self._clients[server.name] = client
-                # Update database with tool info
-                await self._update_server_status(server.name, "running", client.get_tools())
+                self._clients[config.name] = client
+                # Update config with tool info
+                await self._update_server_status(config.name, "running", client.get_tools())
                 return True
             else:
-                await self._update_server_status(server.name, "error", error=client.state.last_error)
+                await self._update_server_status(config.name, "error", error=client.state.last_error)
                 return False
 
         except Exception as e:
-            logger.error(f"[MCP] Failed to start server '{server.name}': {e}")
-            await self._update_server_status(server.name, "error", error=str(e))
+            logger.error(f"[MCP] Failed to start server '{config.name}': {e}")
+            await self._update_server_status(config.name, "error", error=str(e))
             return False
 
     async def _update_server_status(
@@ -139,7 +378,7 @@ class MCPServerManager:
         tools: list[MCPTool] | None = None,
         error: str | None = None,
     ) -> None:
-        """Update server status in the database.
+        """Update server status in storage.
 
         Args:
             server_name: Name of the server
@@ -148,17 +387,16 @@ class MCPServerManager:
             error: Optional error message
         """
         try:
-            with SessionLocal() as session:
-                server = session.query(MCPServer).filter(MCPServer.name == server_name).first()
-                if server:
-                    server.status = status
-                    if tools is not None:
-                        server.set_tools([t.to_dict() for t in tools])
-                    if error:
-                        server.last_error = error
-                        server.last_error_at = utcnow()
-                    server.updated_at = utcnow()
-                    session.commit()
+            config = self._get_config(server_name)
+            if config:
+                config.status = status
+                if tools is not None:
+                    config.set_tools([t.to_dict() for t in tools])
+                if error:
+                    config.last_error = error
+                    config.last_error_at = utcnow_iso()
+                config.updated_at = utcnow_iso()
+                self._save_config(config)
         except Exception as e:
             logger.warning(f"[MCP] Failed to update server status: {e}")
 
@@ -172,14 +410,12 @@ class MCPServerManager:
             True if the server was started successfully
         """
         async with self._lock:
-            with SessionLocal() as session:
-                server = session.query(MCPServer).filter(MCPServer.name == server_name).first()
-                if not server:
-                    logger.error(f"[MCP] Server '{server_name}' not found")
-                    return False
+            config = self._get_config(server_name)
+            if not config:
+                logger.error(f"[MCP] Server '{server_name}' not found")
+                return False
 
-                session.expunge(server)
-                return await self._start_server(server)
+            return await self._start_server(config)
 
     async def stop_server(self, server_name: str) -> bool:
         """Stop a specific server by name.
@@ -222,12 +458,12 @@ class MCPServerManager:
         Returns:
             True if successful
         """
-        with SessionLocal() as session:
-            server = session.query(MCPServer).filter(MCPServer.name == server_name).first()
-            if not server:
-                return False
-            server.enabled = True
-            session.commit()
+        config = self._get_config(server_name)
+        if not config:
+            return False
+
+        config.enabled = True
+        self._save_config(config)
 
         return await self.start_server(server_name)
 
@@ -242,12 +478,12 @@ class MCPServerManager:
         """
         await self.stop_server(server_name)
 
-        with SessionLocal() as session:
-            server = session.query(MCPServer).filter(MCPServer.name == server_name).first()
-            if not server:
-                return False
-            server.enabled = False
-            session.commit()
+        config = self._get_config(server_name)
+        if not config:
+            return False
+
+        config.enabled = False
+        self._save_config(config)
 
         return True
 
@@ -375,19 +611,18 @@ class MCPServerManager:
         if client:
             return client.get_status()
 
-        # Check database for stopped servers
-        with SessionLocal() as session:
-            server = session.query(MCPServer).filter(MCPServer.name == server_name).first()
-            if server:
-                return {
-                    "name": server.name,
-                    "connected": False,
-                    "transport": server.transport,
-                    "tool_count": server.tool_count,
-                    "tools": [t["name"] for t in server.get_tools()],
-                    "last_error": server.last_error,
-                    "status": server.status,
-                }
+        # Check storage for stopped servers
+        config = self._get_config(server_name)
+        if config:
+            return {
+                "name": config.name,
+                "connected": False,
+                "transport": config.transport,
+                "tool_count": config.tool_count,
+                "tools": [t["name"] for t in config.get_tools()],
+                "last_error": config.last_error,
+                "status": config.status,
+            }
         return None
 
     def get_all_server_status(self) -> list[dict[str, Any]]:
@@ -398,25 +633,24 @@ class MCPServerManager:
         """
         statuses = []
 
-        with SessionLocal() as session:
-            servers = session.query(MCPServer).all()
-            for server in servers:
-                client = self._clients.get(server.name)
-                if client:
-                    statuses.append(client.get_status())
-                else:
-                    statuses.append(
-                        {
-                            "name": server.name,
-                            "connected": False,
-                            "enabled": server.enabled,
-                            "transport": server.transport,
-                            "source_type": server.source_type,
-                            "tool_count": server.tool_count,
-                            "status": server.status,
-                            "last_error": server.last_error,
-                        }
-                    )
+        configs = self._list_all_configs()
+        for config in configs:
+            client = self._clients.get(config.name)
+            if client:
+                statuses.append(client.get_status())
+            else:
+                statuses.append(
+                    {
+                        "name": config.name,
+                        "connected": False,
+                        "enabled": config.enabled,
+                        "transport": config.transport,
+                        "source_type": config.source_type,
+                        "tool_count": config.tool_count,
+                        "status": config.status,
+                        "last_error": config.last_error,
+                    }
+                )
 
         return statuses
 
@@ -432,11 +666,12 @@ class MCPServerManager:
                     logger.warning(f"[MCP] Error disconnecting '{server_name}': {e}")
 
             self._clients.clear()
+            self._configs.clear()
             self._initialized = False
             logger.info("[MCP] Shutdown complete")
 
     async def reload(self) -> dict[str, bool]:
-        """Reload all server configurations from database.
+        """Reload all server configurations from storage.
 
         Stops servers that were disabled, starts newly enabled servers.
 
@@ -446,30 +681,29 @@ class MCPServerManager:
         async with self._lock:
             results = {}
 
-            with SessionLocal() as session:
-                servers = session.query(MCPServer).all()
+            configs = self._list_all_configs()
 
-                # Build sets for comparison
-                enabled_names = {s.name for s in servers if s.enabled}
-                running_names = set(self._clients.keys())
+            # Build sets for comparison
+            enabled_names = {c.name for c in configs if c.enabled}
+            running_names = set(self._clients.keys())
 
-                # Stop servers that should be stopped
-                for name in running_names - enabled_names:
-                    logger.info(f"[MCP] Stopping disabled server '{name}'")
-                    client = self._clients.pop(name)
-                    await client.disconnect()
-                    results[name] = False
+            # Stop servers that should be stopped
+            for name in running_names - enabled_names:
+                logger.info(f"[MCP] Stopping disabled server '{name}'")
+                client = self._clients.pop(name)
+                await client.disconnect()
+                results[name] = False
 
-                # Start servers that should be running
-                for server in servers:
-                    if server.enabled:
-                        session.expunge(server)
-                        if server.name not in self._clients:
-                            logger.info(f"[MCP] Starting newly enabled server '{server.name}'")
-                            results[server.name] = await self._start_server(server)
-                        else:
-                            # Already running
-                            results[server.name] = self._clients[server.name].is_connected
+            # Start servers that should be running
+            for config in configs:
+                if config.enabled:
+                    self._configs[config.name] = config
+                    if config.name not in self._clients:
+                        logger.info(f"[MCP] Starting newly enabled server '{config.name}'")
+                        results[config.name] = await self._start_server(config)
+                    else:
+                        # Already running
+                        results[config.name] = self._clients[config.name].is_connected
 
             return results
 

@@ -5,6 +5,9 @@ This module provides functionality to install MCP servers from:
 - GitHub repositories
 - Docker images
 - Local paths
+
+Configs are stored as JSON files in .mcp_servers/{name}/config.json by default.
+Set MCP_USE_DATABASE=true to use database storage instead.
 """
 
 from __future__ import annotations
@@ -16,20 +19,25 @@ import os
 import re
 import shutil
 import subprocess
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from db import SessionLocal
-
 from .client import MCPClient
-from .models import MCPServer
+from .models import (
+    MCP_SERVERS_DIR,
+    MCPServerConfig,
+    delete_server_config,
+    get_server_dir,
+    list_server_configs,
+    load_server_config,
+    save_server_config,
+)
 
 logger = logging.getLogger(__name__)
 
-# Directory for storing cloned repos and built servers
-MCP_SERVERS_DIR = Path(os.getenv("MCP_SERVERS_DIR", ".mcp_servers"))
+# Toggle for database vs JSON storage (JSON is default)
+USE_DATABASE = os.getenv("MCP_USE_DATABASE", "").lower() in ("true", "1", "yes")
 
 
 @dataclass
@@ -37,7 +45,7 @@ class InstallResult:
     """Result of an MCP server installation."""
 
     success: bool
-    server: MCPServer | None = None
+    server: MCPServerConfig | None = None
     error: str | None = None
     tools_discovered: int = 0
 
@@ -52,6 +60,175 @@ class MCPInstaller:
     def _ensure_servers_dir(self) -> None:
         """Ensure the MCP servers directory exists."""
         MCP_SERVERS_DIR.mkdir(parents=True, exist_ok=True)
+
+    def _server_exists(self, name: str) -> bool:
+        """Check if a server with this name already exists."""
+        if USE_DATABASE:
+            return self._server_exists_in_db(name)
+        return load_server_config(name) is not None
+
+    def _server_exists_in_db(self, name: str) -> bool:
+        """Check if server exists in database."""
+        try:
+            from db import SessionLocal
+
+            with SessionLocal() as session:
+                result = session.execute(
+                    "SELECT 1 FROM mcp_servers WHERE name = :name", {"name": name}
+                ).first()
+                return result is not None
+        except Exception:
+            return load_server_config(name) is not None
+
+    def _save_server(self, server: MCPServerConfig) -> bool:
+        """Save server config to storage."""
+        if USE_DATABASE:
+            return self._save_server_to_db(server)
+        return save_server_config(server)
+
+    def _save_server_to_db(self, server: MCPServerConfig) -> bool:
+        """Save server to database."""
+        try:
+            from db import SessionLocal
+
+            with SessionLocal() as session:
+                session.execute(
+                    """
+                    INSERT INTO mcp_servers (name, source_type, display_name, source_url,
+                        transport, command, args, cwd, env, endpoint_url, docker_config,
+                        enabled, status, last_error, tool_count, tools_json, installed_by)
+                    VALUES (:name, :source_type, :display_name, :source_url,
+                        :transport, :command, :args, :cwd, :env, :endpoint_url, :docker_config,
+                        :enabled, :status, :last_error, :tool_count, :tools_json, :installed_by)
+                    ON CONFLICT (name) DO UPDATE SET
+                        source_type = :source_type, display_name = :display_name,
+                        source_url = :source_url, transport = :transport, command = :command,
+                        args = :args, cwd = :cwd, env = :env, endpoint_url = :endpoint_url,
+                        docker_config = :docker_config, enabled = :enabled, status = :status,
+                        last_error = :last_error, tool_count = :tool_count, tools_json = :tools_json,
+                        installed_by = :installed_by, updated_at = CURRENT_TIMESTAMP
+                    """,
+                    {
+                        "name": server.name,
+                        "source_type": server.source_type,
+                        "display_name": server.display_name,
+                        "source_url": server.source_url,
+                        "transport": server.transport,
+                        "command": server.command,
+                        "args": json.dumps(server.args) if server.args else None,
+                        "cwd": server.cwd,
+                        "env": json.dumps(server.env) if server.env else None,
+                        "endpoint_url": server.endpoint_url,
+                        "docker_config": json.dumps(server.docker_config) if server.docker_config else None,
+                        "enabled": server.enabled,
+                        "status": server.status,
+                        "last_error": server.last_error,
+                        "tool_count": server.tool_count,
+                        "tools_json": json.dumps(server.tools) if server.tools else None,
+                        "installed_by": server.installed_by,
+                    },
+                )
+                session.commit()
+                return True
+        except Exception as e:
+            logger.warning(f"[MCP Installer] Database save failed, using JSON: {e}")
+            return save_server_config(server)
+
+    def _delete_server(self, name: str) -> bool:
+        """Delete server config from storage."""
+        if USE_DATABASE:
+            return self._delete_server_from_db(name)
+        return delete_server_config(name)
+
+    def _delete_server_from_db(self, name: str) -> bool:
+        """Delete server from database."""
+        try:
+            from db import SessionLocal
+
+            with SessionLocal() as session:
+                session.execute("DELETE FROM mcp_servers WHERE name = :name", {"name": name})
+                session.commit()
+                return True
+        except Exception as e:
+            logger.warning(f"[MCP Installer] Database delete failed: {e}")
+            return delete_server_config(name)
+
+    def _list_servers(self) -> list[MCPServerConfig]:
+        """List all servers from storage."""
+        if USE_DATABASE:
+            return self._list_servers_from_db()
+        return list_server_configs()
+
+    def _list_servers_from_db(self) -> list[MCPServerConfig]:
+        """List servers from database."""
+        try:
+            from db import SessionLocal
+
+            with SessionLocal() as session:
+                result = session.execute(
+                    "SELECT name, source_type, display_name, source_url, transport, "
+                    "command, args, cwd, env, endpoint_url, docker_config, enabled, "
+                    "status, last_error, tool_count, tools_json, installed_by, created_at "
+                    "FROM mcp_servers"
+                )
+
+                configs = []
+                for row in result:
+                    # Parse JSON fields
+                    args = row[6]
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except Exception:
+                            args = []
+
+                    env = row[8]
+                    if isinstance(env, str):
+                        try:
+                            env = json.loads(env)
+                        except Exception:
+                            env = {}
+
+                    docker_config = row[10]
+                    if isinstance(docker_config, str):
+                        try:
+                            docker_config = json.loads(docker_config)
+                        except Exception:
+                            docker_config = {}
+
+                    tools = row[15]
+                    if isinstance(tools, str):
+                        try:
+                            tools = json.loads(tools)
+                        except Exception:
+                            tools = []
+
+                    config = MCPServerConfig(
+                        name=row[0],
+                        source_type=row[1],
+                        display_name=row[2],
+                        source_url=row[3],
+                        transport=row[4] or "stdio",
+                        command=row[5],
+                        args=args or [],
+                        cwd=row[7],
+                        env=env or {},
+                        endpoint_url=row[9],
+                        docker_config=docker_config or {},
+                        enabled=row[11],
+                        status=row[12] or "stopped",
+                        last_error=row[13],
+                        tool_count=row[14] or 0,
+                        tools=tools or [],
+                        installed_by=row[16],
+                        created_at=row[17].isoformat() if row[17] else None,
+                    )
+                    configs.append(config)
+
+                return configs
+        except Exception as e:
+            logger.warning(f"[MCP Installer] Database list failed: {e}")
+            return list_server_configs()
 
     async def install(
         self,
@@ -190,10 +367,8 @@ class MCPInstaller:
         server_name = name or self._generate_name(package, "npm")
 
         # Check if server already exists
-        with SessionLocal() as session:
-            existing = session.query(MCPServer).filter(MCPServer.name == server_name).first()
-            if existing:
-                return InstallResult(success=False, error=f"Server '{server_name}' already exists")
+        if self._server_exists(server_name):
+            return InstallResult(success=False, error=f"Server '{server_name}' already exists")
 
         # Check if npx is available
         npx_path = shutil.which("npx")
@@ -204,18 +379,17 @@ class MCPInstaller:
             )
 
         # Create server configuration
-        server = MCPServer(
+        server = MCPServerConfig(
             name=server_name,
-            display_name=package.split("/")[-1],
             source_type="npm",
+            display_name=package.split("/")[-1],
             source_url=package,
             transport="stdio",
             command="npx",
+            args=["-y", package],
+            env=env or {},
             installed_by=installed_by,
         )
-        server.set_args(["-y", package])
-        if env:
-            server.set_env(env)
 
         # Test the connection
         logger.info(f"[MCP Installer] Testing npm server '{server_name}'...")
@@ -227,13 +401,9 @@ class MCPInstaller:
                 error=f"Server test failed: {test_result.get('error', 'Unknown error')}",
             )
 
-        # Save to database
+        # Save config
         server.set_tools(test_result.get("tools", []))
-        with SessionLocal() as session:
-            session.add(server)
-            session.commit()
-            session.refresh(server)
-            session.expunge(server)
+        self._save_server(server)
 
         logger.info(f"[MCP Installer] Installed npm server '{server_name}' with {server.tool_count} tools")
         return InstallResult(
@@ -262,10 +432,8 @@ class MCPInstaller:
         server_name = name or self._generate_name(source, "github")
 
         # Check if server already exists
-        with SessionLocal() as session:
-            existing = session.query(MCPServer).filter(MCPServer.name == server_name).first()
-            if existing:
-                return InstallResult(success=False, error=f"Server '{server_name}' already exists")
+        if self._server_exists(server_name):
+            return InstallResult(success=False, error=f"Server '{server_name}' already exists")
 
         # Normalize GitHub URL
         if not source.startswith(("http://", "https://", "git@")):
@@ -274,7 +442,7 @@ class MCPInstaller:
             source = f"{source}.git"
 
         # Clone directory
-        clone_dir = MCP_SERVERS_DIR / server_name
+        clone_dir = get_server_dir(server_name)
 
         try:
             # Clone the repository
@@ -315,13 +483,9 @@ class MCPInstaller:
                     error=f"Server test failed: {test_result.get('error', 'Unknown error')}",
                 )
 
-            # Save to database
+            # Save config
             server.set_tools(test_result.get("tools", []))
-            with SessionLocal() as session:
-                session.add(server)
-                session.commit()
-                session.refresh(server)
-                session.expunge(server)
+            self._save_server(server)
 
             logger.info(f"[MCP Installer] Installed GitHub server '{server_name}' with {server.tool_count} tools")
             return InstallResult(
@@ -344,7 +508,7 @@ class MCPInstaller:
         source_url: str,
         env: dict[str, str] | None,
         installed_by: str | None,
-    ) -> MCPServer | None:
+    ) -> MCPServerConfig | None:
         """Configure an MCP server from a cloned GitHub repo.
 
         Detects project type and sets up the appropriate run command.
@@ -357,18 +521,17 @@ class MCPInstaller:
             installed_by: User who installed
 
         Returns:
-            Configured MCPServer or None if couldn't detect how to run
+            Configured MCPServerConfig or None if couldn't detect how to run
         """
-        server = MCPServer(
+        server = MCPServerConfig(
             name=name,
             source_type="github",
             source_url=source_url,
             transport="stdio",
             cwd=str(repo_dir),
+            env=env or {},
             installed_by=installed_by,
         )
-        if env:
-            server.set_env(env)
 
         # Check for package.json (Node.js)
         package_json = repo_dir / "package.json"
@@ -392,10 +555,10 @@ class MCPInstaller:
 
                 if "start" in scripts:
                     server.command = "npm"
-                    server.set_args(["run", "start"])
+                    server.args = ["run", "start"]
                 else:
                     server.command = "node"
-                    server.set_args([main])
+                    server.args = [main]
 
                 server.display_name = pkg.get("name", name)
                 return server
@@ -418,7 +581,7 @@ class MCPInstaller:
                         timeout=300,
                     )
                     server.command = "uv"
-                    server.set_args(["run", "python", "-m", name.replace("_", "-")])
+                    server.args = ["run", "python", "-m", name.replace("_", "-")]
                 else:
                     logger.info(f"[MCP Installer] Installing Python dependencies with pip for '{name}'...")
                     subprocess.run(
@@ -428,7 +591,7 @@ class MCPInstaller:
                         timeout=300,
                     )
                     server.command = "python"
-                    server.set_args(["-m", name.replace("_", "-")])
+                    server.args = ["-m", name.replace("_", "-")]
 
                 return server
 
@@ -447,7 +610,7 @@ class MCPInstaller:
                     timeout=300,
                 )
                 server.command = "python"
-                server.set_args(["-m", name.replace("_", "-")])
+                server.args = ["-m", name.replace("_", "-")]
                 return server
 
             except Exception as e:
@@ -475,10 +638,8 @@ class MCPInstaller:
         server_name = name or self._generate_name(image, "docker")
 
         # Check if server already exists
-        with SessionLocal() as session:
-            existing = session.query(MCPServer).filter(MCPServer.name == server_name).first()
-            if existing:
-                return InstallResult(success=False, error=f"Server '{server_name}' already exists")
+        if self._server_exists(server_name):
+            return InstallResult(success=False, error=f"Server '{server_name}' already exists")
 
         # Check if Docker is available
         try:
@@ -500,16 +661,6 @@ class MCPInstaller:
             # The container needs to expose an MCP endpoint
             port = 8765  # Default MCP port
 
-            server = MCPServer(
-                name=server_name,
-                display_name=image.split("/")[-1].split(":")[0],
-                source_type="docker",
-                source_url=image,
-                transport="streamable-http",
-                endpoint_url=f"http://localhost:{port}/mcp",
-                installed_by=installed_by,
-            )
-
             docker_config = {
                 "image": image,
                 "port": port,
@@ -518,9 +669,17 @@ class MCPInstaller:
             if env:
                 docker_config["environment"] = env
 
-            server.set_docker_config(docker_config)
-            if env:
-                server.set_env(env)
+            server = MCPServerConfig(
+                name=server_name,
+                source_type="docker",
+                display_name=image.split("/")[-1].split(":")[0],
+                source_url=image,
+                transport="streamable-http",
+                endpoint_url=f"http://localhost:{port}/mcp",
+                docker_config=docker_config,
+                env=env or {},
+                installed_by=installed_by,
+            )
 
             # Note: We don't test Docker servers automatically since they require
             # container management that's handled separately
@@ -529,12 +688,8 @@ class MCPInstaller:
                 "Container management is required separately."
             )
 
-            # Save to database
-            with SessionLocal() as session:
-                session.add(server)
-                session.commit()
-                session.refresh(server)
-                session.expunge(server)
+            # Save config
+            self._save_server(server)
 
             return InstallResult(
                 success=True,
@@ -567,21 +722,18 @@ class MCPInstaller:
             return InstallResult(success=False, error=f"Path does not exist: {local_path}")
 
         # Check if server already exists
-        with SessionLocal() as session:
-            existing = session.query(MCPServer).filter(MCPServer.name == server_name).first()
-            if existing:
-                return InstallResult(success=False, error=f"Server '{server_name}' already exists")
+        if self._server_exists(server_name):
+            return InstallResult(success=False, error=f"Server '{server_name}' already exists")
 
-        server = MCPServer(
+        server = MCPServerConfig(
             name=server_name,
             source_type="local",
             source_url=str(local_path),
             transport="stdio",
             cwd=str(local_path),
+            env=env or {},
             installed_by=installed_by,
         )
-        if env:
-            server.set_env(env)
 
         # Try to detect how to run it
         configured = await self._configure_github_server(local_path, server_name, str(local_path), env, installed_by)
@@ -600,13 +752,9 @@ class MCPInstaller:
                 error=f"Server test failed: {test_result.get('error', 'Unknown error')}",
             )
 
-        # Save to database
+        # Save config
         server.set_tools(test_result.get("tools", []))
-        with SessionLocal() as session:
-            session.add(server)
-            session.commit()
-            session.refresh(server)
-            session.expunge(server)
+        self._save_server(server)
 
         logger.info(f"[MCP Installer] Installed local server '{server_name}' with {server.tool_count} tools")
         return InstallResult(
@@ -615,7 +763,7 @@ class MCPInstaller:
             tools_discovered=server.tool_count,
         )
 
-    async def _test_server(self, server: MCPServer, timeout: float = 30.0) -> dict[str, Any]:
+    async def _test_server(self, server: MCPServerConfig, timeout: float = 30.0) -> dict[str, Any]:
         """Test an MCP server connection.
 
         Args:
@@ -661,7 +809,7 @@ class MCPInstaller:
     async def uninstall(self, server_name: str) -> bool:
         """Uninstall an MCP server.
 
-        Removes from database and cleans up any local files.
+        Removes config and cleans up any local files.
 
         Args:
             server_name: Name of the server to uninstall
@@ -669,21 +817,25 @@ class MCPInstaller:
         Returns:
             True if successful
         """
-        with SessionLocal() as session:
-            server = session.query(MCPServer).filter(MCPServer.name == server_name).first()
-            if not server:
-                logger.warning(f"[MCP Installer] Server '{server_name}' not found")
-                return False
+        # Load config to check source type
+        if USE_DATABASE:
+            servers = self._list_servers_from_db()
+            server = next((s for s in servers if s.name == server_name), None)
+        else:
+            server = load_server_config(server_name)
 
-            # Cleanup local files for GitHub installs
-            if server.source_type == "github":
-                clone_dir = MCP_SERVERS_DIR / server_name
-                if clone_dir.exists():
-                    logger.info(f"[MCP Installer] Removing cloned repo: {clone_dir}")
-                    shutil.rmtree(clone_dir, ignore_errors=True)
+        if not server:
+            logger.warning(f"[MCP Installer] Server '{server_name}' not found")
+            return False
 
-            session.delete(server)
-            session.commit()
+        # Cleanup local files for GitHub installs
+        server_dir = get_server_dir(server_name)
+        if server_dir.exists():
+            logger.info(f"[MCP Installer] Removing server directory: {server_dir}")
+            shutil.rmtree(server_dir, ignore_errors=True)
+
+        # Delete config
+        self._delete_server(server_name)
 
         logger.info(f"[MCP Installer] Uninstalled server '{server_name}'")
         return True
@@ -694,20 +846,19 @@ class MCPInstaller:
         Returns:
             List of server info dicts
         """
-        with SessionLocal() as session:
-            servers = session.query(MCPServer).all()
-            return [
-                {
-                    "name": s.name,
-                    "display_name": s.display_name,
-                    "source_type": s.source_type,
-                    "source_url": s.source_url,
-                    "transport": s.transport,
-                    "enabled": s.enabled,
-                    "status": s.status,
-                    "tool_count": s.tool_count,
-                    "installed_by": s.installed_by,
-                    "created_at": s.created_at.isoformat() if s.created_at else None,
-                }
-                for s in servers
-            ]
+        servers = self._list_servers()
+        return [
+            {
+                "name": s.name,
+                "display_name": s.display_name,
+                "source_type": s.source_type,
+                "source_url": s.source_url,
+                "transport": s.transport,
+                "enabled": s.enabled,
+                "status": s.status,
+                "tool_count": s.tool_count,
+                "installed_by": s.installed_by,
+                "created_at": s.created_at,
+            }
+            for s in servers
+        ]
