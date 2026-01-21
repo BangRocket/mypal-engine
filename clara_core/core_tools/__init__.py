@@ -6,6 +6,7 @@ regardless of MCP server configuration.
 Core tools:
 - chat_history: Search and retrieve Discord chat history
 - system_logs: Access system logs for debugging
+- mcp_management: Manage MCP servers (list, install, enable, etc.)
 
 Also defines official MCP server configurations that replace
 custom tool implementations with standardized MCP servers.
@@ -76,7 +77,7 @@ OFFICIAL_MCP_SERVERS = [
         npm_package="@modelcontextprotocol/server-filesystem",
         env_required=[],
         env_optional=["CLARA_FILES_DIR"],  # Directories to allow access to
-        replaces_tool="local_files",
+        replaces_tool=None,  # Doesn't replace local_files (missing S3, per-user storage, sandbox integration)
     ),
 ]
 
@@ -107,7 +108,7 @@ async def register_core_tools(registry: "ToolRegistry") -> int:
     Returns:
         Number of tools registered
     """
-    from . import chat_history, system_logs
+    from . import chat_history, mcp_management, system_logs
 
     count = 0
 
@@ -134,6 +135,18 @@ async def register_core_tools(registry: "ToolRegistry") -> int:
         logger.info(f"[core_tools] Registered {len(system_logs.TOOLS)} system_logs tools")
     except Exception as e:
         logger.warning(f"[core_tools] Failed to register system_logs: {e}")
+
+    # Initialize and register mcp_management tools
+    try:
+        await mcp_management.initialize()
+        for tool_def in mcp_management.TOOLS:
+            registry.register(tool_def)
+            count += 1
+        if mcp_management.SYSTEM_PROMPT:
+            registry.register_system_prompt("mcp_management", mcp_management.SYSTEM_PROMPT)
+        logger.info(f"[core_tools] Registered {len(mcp_management.TOOLS)} mcp_management tools")
+    except Exception as e:
+        logger.warning(f"[core_tools] Failed to register mcp_management: {e}")
 
     return count
 

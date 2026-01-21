@@ -1,0 +1,963 @@
+"""Clara Discord slash commands.
+
+Provides all slash commands for Clara administration and configuration.
+Uses Pycord's application commands system.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from typing import TYPE_CHECKING
+
+import discord
+from discord import option
+from discord.ext import commands
+
+from db import SessionLocal
+from db.models import GuildConfig
+
+from .embeds import (
+    EMBED_COLOR_PRIMARY,
+    create_error_embed,
+    create_help_embed,
+    create_info_embed,
+    create_list_embed,
+    create_status_embed,
+    create_success_embed,
+)
+from .views import ConfirmView, HelpSelectView
+
+if TYPE_CHECKING:
+    pass
+
+logger = logging.getLogger(__name__)
+
+
+def get_guild_config(guild_id: str) -> GuildConfig | None:
+    """Get guild configuration from database."""
+    with SessionLocal() as session:
+        config = session.query(GuildConfig).filter(GuildConfig.guild_id == guild_id).first()
+        if config:
+            session.expunge(config)
+        return config
+
+
+def save_guild_config(config: GuildConfig) -> None:
+    """Save guild configuration to database."""
+    with SessionLocal() as session:
+        existing = session.query(GuildConfig).filter(GuildConfig.guild_id == config.guild_id).first()
+        if existing:
+            # Update existing
+            existing.default_tier = config.default_tier
+            existing.auto_tier_enabled = config.auto_tier_enabled
+            existing.ors_enabled = config.ors_enabled
+            existing.ors_channel_id = config.ors_channel_id
+            existing.ors_quiet_start = config.ors_quiet_start
+            existing.ors_quiet_end = config.ors_quiet_end
+            existing.sandbox_mode = config.sandbox_mode
+        else:
+            session.add(config)
+        session.commit()
+
+
+def get_or_create_guild_config(guild_id: str) -> GuildConfig:
+    """Get or create guild configuration."""
+    config = get_guild_config(guild_id)
+    if not config:
+        config = GuildConfig(guild_id=guild_id)
+    return config
+
+
+class ClaraCommands(commands.Cog):
+    """Clara administrative slash commands."""
+
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+
+    # ==========================================================================
+    # MCP Command Group
+    # ==========================================================================
+
+    mcp = discord.SlashCommandGroup("mcp", "Manage MCP plugin servers")
+
+    @mcp.command(name="list", description="List all installed MCP servers")
+    async def mcp_list(self, ctx: discord.ApplicationContext):
+        """List all MCP servers and their status."""
+        await ctx.defer()
+
+        try:
+            from clara_core.mcp import get_mcp_manager
+
+            manager = get_mcp_manager()
+            statuses = manager.get_all_server_status()
+
+            if not statuses:
+                embed = create_info_embed(
+                    "No MCP Servers",
+                    "No MCP servers are installed.\nUse `/mcp install` to add servers.",
+                )
+                await ctx.respond(embed=embed)
+                return
+
+            # Build status list
+            lines = []
+            for s in statuses:
+                status_emoji = {
+                    "running": "\u2705",
+                    "stopped": "\u26ab",
+                    "error": "\u274c",
+                }.get(s.get("status", "stopped"), "\u2753")
+
+                enabled_text = "enabled" if s.get("enabled", False) else "disabled"
+                tool_count = s.get("tool_count", 0)
+                source = s.get("source_type", "unknown")
+
+                lines.append(f"{status_emoji} **{s['name']}** ({source}) - {enabled_text}, {tool_count} tools")
+
+            embed = create_list_embed(
+                f"MCP Servers ({len(statuses)})",
+                lines,
+                color=EMBED_COLOR_PRIMARY,
+            )
+            await ctx.respond(embed=embed)
+
+        except Exception as e:
+            logger.error(f"[commands] Error listing MCP servers: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @mcp.command(name="status", description="Get detailed status of an MCP server")
+    @option("server", description="Server name (omit for overall status)", required=False)
+    async def mcp_status(self, ctx: discord.ApplicationContext, server: str | None = None):
+        """Get detailed MCP server status."""
+        await ctx.defer()
+
+        try:
+            from clara_core.mcp import get_mcp_manager
+
+            manager = get_mcp_manager()
+
+            if not server:
+                # Overall status
+                connected = len(manager)
+                statuses = manager.get_all_server_status()
+                total = len(statuses)
+                enabled = sum(1 for s in statuses if s.get("enabled", False))
+
+                embed = create_status_embed(
+                    "MCP System Status",
+                    fields=[
+                        ("Total Servers", str(total), True),
+                        ("Enabled", str(enabled), True),
+                        ("Connected", str(connected), True),
+                    ],
+                )
+                await ctx.respond(embed=embed)
+                return
+
+            # Specific server
+            status = manager.get_server_status(server)
+            if not status:
+                await ctx.respond(embed=create_error_embed("Not Found", f"Server '{server}' not found."))
+                return
+
+            fields = [
+                ("Status", status.get("status", "unknown"), True),
+                ("Connected", "Yes" if status.get("connected") else "No", True),
+                ("Transport", status.get("transport", "unknown"), True),
+                ("Tools", str(status.get("tool_count", 0)), True),
+            ]
+
+            if status.get("last_error"):
+                fields.append(("Last Error", status["last_error"][:100], False))
+
+            embed = create_status_embed(f"Server: {server}", fields=fields)
+
+            # Add tools list
+            tools = status.get("tools", [])
+            if tools:
+                tools_text = ", ".join(tools[:10])
+                if len(tools) > 10:
+                    tools_text += f" ... +{len(tools) - 10} more"
+                embed.add_field(name="Tools", value=tools_text, inline=False)
+
+            await ctx.respond(embed=embed)
+
+        except Exception as e:
+            logger.error(f"[commands] Error getting MCP status: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @mcp.command(name="tools", description="List tools from an MCP server")
+    @option("server", description="Server name (omit for all tools)", required=False)
+    async def mcp_tools(self, ctx: discord.ApplicationContext, server: str | None = None):
+        """List tools from MCP servers."""
+        await ctx.defer()
+
+        try:
+            from clara_core.mcp import get_mcp_manager
+
+            manager = get_mcp_manager()
+
+            if server:
+                client = manager.get_client(server)
+                if not client:
+                    await ctx.respond(embed=create_error_embed("Not Connected", f"Server '{server}' is not connected."))
+                    return
+
+                tools = client.get_tools()
+                if not tools:
+                    await ctx.respond(embed=create_info_embed("No Tools", f"No tools available from '{server}'."))
+                    return
+
+                lines = [f"**{t.name}**: {t.description[:60]}..." for t in tools]
+                embed = create_list_embed(f"Tools from {server} ({len(tools)})", lines)
+                await ctx.respond(embed=embed)
+            else:
+                # All tools
+                all_tools = manager.get_all_tools()
+                if not all_tools:
+                    await ctx.respond(embed=create_info_embed("No Tools", "No MCP tools available."))
+                    return
+
+                # Group by server
+                by_server: dict[str, int] = {}
+                for srv_name, _ in all_tools:
+                    by_server[srv_name] = by_server.get(srv_name, 0) + 1
+
+                lines = [f"**{srv}**: {count} tools" for srv, count in by_server.items()]
+                embed = create_list_embed(f"All MCP Tools ({len(all_tools)} total)", lines)
+                await ctx.respond(embed=embed)
+
+        except Exception as e:
+            logger.error(f"[commands] Error listing MCP tools: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @mcp.command(name="install", description="Install an MCP server (admin only)")
+    @option("source", description="npm package, GitHub URL, or local path")
+    @option("name", description="Custom name for the server", required=False)
+    @commands.has_permissions(administrator=True)
+    async def mcp_install(self, ctx: discord.ApplicationContext, source: str, name: str | None = None):
+        """Install an MCP server."""
+        await ctx.defer()
+
+        try:
+            from clara_core.mcp import get_mcp_manager
+            from clara_core.mcp.installer import MCPInstaller
+
+            installer = MCPInstaller()
+            result = await installer.install(
+                source=source,
+                name=name,
+                installed_by=str(ctx.author.id),
+            )
+
+            if result.success:
+                # Auto-start
+                manager = get_mcp_manager()
+                server_name = result.server.name if result.server else name or "unknown"
+                await manager.start_server(server_name)
+
+                embed = create_success_embed(
+                    "Server Installed",
+                    f"**{server_name}** installed successfully!\n"
+                    f"Source: `{source}`\n"
+                    f"Tools discovered: {result.tools_discovered}",
+                )
+                await ctx.respond(embed=embed)
+            else:
+                await ctx.respond(embed=create_error_embed("Installation Failed", result.error or "Unknown error"))
+
+        except Exception as e:
+            logger.error(f"[commands] Error installing MCP server: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @mcp.command(name="uninstall", description="Remove an MCP server (admin only)")
+    @option("server", description="Server name to uninstall")
+    @commands.has_permissions(administrator=True)
+    async def mcp_uninstall(self, ctx: discord.ApplicationContext, server: str):
+        """Uninstall an MCP server."""
+        # Confirm first
+        view = ConfirmView(f"uninstall {server}")
+        await ctx.respond(
+            embed=create_info_embed("Confirm Uninstall", f"Are you sure you want to uninstall **{server}**?"),
+            view=view,
+        )
+
+        await view.wait()
+
+        if not view.confirmed:
+            if view.interaction:
+                await view.interaction.response.edit_message(
+                    embed=create_info_embed("Cancelled", "Uninstall cancelled."),
+                    view=None,
+                )
+            return
+
+        try:
+            from clara_core.mcp import get_mcp_manager
+            from clara_core.mcp.installer import MCPInstaller
+
+            manager = get_mcp_manager()
+            if server in manager:
+                await manager.stop_server(server)
+
+            installer = MCPInstaller()
+            success = await installer.uninstall(server)
+
+            if success:
+                embed = create_success_embed("Server Uninstalled", f"**{server}** has been removed.")
+            else:
+                embed = create_error_embed("Failed", f"Could not uninstall '{server}'.")
+
+            if view.interaction:
+                await view.interaction.response.edit_message(embed=embed, view=None)
+
+        except Exception as e:
+            logger.error(f"[commands] Error uninstalling MCP server: {e}")
+            if view.interaction:
+                await view.interaction.response.edit_message(embed=create_error_embed("Error", str(e)), view=None)
+
+    @mcp.command(name="enable", description="Enable an MCP server")
+    @option("server", description="Server name to enable")
+    @commands.has_permissions(manage_channels=True)
+    async def mcp_enable(self, ctx: discord.ApplicationContext, server: str):
+        """Enable an MCP server."""
+        await ctx.defer()
+
+        try:
+            from clara_core.mcp import get_mcp_manager
+
+            manager = get_mcp_manager()
+            success = await manager.enable_server(server)
+
+            if success:
+                await ctx.respond(
+                    embed=create_success_embed("Server Enabled", f"**{server}** is now enabled and running.")
+                )
+            else:
+                await ctx.respond(embed=create_error_embed("Failed", f"Could not enable '{server}'."))
+
+        except Exception as e:
+            logger.error(f"[commands] Error enabling MCP server: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @mcp.command(name="disable", description="Disable an MCP server")
+    @option("server", description="Server name to disable")
+    @commands.has_permissions(manage_channels=True)
+    async def mcp_disable(self, ctx: discord.ApplicationContext, server: str):
+        """Disable an MCP server."""
+        await ctx.defer()
+
+        try:
+            from clara_core.mcp import get_mcp_manager
+
+            manager = get_mcp_manager()
+            success = await manager.disable_server(server)
+
+            if success:
+                await ctx.respond(embed=create_success_embed("Server Disabled", f"**{server}** is now disabled."))
+            else:
+                await ctx.respond(embed=create_error_embed("Failed", f"Could not disable '{server}'."))
+
+        except Exception as e:
+            logger.error(f"[commands] Error disabling MCP server: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @mcp.command(name="restart", description="Restart an MCP server")
+    @option("server", description="Server name to restart")
+    @commands.has_permissions(manage_channels=True)
+    async def mcp_restart(self, ctx: discord.ApplicationContext, server: str):
+        """Restart an MCP server."""
+        await ctx.defer()
+
+        try:
+            from clara_core.mcp import get_mcp_manager
+
+            manager = get_mcp_manager()
+            success = await manager.restart_server(server)
+
+            if success:
+                await ctx.respond(embed=create_success_embed("Server Restarted", f"**{server}** has been restarted."))
+            else:
+                await ctx.respond(embed=create_error_embed("Failed", f"Could not restart '{server}'."))
+
+        except Exception as e:
+            logger.error(f"[commands] Error restarting MCP server: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    # ==========================================================================
+    # Model Command Group
+    # ==========================================================================
+
+    model = discord.SlashCommandGroup("model", "Model and tier settings")
+
+    @model.command(name="status", description="Show current model and tier settings")
+    async def model_status(self, ctx: discord.ApplicationContext):
+        """Show model status."""
+        await ctx.defer()
+
+        try:
+            config = get_guild_config(str(ctx.guild_id)) if ctx.guild_id else None
+
+            # Get current settings
+            default_tier = config.default_tier if config else None
+            auto_tier = config.auto_tier_enabled == "true" if config else False
+
+            # Get env defaults
+            env_tier = os.getenv("MODEL_TIER", "mid")
+            env_auto = os.getenv("AUTO_TIER_SELECTION", "false").lower() == "true"
+            provider = os.getenv("LLM_PROVIDER", "openrouter")
+
+            fields = [
+                ("Provider", provider, True),
+                ("Server Default Tier", default_tier or f"(env: {env_tier})", True),
+                ("Auto-Tier", "Enabled" if (auto_tier or env_auto) else "Disabled", True),
+            ]
+
+            embed = create_status_embed("Model Settings", fields=fields)
+            embed.set_footer(text="Use message prefixes (!high, !mid, !low) to override per-message")
+            await ctx.respond(embed=embed)
+
+        except Exception as e:
+            logger.error(f"[commands] Error getting model status: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @model.command(name="tier", description="Set default model tier for this server (admin only)")
+    @option("tier", description="Model tier", choices=["high", "mid", "low", "default"])
+    @commands.has_permissions(administrator=True)
+    async def model_tier(self, ctx: discord.ApplicationContext, tier: str):
+        """Set default model tier."""
+        await ctx.defer()
+
+        try:
+            if not ctx.guild_id:
+                await ctx.respond(embed=create_error_embed("Error", "This command must be used in a server."))
+                return
+
+            config = get_or_create_guild_config(str(ctx.guild_id))
+            config.default_tier = tier if tier != "default" else None
+            save_guild_config(config)
+
+            if tier == "default":
+                await ctx.respond(embed=create_success_embed("Tier Reset", "Server will use environment default tier."))
+            else:
+                await ctx.respond(
+                    embed=create_success_embed("Tier Set", f"Default tier set to **{tier}** for this server.")
+                )
+
+        except Exception as e:
+            logger.error(f"[commands] Error setting model tier: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @model.command(name="auto", description="Toggle auto-tier selection (admin only)")
+    @option("enabled", description="Enable or disable auto-tier", choices=["on", "off"])
+    @commands.has_permissions(administrator=True)
+    async def model_auto(self, ctx: discord.ApplicationContext, enabled: str):
+        """Toggle auto-tier selection."""
+        await ctx.defer()
+
+        try:
+            if not ctx.guild_id:
+                await ctx.respond(embed=create_error_embed("Error", "This command must be used in a server."))
+                return
+
+            config = get_or_create_guild_config(str(ctx.guild_id))
+            config.auto_tier_enabled = "true" if enabled == "on" else "false"
+            save_guild_config(config)
+
+            status = "enabled" if enabled == "on" else "disabled"
+            await ctx.respond(
+                embed=create_success_embed("Auto-Tier Updated", f"Auto-tier selection is now **{status}**.")
+            )
+
+        except Exception as e:
+            logger.error(f"[commands] Error setting auto-tier: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    # ==========================================================================
+    # ORS Command Group
+    # ==========================================================================
+
+    ors = discord.SlashCommandGroup("ors", "Organic Response System (proactive messaging)")
+
+    @ors.command(name="status", description="Show ORS configuration")
+    async def ors_status(self, ctx: discord.ApplicationContext):
+        """Show ORS status."""
+        await ctx.defer()
+
+        try:
+            config = get_guild_config(str(ctx.guild_id)) if ctx.guild_id else None
+
+            ors_enabled = config.ors_enabled == "true" if config else False
+            channel_id = config.ors_channel_id if config else None
+            quiet_start = config.ors_quiet_start if config else None
+            quiet_end = config.ors_quiet_end if config else None
+
+            # Check environment default
+            env_enabled = os.getenv("ORS_ENABLED", "false").lower() == "true"
+
+            fields = [
+                ("Status", "Enabled" if (ors_enabled or env_enabled) else "Disabled", True),
+                ("Channel", f"<#{channel_id}>" if channel_id else "Not set", True),
+            ]
+
+            if quiet_start and quiet_end:
+                fields.append(("Quiet Hours", f"{quiet_start} - {quiet_end}", True))
+
+            embed = create_status_embed("ORS Settings", fields=fields)
+            await ctx.respond(embed=embed)
+
+        except Exception as e:
+            logger.error(f"[commands] Error getting ORS status: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @ors.command(name="enable", description="Enable proactive messaging (admin only)")
+    @commands.has_permissions(administrator=True)
+    async def ors_enable(self, ctx: discord.ApplicationContext):
+        """Enable ORS."""
+        await ctx.defer()
+
+        try:
+            if not ctx.guild_id:
+                await ctx.respond(embed=create_error_embed("Error", "This command must be used in a server."))
+                return
+
+            config = get_or_create_guild_config(str(ctx.guild_id))
+            config.ors_enabled = "true"
+            save_guild_config(config)
+
+            await ctx.respond(embed=create_success_embed("ORS Enabled", "Proactive messaging is now enabled."))
+
+        except Exception as e:
+            logger.error(f"[commands] Error enabling ORS: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @ors.command(name="disable", description="Disable proactive messaging (admin only)")
+    @commands.has_permissions(administrator=True)
+    async def ors_disable(self, ctx: discord.ApplicationContext):
+        """Disable ORS."""
+        await ctx.defer()
+
+        try:
+            if not ctx.guild_id:
+                await ctx.respond(embed=create_error_embed("Error", "This command must be used in a server."))
+                return
+
+            config = get_or_create_guild_config(str(ctx.guild_id))
+            config.ors_enabled = "false"
+            save_guild_config(config)
+
+            await ctx.respond(embed=create_success_embed("ORS Disabled", "Proactive messaging is now disabled."))
+
+        except Exception as e:
+            logger.error(f"[commands] Error disabling ORS: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @ors.command(name="channel", description="Set ORS target channel (admin only)")
+    @option("channel", description="Channel for proactive messages")
+    @commands.has_permissions(administrator=True)
+    async def ors_channel(self, ctx: discord.ApplicationContext, channel: discord.TextChannel):
+        """Set ORS channel."""
+        await ctx.defer()
+
+        try:
+            if not ctx.guild_id:
+                await ctx.respond(embed=create_error_embed("Error", "This command must be used in a server."))
+                return
+
+            config = get_or_create_guild_config(str(ctx.guild_id))
+            config.ors_channel_id = str(channel.id)
+            save_guild_config(config)
+
+            await ctx.respond(
+                embed=create_success_embed("ORS Channel Set", f"Proactive messages will be sent to {channel.mention}.")
+            )
+
+        except Exception as e:
+            logger.error(f"[commands] Error setting ORS channel: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @ors.command(name="quiet", description="Set quiet hours (no proactive messages)")
+    @option("start", description="Start time (HH:MM, 24h format)")
+    @option("end", description="End time (HH:MM, 24h format)")
+    @commands.has_permissions(administrator=True)
+    async def ors_quiet(self, ctx: discord.ApplicationContext, start: str, end: str):
+        """Set ORS quiet hours."""
+        await ctx.defer()
+
+        try:
+            # Validate time format
+            import re
+
+            time_pattern = r"^([01]?[0-9]|2[0-3]):([0-5][0-9])$"
+            if not re.match(time_pattern, start) or not re.match(time_pattern, end):
+                await ctx.respond(
+                    embed=create_error_embed("Invalid Time", "Please use HH:MM format (e.g., 22:00, 08:30)")
+                )
+                return
+
+            if not ctx.guild_id:
+                await ctx.respond(embed=create_error_embed("Error", "This command must be used in a server."))
+                return
+
+            config = get_or_create_guild_config(str(ctx.guild_id))
+            config.ors_quiet_start = start
+            config.ors_quiet_end = end
+            save_guild_config(config)
+
+            msg = f"No proactive messages between **{start}** and **{end}**."
+            await ctx.respond(embed=create_success_embed("Quiet Hours Set", msg))
+
+        except Exception as e:
+            logger.error(f"[commands] Error setting quiet hours: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    # ==========================================================================
+    # Sandbox Command Group
+    # ==========================================================================
+
+    sandbox = discord.SlashCommandGroup("sandbox", "Code execution sandbox")
+
+    @sandbox.command(name="status", description="Show sandbox availability")
+    async def sandbox_status(self, ctx: discord.ApplicationContext):
+        """Show sandbox status."""
+        await ctx.defer()
+
+        try:
+            from sandbox.manager import get_sandbox_manager
+
+            manager = get_sandbox_manager()
+            status = await manager.get_status()
+
+            fields = [
+                ("Mode", status.get("mode", "unknown"), True),
+                ("Available", "Yes" if status.get("available") else "No", True),
+            ]
+
+            if status.get("local_docker"):
+                fields.append(("Local Docker", "Available", True))
+            if status.get("remote_url"):
+                fields.append(("Remote URL", status["remote_url"][:30] + "...", True))
+
+            embed = create_status_embed("Sandbox Status", fields=fields)
+            await ctx.respond(embed=embed)
+
+        except Exception as e:
+            logger.error(f"[commands] Error getting sandbox status: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @sandbox.command(name="mode", description="Set sandbox mode (admin only)")
+    @option("mode", description="Sandbox mode", choices=["local", "remote", "auto"])
+    @commands.has_permissions(administrator=True)
+    async def sandbox_mode(self, ctx: discord.ApplicationContext, mode: str):
+        """Set sandbox mode."""
+        await ctx.defer()
+
+        try:
+            if not ctx.guild_id:
+                await ctx.respond(embed=create_error_embed("Error", "This command must be used in a server."))
+                return
+
+            config = get_or_create_guild_config(str(ctx.guild_id))
+            config.sandbox_mode = mode
+            save_guild_config(config)
+
+            await ctx.respond(embed=create_success_embed("Sandbox Mode Set", f"Sandbox mode set to **{mode}**."))
+
+        except Exception as e:
+            logger.error(f"[commands] Error setting sandbox mode: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    # ==========================================================================
+    # Memory Command Group
+    # ==========================================================================
+
+    memory = discord.SlashCommandGroup("memory", "Memory system")
+
+    @memory.command(name="status", description="Show memory statistics")
+    async def memory_status(self, ctx: discord.ApplicationContext):
+        """Show memory status."""
+        await ctx.defer()
+
+        try:
+            # Get memory stats from mem0
+            from vendor.mem0 import Memory
+
+            m = Memory()
+            user_id = str(ctx.author.id)
+
+            # Count memories
+            memories = m.get_all(user_id=user_id)
+            memory_count = len(memories) if memories else 0
+
+            fields = [
+                ("Your Memories", str(memory_count), True),
+            ]
+
+            embed = create_status_embed("Memory System", fields=fields)
+            embed.set_footer(text="Memories are automatically extracted from conversations.")
+            await ctx.respond(embed=embed)
+
+        except Exception as e:
+            logger.error(f"[commands] Error getting memory status: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @memory.command(name="search", description="Search your memories")
+    @option("query", description="Search query")
+    async def memory_search(self, ctx: discord.ApplicationContext, query: str):
+        """Search memories."""
+        await ctx.defer()
+
+        try:
+            from vendor.mem0 import Memory
+
+            m = Memory()
+            user_id = str(ctx.author.id)
+
+            results = m.search(query, user_id=user_id, limit=10)
+
+            if not results:
+                await ctx.respond(embed=create_info_embed("No Results", f"No memories found matching '{query}'."))
+                return
+
+            lines = []
+            for r in results:
+                memory_text = r.get("memory", str(r))[:100]
+                lines.append(f"\u2022 {memory_text}")
+
+            embed = create_list_embed(f"Memory Search: {query}", lines)
+            await ctx.respond(embed=embed)
+
+        except Exception as e:
+            logger.error(f"[commands] Error searching memories: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @memory.command(name="clear", description="Clear all your memories")
+    async def memory_clear(self, ctx: discord.ApplicationContext):
+        """Clear user's memories."""
+        view = ConfirmView("clear all memories")
+        await ctx.respond(
+            embed=create_info_embed(
+                "Confirm Memory Clear",
+                "This will delete **all** your stored memories. This cannot be undone.",
+            ),
+            view=view,
+        )
+
+        await view.wait()
+
+        if not view.confirmed:
+            if view.interaction:
+                await view.interaction.response.edit_message(
+                    embed=create_info_embed("Cancelled", "Memory clear cancelled."),
+                    view=None,
+                )
+            return
+
+        try:
+            from vendor.mem0 import Memory
+
+            m = Memory()
+            user_id = str(ctx.author.id)
+
+            m.delete_all(user_id=user_id)
+
+            if view.interaction:
+                await view.interaction.response.edit_message(
+                    embed=create_success_embed("Memories Cleared", "All your memories have been deleted."),
+                    view=None,
+                )
+
+        except Exception as e:
+            logger.error(f"[commands] Error clearing memories: {e}")
+            if view.interaction:
+                await view.interaction.response.edit_message(
+                    embed=create_error_embed("Error", str(e)),
+                    view=None,
+                )
+
+    # ==========================================================================
+    # Email Command Group
+    # ==========================================================================
+
+    email = discord.SlashCommandGroup("email", "Email monitoring")
+
+    @email.command(name="status", description="Show email monitoring status")
+    async def email_status(self, ctx: discord.ApplicationContext):
+        """Show email status."""
+        await ctx.defer()
+
+        try:
+            from db.models import EmailAccount
+
+            user_id = str(ctx.author.id)
+
+            with SessionLocal() as session:
+                accounts = session.query(EmailAccount).filter(EmailAccount.user_id == user_id).all()
+
+            if not accounts:
+                await ctx.respond(
+                    embed=create_info_embed("No Email Accounts", "You haven't connected any email accounts yet.")
+                )
+                return
+
+            lines = []
+            for acc in accounts:
+                status_emoji = "\u2705" if acc.enabled == "true" else "\u26ab"
+                lines.append(f"{status_emoji} **{acc.email_address}** ({acc.provider_type})")
+
+            embed = create_list_embed(f"Email Accounts ({len(accounts)})", lines)
+            await ctx.respond(embed=embed)
+
+        except Exception as e:
+            logger.error(f"[commands] Error getting email status: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @email.command(name="channel", description="Set alert channel (admin only)")
+    @option("channel", description="Channel for email alerts")
+    @commands.has_permissions(administrator=True)
+    async def email_channel(self, ctx: discord.ApplicationContext, channel: discord.TextChannel):
+        """Set email alert channel."""
+        await ctx.defer()
+
+        try:
+            # This would need to update user's email accounts
+            # For now, show a message about using the tool instead
+            await ctx.respond(
+                embed=create_info_embed(
+                    "Use Email Tool",
+                    "To set alert channels, use `email_set_alert_channel` in chat.\n"
+                    "This allows per-account configuration.",
+                )
+            )
+
+        except Exception as e:
+            logger.error(f"[commands] Error setting email channel: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @email.command(name="presets", description="List available email presets")
+    async def email_presets(self, ctx: discord.ApplicationContext):
+        """List email presets."""
+        await ctx.defer()
+
+        presets = {
+            "job_hunting": "Recruiter emails, ATS platforms, job keywords",
+            "urgent": "Emails with urgent/ASAP keywords",
+            "security": "Password resets, 2FA codes, security alerts",
+            "financial": "Banking, payment notifications",
+            "shipping": "Package tracking, delivery updates",
+        }
+
+        lines = [f"**{name}**: {desc}" for name, desc in presets.items()]
+        embed = create_list_embed("Email Presets", lines)
+        embed.set_footer(text="Apply with: email_apply_preset <preset_name>")
+        await ctx.respond(embed=embed)
+
+    # ==========================================================================
+    # Clara Utility Commands
+    # ==========================================================================
+
+    clara = discord.SlashCommandGroup("clara", "Clara utilities")
+
+    @clara.command(name="help", description="Show Clara command help")
+    @option(
+        "topic",
+        description="Help topic",
+        required=False,
+        choices=["mcp", "model", "ors", "sandbox", "memory", "email"],
+    )
+    async def clara_help(self, ctx: discord.ApplicationContext, topic: str | None = None):
+        """Show help."""
+        if topic:
+            embed = create_help_embed(topic=topic, commands_info=HelpSelectView.TOPICS.get(topic, {}).get("commands"))
+            await ctx.respond(embed=embed)
+        else:
+            embed = create_help_embed()
+            view = HelpSelectView()
+            await ctx.respond(embed=embed, view=view)
+
+    @clara.command(name="info", description="Show Clara system information")
+    async def clara_info(self, ctx: discord.ApplicationContext):
+        """Show Clara info."""
+        await ctx.defer()
+
+        try:
+            provider = os.getenv("LLM_PROVIDER", "openrouter")
+
+            # Get connected servers count
+            from clara_core.mcp import get_mcp_manager
+
+            manager = get_mcp_manager()
+            mcp_count = len(manager)
+
+            fields = [
+                ("LLM Provider", provider, True),
+                ("MCP Servers", str(mcp_count), True),
+            ]
+
+            embed = create_status_embed("Clara System Info", fields=fields)
+            embed.set_footer(text="MyPalClara - Your AI Assistant")
+            await ctx.respond(embed=embed)
+
+        except Exception as e:
+            logger.error(f"[commands] Error getting info: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @clara.command(name="channel", description="Set Clara's response mode for this channel")
+    @option("mode", description="Response mode", choices=["active", "mention", "off"])
+    @commands.has_permissions(manage_channels=True)
+    async def clara_channel(self, ctx: discord.ApplicationContext, mode: str):
+        """Set channel mode."""
+        await ctx.defer()
+
+        try:
+            from db.channel_config import set_channel_mode
+
+            if not ctx.channel_id or not ctx.guild_id:
+                await ctx.respond(embed=create_error_embed("Error", "This command must be used in a server channel."))
+                return
+
+            set_channel_mode(str(ctx.channel_id), str(ctx.guild_id), mode, str(ctx.author.id))
+
+            mode_descriptions = {
+                "active": "Clara will respond to all messages",
+                "mention": "Clara will only respond when mentioned",
+                "off": "Clara will not respond in this channel",
+            }
+
+            await ctx.respond(
+                embed=create_success_embed("Channel Mode Set", f"Mode: **{mode}**\n{mode_descriptions[mode]}")
+            )
+
+        except Exception as e:
+            logger.error(f"[commands] Error setting channel mode: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    # ==========================================================================
+    # Error Handlers
+    # ==========================================================================
+
+    @mcp_install.error
+    @mcp_uninstall.error
+    @model_tier.error
+    @model_auto.error
+    @ors_enable.error
+    @ors_disable.error
+    @ors_channel.error
+    @ors_quiet.error
+    @sandbox_mode.error
+    @email_channel.error
+    @clara_channel.error
+    async def permission_error_handler(self, ctx: discord.ApplicationContext, error: Exception):
+        """Handle permission errors."""
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.respond(
+                embed=create_error_embed(
+                    "Permission Denied",
+                    "You need Administrator or Manage Channels permission to use this command.",
+                ),
+                ephemeral=True,
+            )
+        else:
+            logger.error(f"[commands] Unhandled error: {error}")
+            await ctx.respond(embed=create_error_embed("Error", str(error)), ephemeral=True)
