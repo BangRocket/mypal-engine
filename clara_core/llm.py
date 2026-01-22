@@ -977,50 +977,76 @@ def anthropic_to_openai_response(msg: anthropic.types.Message) -> dict:
 
 # ============== Tool Description Generator ==============
 
+# Tool description settings from environment
+TOOL_DESC_TIER = os.getenv("TOOL_DESC_TIER", "high").lower()  # high/mid/low
+TOOL_DESC_MAX_WORDS = int(os.getenv("TOOL_DESC_MAX_WORDS", "20"))
+
 
 async def generate_tool_description(
     tool_name: str,
     args: dict,
-    max_words: int = 7,
+    max_words: int | None = None,
 ) -> str | None:
-    """Generate a short, specific description of a tool call using Haiku.
+    """Generate a descriptive explanation of a tool call.
 
-    Uses the low tier (Haiku-class) model for fast, cheap descriptions.
+    Uses a configurable model tier for generating rich, contextual descriptions.
+
+    Environment variables:
+        TOOL_DESC_TIER: Model tier to use (default: "high" for Opus-class)
+        TOOL_DESC_MAX_WORDS: Maximum words in description (default: 20)
 
     Args:
         tool_name: Name of the tool being called
         args: Tool arguments
-        max_words: Maximum words in description (default 7)
+        max_words: Override for max words (uses TOOL_DESC_MAX_WORDS if not provided)
 
     Returns:
-        Short description (3-7 words) or None if generation fails
+        Descriptive explanation or None if generation fails
     """
     import asyncio
 
-    # Summarize args to keep prompt short
-    args_summary = json.dumps(args, default=str)
-    if len(args_summary) > 200:
-        args_summary = args_summary[:200] + "..."
+    if max_words is None:
+        max_words = TOOL_DESC_MAX_WORDS
 
-    prompt = f"""Describe what this tool call does in {max_words} words or fewer. Be specific and use action verbs.
+    # Expand args to show more context
+    args_summary = json.dumps(args, default=str, indent=2)
+    if len(args_summary) > 500:
+        args_summary = args_summary[:500] + "\n..."
+
+    prompt = f"""Describe what this tool call does in {max_words} words or fewer. Be specific, descriptive, and explain the purpose. Include relevant details from the arguments.
 
 Tool: {tool_name}
-Args: {args_summary}
+Arguments:
+{args_summary}
+
+Guidelines:
+- Use present tense action verbs (e.g., "Executing", "Fetching", "Analyzing")
+- Include key details like filenames, search queries, or specific actions
+- Explain the purpose when clear from context
+- Be concise but informative
 
 Examples:
-- execute_python with code="df.describe()" -> "Analyzing dataframe statistics"
-- web_search with query="python async tutorial" -> "Searching Python async tutorials"
-- read_local_file with path="config.json" -> "Reading config file"
+- execute_python with code="df.describe()" -> "Analyzing dataframe to compute summary statistics including mean, std, min, and max values"
+- web_search with query="python async tutorial" -> "Searching the web for Python async/await tutorials and documentation"
+- read_local_file with filename="config.json" -> "Reading the config.json file to retrieve configuration settings"
+- github_create_issue with title="Fix login bug" -> "Creating a new GitHub issue to track the login bug fix"
+- install_package with package="pandas" -> "Installing the pandas data analysis library"
 
-Your description (no quotes, no period):"""
+Your description (no quotes, no period at end):"""
 
     try:
         provider = os.getenv("LLM_PROVIDER", "openrouter").lower()
 
-        # Use low tier for speed and cost
+        # Use configurable tier (default: high for richer descriptions)
+        tier = TOOL_DESC_TIER
+        if tier not in ("high", "mid", "low"):
+            tier = "high"
+
+        max_tokens = 100 if max_words > 10 else 60
+
         if provider == "anthropic":
             client = _get_anthropic_client()
-            model = get_model_for_tier("low", "anthropic")
+            model = get_model_for_tier(tier, "anthropic")
 
             # Run in thread pool since Anthropic client is sync
             loop = asyncio.get_event_loop()
@@ -1028,7 +1054,7 @@ Your description (no quotes, no period):"""
                 None,
                 lambda: client.messages.create(
                     model=model,
-                    max_tokens=50,
+                    max_tokens=max_tokens,
                     messages=[{"role": "user", "content": prompt}],
                 ),
             )
@@ -1042,7 +1068,7 @@ Your description (no quotes, no period):"""
             else:  # openrouter
                 client = _get_openrouter_client()
 
-            model = get_model_for_tier("low", provider)
+            model = get_model_for_tier(tier, provider)
 
             # Run in thread pool
             loop = asyncio.get_event_loop()
@@ -1050,7 +1076,7 @@ Your description (no quotes, no period):"""
                 None,
                 lambda: client.chat.completions.create(
                     model=model,
-                    max_tokens=50,
+                    max_tokens=max_tokens,
                     messages=[{"role": "user", "content": prompt}],
                 ),
             )
@@ -1061,9 +1087,9 @@ Your description (no quotes, no period):"""
         if text.endswith("."):
             text = text[:-1]
 
-        # Validate length
+        # Validate length - be more lenient with longer descriptions
         words = text.split()
-        if len(words) > max_words + 2:  # Allow a bit of slack
+        if len(words) > max_words + 5:
             text = " ".join(words[:max_words])
 
         return text

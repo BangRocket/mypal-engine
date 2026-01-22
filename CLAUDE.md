@@ -238,6 +238,18 @@ Optional overrides:
 - `TOOL_API_KEY` - Override API key for tool calls
 - `TOOL_BASE_URL` - Override base URL for tool calls
 
+**Tool Status Descriptions:**
+When Clara executes tools, she displays status messages in Discord. These descriptions are generated using an LLM to provide rich context.
+
+- `TOOL_DESC_TIER` - Model tier for generating descriptions: "high" (default, Opus-class), "mid" (Sonnet-class), or "low" (Haiku-class)
+- `TOOL_DESC_MAX_WORDS` - Maximum words in descriptions (default: 20)
+
+Example output with high tier:
+```
+-# 🐍 Running Python code... (step 1)
+-# ↳ *Analyzing the uploaded CSV file to compute summary statistics and identify missing values*
+```
+
 **For Claude proxies (like clewdr)**: Use `LLM_PROVIDER=anthropic` with `ANTHROPIC_BASE_URL` for native Anthropic SDK support. This uses native Claude tool calling without format conversion.
 
 ### Deprecated
