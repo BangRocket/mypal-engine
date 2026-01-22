@@ -479,6 +479,7 @@ def _make_anthropic_llm_with_model(
     """Non-streaming native Anthropic LLM with specified model.
 
     Handles system message extraction (Anthropic uses separate system param).
+    Also handles multimodal content (images) conversion.
     """
     client = _get_anthropic_client()
 
@@ -489,9 +490,12 @@ def _make_anthropic_llm_with_model(
         filtered = []
         for m in messages:
             if m.get("role") == "system":
-                system_parts.append(m.get("content", ""))
+                content = m.get("content", "")
+                if isinstance(content, str):
+                    system_parts.append(content)
             else:
-                filtered.append(m)
+                # Convert multimodal content if needed
+                filtered.append(_convert_message_to_anthropic(m))
         system = "\n\n".join(system_parts)
 
         kwargs: dict = {
@@ -606,7 +610,10 @@ def _make_custom_openai_llm_streaming_with_model(
 def _make_anthropic_llm_streaming_with_model(
     model: str,
 ) -> Callable[[list[dict[str, str]]], Generator[str, None, None]]:
-    """Streaming native Anthropic LLM with specified model."""
+    """Streaming native Anthropic LLM with specified model.
+
+    Also handles multimodal content (images) conversion.
+    """
     client = _get_anthropic_client()
 
     def llm(messages: list[dict[str, str]]) -> Generator[str, None, None]:
@@ -616,9 +623,12 @@ def _make_anthropic_llm_streaming_with_model(
         filtered = []
         for m in messages:
             if m.get("role") == "system":
-                system_parts.append(m.get("content", ""))
+                content = m.get("content", "")
+                if isinstance(content, str):
+                    system_parts.append(content)
             else:
-                filtered.append(m)
+                # Convert multimodal content if needed
+                filtered.append(_convert_message_to_anthropic(m))
         system = "\n\n".join(system_parts)
 
         kwargs: dict = {
@@ -900,6 +910,7 @@ def _convert_message_to_anthropic(msg: dict) -> dict:
     Handles:
     - Assistant messages with tool_calls -> assistant with tool_use content blocks
     - Tool role messages -> user messages with tool_result content blocks
+    - User messages with multimodal content (images) -> converted to Anthropic image format
     - Regular messages -> pass through
     """
     role = msg.get("role")
@@ -932,6 +943,46 @@ def _convert_message_to_anthropic(msg: dict) -> dict:
                 }
             ],
         }
+
+    elif role == "user" and isinstance(msg.get("content"), list):
+        # Convert multimodal content from OpenAI format to Anthropic format
+        converted_content = []
+        for part in msg["content"]:
+            if part.get("type") == "text":
+                converted_content.append(part)
+            elif part.get("type") == "image_url":
+                # Convert from OpenAI's data URL format to Anthropic's base64 format
+                image_url = part.get("image_url", {}).get("url", "")
+                if image_url.startswith("data:"):
+                    # Parse data URL: data:image/png;base64,<data>
+                    try:
+                        header, base64_data = image_url.split(",", 1)
+                        media_type = header.split(":")[1].split(";")[0]
+                        converted_content.append(
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": media_type,
+                                    "data": base64_data,
+                                },
+                            }
+                        )
+                    except (ValueError, IndexError):
+                        # Fall back to passing as-is if parsing fails
+                        converted_content.append(part)
+                else:
+                    # HTTP URL - Anthropic supports URLs directly
+                    converted_content.append(
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "url",
+                                "url": image_url,
+                            },
+                        }
+                    )
+        return {"role": "user", "content": converted_content}
 
     return msg
 

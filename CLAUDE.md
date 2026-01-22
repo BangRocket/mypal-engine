@@ -190,6 +190,24 @@ When `DISCORD_LOG_CHANNEL_ID` is set, all console log output is mirrored to the 
 **Stop Phrases:**
 Users can interrupt Clara mid-task by sending a stop phrase (e.g., "@Clara stop" or "@Clara nevermind"). This immediately cancels the current task and clears any queued requests for that channel. Useful when Clara is taking too long or working on the wrong thing.
 
+**Image/Vision Support:**
+Clara can see and analyze images sent in Discord messages. When a user sends an image (PNG, JPG, JPEG, GIF, or WebP), Clara will process it and include it in the LLM context for vision-capable models.
+
+Configuration:
+- `DISCORD_MAX_IMAGE_SIZE` - Maximum image file size in bytes (default: 10485760 = 10MB)
+
+Supported formats: `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`
+
+How it works:
+1. Images are automatically detected from Discord attachments
+2. Images within size limits are base64-encoded and included in the LLM message
+3. The image format is converted appropriately for each LLM provider:
+   - OpenRouter/OpenAI: Uses `image_url` format with data URLs
+   - Anthropic (native): Converts to Anthropic's `image` source format with base64 data
+4. Images are also saved to local storage for later reference
+
+Note: Vision capabilities depend on the model being used. Most modern Claude and GPT-4 Vision models support image analysis.
+
 ### Sandbox Code Execution
 
 Clara supports code execution via local Docker or a remote self-hosted sandbox service.
