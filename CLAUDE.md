@@ -190,6 +190,19 @@ When `DISCORD_LOG_CHANNEL_ID` is set, all console log output is mirrored to the 
 **Stop Phrases:**
 Users can interrupt Clara mid-task by sending a stop phrase (e.g., "@Clara stop" or "@Clara nevermind"). This immediately cancels the current task and clears any queued requests for that channel. Useful when Clara is taking too long or working on the wrong thing.
 
+**Message Queuing (Active Mode Batching):**
+When Clara is busy processing a message, incoming messages are queued. The queuing behavior differs based on message type:
+
+- **DMs and Mentions:** Each message is processed individually with queue position notifications. Users see "-# ⏳ Your request is queued (position N)" and "-# ▶️ Starting your queued request (waited Xs)..." when it's their turn.
+
+- **Active Mode (Channel):** Messages in active mode channels (where Clara responds to all messages without needing mentions) are batched together. When chat gets very active:
+  1. Incoming messages get an ⏳ reaction instead of a reply notification (less noise)
+  2. When Clara finishes her current task, she collects all consecutive queued active-mode messages
+  3. She responds to them together in a single combined response, prefixed with "-# 📨 Catching up on N messages"
+  4. The combined context shows each message with its author: `[Username]: message content`
+
+This allows Clara to keep up with fast-moving conversations without flooding the channel with individual responses or queue notifications.
+
 **Image/Vision Support:**
 Clara can see and analyze images sent in Discord messages. When a user sends an image (PNG, JPG, JPEG, GIF, or WebP), Clara will process it and include it in the LLM context for vision-capable models.
 
