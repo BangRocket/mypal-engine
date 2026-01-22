@@ -883,6 +883,233 @@ class ClaraCommands(commands.Cog):
         await ctx.respond(embed=embed)
 
     # ==========================================================================
+    # Backup Command Group
+    # ==========================================================================
+
+    backup = discord.SlashCommandGroup("backup", "Database backup management")
+
+    @backup.command(name="now", description="Trigger an immediate backup (admin only)")
+    @option("destination", description="Destination name (optional)", required=False)
+    @commands.has_permissions(administrator=True)
+    async def backup_now(self, ctx: discord.ApplicationContext, destination: str = None):
+        """Trigger immediate backup."""
+        await ctx.defer()
+
+        try:
+            import aiohttp
+
+            api_url = os.getenv("CLARA_API_URL", "http://localhost:8000")
+            url = f"{api_url}/api/backup/now"
+            if destination:
+                url += f"?destination={destination}"
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        status = data.get("status", "unknown")
+                        message = data.get("message", "")
+
+                        if status == "success":
+                            embed = create_success_embed("Backup Started", message or "Backup is in progress.")
+                        else:
+                            embed = create_info_embed("Backup Status", f"Status: {status}\n{message}")
+
+                        await ctx.respond(embed=embed)
+                    else:
+                        body = await resp.text()
+                        await ctx.respond(embed=create_error_embed("Backup Failed", body))
+
+        except Exception as e:
+            logger.error(f"[commands] Error triggering backup: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @backup.command(name="status", description="Show backup status")
+    async def backup_status(self, ctx: discord.ApplicationContext):
+        """Show backup status."""
+        await ctx.defer()
+
+        try:
+            import aiohttp
+
+            api_url = os.getenv("CLARA_API_URL", "http://localhost:8000")
+            url = f"{api_url}/api/backup/status"
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+
+                        fields = []
+                        if data.get("last_backup"):
+                            fields.append(("Last Backup", data["last_backup"], False))
+                        else:
+                            fields.append(("Last Backup", "Never", False))
+
+                        if data.get("last_backup_size"):
+                            size = data["last_backup_size"]
+                            size_str = f"{size / (1024*1024):.2f} MB" if size > 1024*1024 else f"{size / 1024:.2f} KB"
+                            fields.append(("Last Size", size_str, True))
+
+                        if data.get("next_scheduled"):
+                            fields.append(("Next Scheduled", data["next_scheduled"], True))
+
+                        if data.get("total_backups"):
+                            fields.append(("Total Backups", str(data["total_backups"]), True))
+
+                        if data.get("schedule"):
+                            schedule = data["schedule"]
+                            enabled = "\u2705 Enabled" if schedule.get("enabled") else "\u274c Disabled"
+                            cron = schedule.get("cron", "not set")
+                            retention = schedule.get("retention_days", 7)
+                            fields.append(("Schedule", f"{enabled}\nCron: `{cron}`\nRetention: {retention} days", False))
+
+                        embed = create_status_embed("Backup Status", fields=fields)
+                        await ctx.respond(embed=embed)
+                    else:
+                        await ctx.respond(embed=create_error_embed("Error", "Failed to get backup status."))
+
+        except Exception as e:
+            logger.error(f"[commands] Error getting backup status: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @backup.command(name="list", description="List available backups")
+    @option("database", description="Filter by database (clara, mem0)", required=False)
+    @option("limit", description="Maximum backups to show", required=False, min_value=1, max_value=50)
+    async def backup_list(self, ctx: discord.ApplicationContext, database: str = None, limit: int = 10):
+        """List available backups."""
+        await ctx.defer()
+
+        try:
+            import aiohttp
+
+            api_url = os.getenv("CLARA_API_URL", "http://localhost:8000")
+            params = [f"limit={limit}"]
+            if database:
+                params.append(f"database={database}")
+            url = f"{api_url}/api/backup/list?{'&'.join(params)}"
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        backups = data.get("backups", [])
+
+                        if not backups:
+                            await ctx.respond(embed=create_info_embed("No Backups", "No backups found."))
+                            return
+
+                        lines = []
+                        for b in backups:
+                            name = b.get("name", "unknown")
+                            db = b.get("database", "unknown")
+                            size = b.get("size_bytes", 0)
+                            size_str = f"{size / (1024*1024):.2f} MB" if size > 1024*1024 else f"{size / 1024:.2f} KB"
+                            lines.append(f"**{name}** ({db}) - {size_str}")
+
+                        embed = create_list_embed(f"Backups ({len(backups)})", lines)
+                        await ctx.respond(embed=embed)
+                    else:
+                        await ctx.respond(embed=create_error_embed("Error", "Failed to list backups."))
+
+        except Exception as e:
+            logger.error(f"[commands] Error listing backups: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @backup.command(name="schedule", description="Configure backup schedule (admin only)")
+    @option("enabled", description="Enable or disable scheduled backups")
+    @option("cron", description="Cron expression (e.g., '0 3 * * *' for daily at 3 AM)", required=False)
+    @option("retention", description="Days to keep backups", required=False, min_value=1, max_value=365)
+    @commands.has_permissions(administrator=True)
+    async def backup_schedule(
+        self,
+        ctx: discord.ApplicationContext,
+        enabled: bool,
+        cron: str = None,
+        retention: int = None,
+    ):
+        """Configure backup schedule."""
+        await ctx.defer()
+
+        try:
+            import aiohttp
+
+            api_url = os.getenv("CLARA_API_URL", "http://localhost:8000")
+            url = f"{api_url}/api/backup/schedule"
+
+            body = {"enabled": enabled}
+            if cron:
+                body["cron"] = cron
+            if retention:
+                body["retention_days"] = retention
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=body) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        schedule = data.get("schedule", {})
+
+                        fields = [
+                            ("Enabled", "\u2705 Yes" if schedule.get("enabled") else "\u274c No", True),
+                            ("Cron", f"`{schedule.get('cron', 'not set')}`", True),
+                            ("Retention", f"{schedule.get('retention_days', 7)} days", True),
+                        ]
+
+                        embed = create_status_embed("Schedule Updated", fields=fields)
+                        await ctx.respond(embed=embed)
+                    else:
+                        body_text = await resp.text()
+                        await ctx.respond(embed=create_error_embed("Error", body_text))
+
+        except Exception as e:
+            logger.error(f"[commands] Error setting backup schedule: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @backup.command(name="destinations", description="List backup destinations")
+    async def backup_destinations(self, ctx: discord.ApplicationContext):
+        """List backup destinations."""
+        await ctx.defer()
+
+        try:
+            import aiohttp
+
+            api_url = os.getenv("CLARA_API_URL", "http://localhost:8000")
+            url = f"{api_url}/api/backup/destinations"
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        destinations = data.get("destinations", [])
+
+                        if not destinations:
+                            await ctx.respond(
+                                embed=create_info_embed(
+                                    "No Destinations",
+                                    "No backup destinations configured.\nUse `backup_config` tool to add one.",
+                                )
+                            )
+                            return
+
+                        lines = []
+                        for d in destinations:
+                            name = d.get("name", "unknown")
+                            dtype = d.get("type", "unknown")
+                            status = d.get("status", "unknown")
+                            is_default = " [default]" if d.get("is_default") else ""
+                            status_emoji = "\u2705" if status == "connected" else "\u26ab"
+                            lines.append(f"{status_emoji} **{name}** ({dtype}){is_default}")
+
+                        embed = create_list_embed(f"Backup Destinations ({len(destinations)})", lines)
+                        await ctx.respond(embed=embed)
+                    else:
+                        await ctx.respond(embed=create_error_embed("Error", "Failed to list destinations."))
+
+        except Exception as e:
+            logger.error(f"[commands] Error listing destinations: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    # ==========================================================================
     # Clara Utility Commands
     # ==========================================================================
 
@@ -894,7 +1121,7 @@ class ClaraCommands(commands.Cog):
         description="Help topic",
         required=False,
         default=None,
-        choices=["mcp", "model", "ors", "sandbox", "memory", "email"],
+        choices=["mcp", "model", "ors", "sandbox", "memory", "email", "backup"],
     )
     async def clara_help(self, ctx: discord.ApplicationContext, topic: str = None):
         """Show help."""
@@ -978,6 +1205,8 @@ class ClaraCommands(commands.Cog):
     @ors_quiet.error
     @sandbox_mode.error
     @email_channel.error
+    @backup_now.error
+    @backup_schedule.error
     @clara_channel.error
     async def permission_error_handler(self, ctx: discord.ApplicationContext, error: Exception):
         """Handle permission errors."""
