@@ -204,22 +204,25 @@ When Clara is busy processing a message, incoming messages are queued. The queui
 This allows Clara to keep up with fast-moving conversations without flooding the channel with individual responses or queue notifications.
 
 **Image/Vision Support:**
-Clara can see and analyze images sent in Discord messages. When a user sends an image (PNG, JPG, JPEG, GIF, or WebP), Clara will process it and include it in the LLM context for vision-capable models.
+Clara can see and analyze images sent in Discord messages. Images are automatically resized to optimal dimensions for the Claude API before being sent.
 
 Configuration:
-- `DISCORD_MAX_IMAGE_SIZE` - Maximum image file size in bytes (default: 4194304 = 4MB)
+- `DISCORD_MAX_IMAGE_DIMENSION` - Maximum pixels on longest edge (default: 1568, Claude's recommendation)
+- `DISCORD_MAX_IMAGE_SIZE` - Maximum image file size after resize in bytes (default: 4194304 = 4MB)
 
 Supported formats: `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`
 
 How it works:
 1. Images are automatically detected from Discord attachments
-2. Images within size limits are base64-encoded and included in the LLM message
-3. The image format is converted appropriately for each LLM provider:
+2. Images are resized to fit within `MAX_IMAGE_DIMENSION` (preserving aspect ratio)
+3. Large images are converted to JPEG for efficient compression
+4. The resized image is base64-encoded and included in the LLM message
+5. The image format is converted appropriately for each LLM provider:
    - OpenRouter/OpenAI: Uses `image_url` format with data URLs
    - Anthropic (native): Converts to Anthropic's `image` source format with base64 data
-4. Images are also saved to local storage for later reference
+6. Original images are also saved to local storage for later reference
 
-Note: Vision capabilities depend on the model being used. Most modern Claude and GPT-4 Vision models support image analysis. The 4MB default limit accounts for base64 encoding overhead (~33%) which increases the actual request size. Larger images will be saved locally but not sent to the LLM.
+Note: Vision capabilities depend on the model being used. Images are resized to ~1.15 megapixels as recommended by Claude's vision documentation. This keeps request sizes manageable while maintaining good image quality for analysis. Images larger than 20MB are skipped entirely.
 
 ### Sandbox Code Execution
 
