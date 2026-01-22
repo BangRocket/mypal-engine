@@ -152,7 +152,10 @@ class MCPClient:
             self.state.last_error = str(e)
             self.state.connected = False
             if self._exit_stack:
-                await self._exit_stack.__aexit__(None, None, None)
+                try:
+                    await self._exit_stack.__aexit__(None, None, None)
+                except Exception:
+                    pass  # Ignore cleanup errors during failed connection
                 self._exit_stack = None
             logger.error(f"[MCP:{self.name}] Stdio connection failed: {e}")
             return False
@@ -200,7 +203,10 @@ class MCPClient:
             self.state.last_error = str(e)
             self.state.connected = False
             if self._exit_stack:
-                await self._exit_stack.__aexit__(None, None, None)
+                try:
+                    await self._exit_stack.__aexit__(None, None, None)
+                except Exception:
+                    pass  # Ignore cleanup errors during failed connection
                 self._exit_stack = None
             logger.error(f"[MCP:{self.name}] HTTP connection failed: {e}")
             return False
@@ -228,16 +234,27 @@ class MCPClient:
     async def disconnect(self) -> None:
         """Disconnect from the MCP server."""
         async with self._lock:
+            # Mark as disconnected first
+            was_connected = self.state.connected
+            self.state.connected = False
+            self._session = None
+
             if self._exit_stack:
+                exit_stack = self._exit_stack
+                self._exit_stack = None
                 try:
-                    await self._exit_stack.__aexit__(None, None, None)
+                    await exit_stack.__aexit__(None, None, None)
                 except Exception as e:
-                    logger.warning(f"[MCP:{self.name}] Error during disconnect: {e}")
-                finally:
-                    self._exit_stack = None
-                    self._session = None
-                    self.state.connected = False
-                    logger.info(f"[MCP:{self.name}] Disconnected")
+                    # Cancel scope errors are expected when disconnecting from a different task
+                    # (e.g., during shutdown). The resources will be cleaned up when the process exits.
+                    error_msg = str(e)
+                    if "cancel scope" in error_msg.lower() or "different task" in error_msg.lower():
+                        logger.debug(f"[MCP:{self.name}] Cross-task disconnect (expected during shutdown): {e}")
+                    else:
+                        logger.warning(f"[MCP:{self.name}] Error during disconnect: {e}")
+
+            if was_connected:
+                logger.info(f"[MCP:{self.name}] Disconnected")
 
     async def reconnect(self) -> bool:
         """Attempt to reconnect to the server.
