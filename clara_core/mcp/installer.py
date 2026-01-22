@@ -852,6 +852,134 @@ class MCPInstaller:
             shutil.rmtree(clone_dir, ignore_errors=True)
             return InstallResult(success=False, error=str(e))
 
+    def _find_monorepo_package(self, repo_dir: Path) -> Path | None:
+        """Find the actual MCP server package in a monorepo.
+
+        Checks for common monorepo patterns and tries to locate the MCP server package.
+
+        Args:
+            repo_dir: Path to the cloned repository
+
+        Returns:
+            Path to the package directory, or None if not a monorepo
+        """
+        # Check if this is a monorepo
+        is_monorepo = False
+        workspace_dirs = []
+
+        # Check for pnpm workspace
+        pnpm_workspace = repo_dir / "pnpm-workspace.yaml"
+        if pnpm_workspace.exists():
+            is_monorepo = True
+            workspace_dirs = ["packages", "apps"]
+
+        # Check for npm/yarn workspaces in package.json
+        package_json = repo_dir / "package.json"
+        if package_json.exists():
+            try:
+                with open(package_json) as f:
+                    pkg = json.load(f)
+                workspaces = pkg.get("workspaces", [])
+                if workspaces:
+                    is_monorepo = True
+                    # Parse workspace patterns like "packages/*"
+                    for ws in workspaces:
+                        if isinstance(ws, str):
+                            ws_dir = ws.replace("/*", "").replace("/**", "")
+                            if ws_dir and not ws_dir.startswith("!"):
+                                workspace_dirs.append(ws_dir)
+            except Exception:
+                pass
+
+        # Check for lerna
+        lerna_json = repo_dir / "lerna.json"
+        if lerna_json.exists():
+            is_monorepo = True
+            workspace_dirs.extend(["packages", "apps"])
+
+        if not is_monorepo:
+            return None
+
+        # Deduplicate and add common patterns
+        workspace_dirs = list(set(workspace_dirs + ["packages", "apps"]))
+
+        # Look for the MCP server package
+        for ws_dir in workspace_dirs:
+            ws_path = repo_dir / ws_dir
+            if not ws_path.exists():
+                continue
+
+            # Check each subdirectory for a package.json with MCP-related content
+            for pkg_dir in ws_path.iterdir():
+                if not pkg_dir.is_dir():
+                    continue
+
+                pkg_json = pkg_dir / "package.json"
+                if pkg_json.exists():
+                    try:
+                        with open(pkg_json) as f:
+                            pkg = json.load(f)
+
+                        # Check if this looks like an MCP server
+                        pkg_name = pkg.get("name", "").lower()
+                        pkg_desc = pkg.get("description", "").lower()
+                        pkg_keywords = [k.lower() for k in pkg.get("keywords", [])]
+                        deps = list(pkg.get("dependencies", {}).keys())
+                        deps += list(pkg.get("devDependencies", {}).keys())
+
+                        # Heuristics for MCP server detection
+                        is_mcp = (
+                            "mcp" in pkg_name
+                            or "mcp" in pkg_desc
+                            or "mcp" in pkg_keywords
+                            or "@modelcontextprotocol/sdk" in deps
+                            or "mcp-server" in pkg_name
+                        )
+
+                        # Also check for JS/TS subdir specifically for e2b-style repos
+                        if pkg_dir.name in ("js", "javascript", "typescript", "node"):
+                            is_mcp = True
+
+                        if is_mcp:
+                            logger.info(f"[MCP Installer] Found MCP package in monorepo: {pkg_dir}")
+                            return pkg_dir
+
+                    except Exception:
+                        continue
+
+        return None
+
+    def _parse_smithery_yaml(self, repo_dir: Path) -> dict[str, Any] | None:
+        """Parse smithery.yaml for server configuration hints.
+
+        Args:
+            repo_dir: Path to the repository
+
+        Returns:
+            Dict with startCommand info, or None if not found
+        """
+        smithery_yaml = repo_dir / "smithery.yaml"
+        if not smithery_yaml.exists():
+            return None
+
+        try:
+            import yaml
+
+            with open(smithery_yaml) as f:
+                config = yaml.safe_load(f)
+
+            start_command = config.get("startCommand", {})
+            if start_command:
+                logger.info("[MCP Installer] Found smithery.yaml with startCommand")
+                return start_command
+
+        except ImportError:
+            logger.debug("[MCP Installer] PyYAML not installed, skipping smithery.yaml")
+        except Exception as e:
+            logger.warning(f"[MCP Installer] Failed to parse smithery.yaml: {e}")
+
+        return None
+
     async def _configure_github_server(
         self,
         repo_dir: Path,
@@ -863,6 +991,8 @@ class MCPInstaller:
         """Configure an MCP server from a cloned GitHub repo.
 
         Detects project type and sets up the appropriate run command.
+        Handles monorepos by finding the actual MCP package.
+        Runs build steps for TypeScript projects.
 
         Args:
             repo_dir: Path to the cloned repository
@@ -874,41 +1004,124 @@ class MCPInstaller:
         Returns:
             Configured MCPServerConfig or None if couldn't detect how to run
         """
+        # Check for monorepo and find actual package
+        monorepo_pkg = self._find_monorepo_package(repo_dir)
+        if monorepo_pkg:
+            logger.info(f"[MCP Installer] Detected monorepo, using package at: {monorepo_pkg}")
+            working_dir = monorepo_pkg
+        else:
+            working_dir = repo_dir
+
         server = MCPServerConfig(
             name=name,
             source_type="github",
             source_url=source_url,
             transport="stdio",
-            cwd=str(repo_dir),
+            cwd=str(working_dir),
             env=env or {},
             installed_by=installed_by,
         )
 
+        # Check for smithery.yaml hints first
+        smithery_config = self._parse_smithery_yaml(repo_dir) or self._parse_smithery_yaml(working_dir)
+
         # Check for package.json (Node.js)
-        package_json = repo_dir / "package.json"
+        package_json = working_dir / "package.json"
         if package_json.exists():
             try:
                 with open(package_json) as f:
                     pkg = json.load(f)
 
+                scripts = pkg.get("scripts", {})
+
+                # Detect package manager
+                pkg_manager = "npm"
+                if (working_dir / "pnpm-lock.yaml").exists() or (repo_dir / "pnpm-lock.yaml").exists():
+                    pkg_manager = "pnpm"
+                elif (working_dir / "yarn.lock").exists() or (repo_dir / "yarn.lock").exists():
+                    pkg_manager = "yarn"
+
                 # Install dependencies
-                logger.info(f"[MCP Installer] Installing npm dependencies for '{name}'...")
-                subprocess.run(
-                    ["npm", "install"],
-                    cwd=repo_dir,
+                logger.info(f"[MCP Installer] Installing dependencies with {pkg_manager} for '{name}'...")
+                install_result = subprocess.run(
+                    [pkg_manager, "install"],
+                    cwd=working_dir,
                     capture_output=True,
                     timeout=300,
                 )
+                if install_result.returncode != 0:
+                    logger.warning(
+                        f"[MCP Installer] {pkg_manager} install had issues: {install_result.stderr.decode()[:200]}"
+                    )
 
-                # Look for main entry or start script
-                main = pkg.get("main", "index.js")
-                scripts = pkg.get("scripts", {})
+                # Run build if present (needed for TypeScript projects)
+                if "build" in scripts:
+                    logger.info(f"[MCP Installer] Running build script for '{name}'...")
+                    build_result = subprocess.run(
+                        [pkg_manager, "run", "build"],
+                        cwd=working_dir,
+                        capture_output=True,
+                        timeout=300,
+                    )
+                    if build_result.returncode != 0:
+                        logger.warning(f"[MCP Installer] Build had issues: {build_result.stderr.decode()[:200]}")
 
-                if "start" in scripts:
-                    server.command = "npm"
-                    # --silent suppresses npm script output that pollutes JSON-RPC stream
-                    server.args = ["run", "--silent", "start"]
+                # Determine how to start the server
+                # Priority: smithery.yaml > start script > bin > main
+
+                if smithery_config:
+                    # Use smithery.yaml hints
+                    cmd = smithery_config.get("command", "node")
+                    args = smithery_config.get("args", [])
+                    if isinstance(args, str):
+                        args = args.split()
+                    server.command = cmd
+                    server.args = args
+                    # Handle env vars from smithery config
+                    config_schema = smithery_config.get("configSchema", {})
+                    # Note: We don't auto-populate env vars, user must provide them
+                    logger.info(f"[MCP Installer] Using smithery.yaml: {cmd} {' '.join(args)}")
+
+                elif "start" in scripts:
+                    server.command = pkg_manager
+                    silent_flag = "--silent" if pkg_manager == "npm" else ""
+                    server.args = ["run", silent_flag, "start"] if silent_flag else ["run", "start"]
+                    server.args = [a for a in server.args if a]  # Remove empty strings
+
                 else:
+                    # Find the entry point
+                    main = pkg.get("main", "")
+                    bin_entry = pkg.get("bin")
+
+                    # Get bin entry (could be string or dict)
+                    if isinstance(bin_entry, str):
+                        main = bin_entry
+                    elif isinstance(bin_entry, dict):
+                        # Use the first bin entry
+                        main = next(iter(bin_entry.values()), main)
+
+                    # Default fallbacks
+                    if not main:
+                        # Check common locations
+                        for candidate in ["dist/index.js", "build/index.js", "lib/index.js", "index.js"]:
+                            if (working_dir / candidate).exists():
+                                main = candidate
+                                break
+
+                    if not main:
+                        main = "index.js"
+
+                    # Verify the entry point exists
+                    entry_path = working_dir / main
+                    if not entry_path.exists():
+                        logger.warning(f"[MCP Installer] Entry point not found: {entry_path}")
+                        # Try common build outputs
+                        for candidate in ["dist/index.js", "build/index.js", "lib/index.js"]:
+                            if (working_dir / candidate).exists():
+                                main = candidate
+                                logger.info(f"[MCP Installer] Found alternative entry: {candidate}")
+                                break
+
                     server.command = "node"
                     server.args = [main]
 
@@ -916,10 +1129,10 @@ class MCPInstaller:
                 return server
 
             except Exception as e:
-                logger.warning(f"[MCP Installer] Failed to parse package.json: {e}")
+                logger.warning(f"[MCP Installer] Failed to configure Node.js project: {e}")
 
         # Check for pyproject.toml (Python with poetry/uv)
-        pyproject = repo_dir / "pyproject.toml"
+        pyproject = working_dir / "pyproject.toml"
         if pyproject.exists():
             try:
                 # Try to install with uv first, fall back to pip
@@ -928,7 +1141,7 @@ class MCPInstaller:
                     logger.info(f"[MCP Installer] Installing Python dependencies with uv for '{name}'...")
                     subprocess.run(
                         ["uv", "pip", "install", "."],
-                        cwd=repo_dir,
+                        cwd=working_dir,
                         capture_output=True,
                         timeout=300,
                     )
@@ -938,7 +1151,7 @@ class MCPInstaller:
                     logger.info(f"[MCP Installer] Installing Python dependencies with pip for '{name}'...")
                     subprocess.run(
                         ["pip", "install", "."],
-                        cwd=repo_dir,
+                        cwd=working_dir,
                         capture_output=True,
                         timeout=300,
                     )
@@ -951,13 +1164,13 @@ class MCPInstaller:
                 logger.warning(f"[MCP Installer] Failed to setup Python project: {e}")
 
         # Check for setup.py (older Python)
-        setup_py = repo_dir / "setup.py"
+        setup_py = working_dir / "setup.py"
         if setup_py.exists():
             try:
                 logger.info(f"[MCP Installer] Installing Python package with pip for '{name}'...")
                 subprocess.run(
                     ["pip", "install", "."],
-                    cwd=repo_dir,
+                    cwd=working_dir,
                     capture_output=True,
                     timeout=300,
                 )
