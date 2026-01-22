@@ -2,6 +2,7 @@
 
 This module provides functionality to install MCP servers from:
 - npm packages (e.g., @modelcontextprotocol/server-everything)
+- Smithery registry (e.g., @anthropic/mcp-server-fetch)
 - GitHub repositories
 - Docker images
 - Local paths
@@ -19,9 +20,11 @@ import os
 import re
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import aiohttp
 
 from .client import MCPClient
 from .models import (
@@ -36,8 +39,49 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
+# Smithery API configuration
+SMITHERY_REGISTRY_URL = "https://registry.smithery.ai/servers"
+SMITHERY_API_TOKEN = os.getenv("SMITHERY_API_TOKEN", "")
+
 # Toggle for database vs JSON storage (JSON is default)
 USE_DATABASE = os.getenv("MCP_USE_DATABASE", "").lower() in ("true", "1", "yes")
+
+
+@dataclass
+class SmitheryServer:
+    """A server from the Smithery registry."""
+
+    qualified_name: str
+    display_name: str
+    description: str
+    icon_url: str | None = None
+    homepage: str | None = None
+    verified: bool = False
+    use_count: int = 0
+    created_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "qualified_name": self.qualified_name,
+            "display_name": self.display_name,
+            "description": self.description,
+            "icon_url": self.icon_url,
+            "homepage": self.homepage,
+            "verified": self.verified,
+            "use_count": self.use_count,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass
+class SmitherySearchResult:
+    """Result of a Smithery search."""
+
+    servers: list[SmitheryServer] = field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    page_size: int = 10
+    error: str | None = None
 
 
 @dataclass
@@ -48,6 +92,109 @@ class InstallResult:
     server: MCPServerConfig | None = None
     error: str | None = None
     tools_discovered: int = 0
+
+
+class SmitheryClient:
+    """Client for interacting with the Smithery registry."""
+
+    def __init__(self, api_token: str | None = None) -> None:
+        """Initialize the Smithery client.
+
+        Args:
+            api_token: Optional API token for authenticated requests.
+                      Falls back to SMITHERY_API_TOKEN env var.
+        """
+        self.api_token = api_token or SMITHERY_API_TOKEN
+
+    async def search(
+        self,
+        query: str,
+        page: int = 1,
+        page_size: int = 10,
+    ) -> SmitherySearchResult:
+        """Search the Smithery registry for MCP servers.
+
+        Args:
+            query: Search query (semantic search)
+            page: Page number (1-indexed)
+            page_size: Results per page (max 50)
+
+        Returns:
+            SmitherySearchResult with matching servers
+        """
+        params = {
+            "q": query,
+            "page": page,
+            "pageSize": min(page_size, 50),
+        }
+
+        headers = {"Accept": "application/json"}
+        if self.api_token:
+            headers["Authorization"] = f"Bearer {self.api_token}"
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    SMITHERY_REGISTRY_URL,
+                    params=params,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        return SmitherySearchResult(error=f"Smithery API error ({response.status}): {error_text[:200]}")
+
+                    data = await response.json()
+
+                    servers = []
+                    for s in data.get("servers", []):
+                        servers.append(
+                            SmitheryServer(
+                                qualified_name=s.get("qualifiedName", ""),
+                                display_name=s.get("displayName", s.get("qualifiedName", "")),
+                                description=s.get("description", ""),
+                                icon_url=s.get("iconUrl"),
+                                homepage=s.get("homepage"),
+                                verified=s.get("verified", False),
+                                use_count=s.get("useCount", 0),
+                                created_at=s.get("createdAt"),
+                            )
+                        )
+
+                    pagination = data.get("pagination", {})
+                    return SmitherySearchResult(
+                        servers=servers,
+                        total=pagination.get("totalCount", len(servers)),
+                        page=pagination.get("currentPage", page),
+                        page_size=pagination.get("pageSize", page_size),
+                    )
+
+        except asyncio.TimeoutError:
+            return SmitherySearchResult(error="Smithery API request timed out")
+        except Exception as e:
+            return SmitherySearchResult(error=f"Smithery API error: {e}")
+
+    async def get_server(self, qualified_name: str) -> SmitheryServer | None:
+        """Get a specific server by its qualified name.
+
+        Args:
+            qualified_name: The server's qualified name (e.g., "@anthropic/mcp-server-fetch")
+
+        Returns:
+            SmitheryServer if found, None otherwise
+        """
+        # Search for the exact name
+        result = await self.search(qualified_name, page_size=50)
+        if result.error:
+            logger.warning(f"[Smithery] Search error: {result.error}")
+            return None
+
+        # Find exact match
+        for server in result.servers:
+            if server.qualified_name == qualified_name:
+                return server
+
+        return None
 
 
 class MCPInstaller:
@@ -73,9 +220,7 @@ class MCPInstaller:
             from db import SessionLocal
 
             with SessionLocal() as session:
-                result = session.execute(
-                    "SELECT 1 FROM mcp_servers WHERE name = :name", {"name": name}
-                ).first()
+                result = session.execute("SELECT 1 FROM mcp_servers WHERE name = :name", {"name": name}).first()
                 return result is not None
         except Exception:
             return load_server_config(name) is not None
@@ -241,6 +386,7 @@ class MCPInstaller:
         """Install an MCP server from a source.
 
         Auto-detects source type from the input:
+        - Smithery: Prefix with "smithery:" (e.g., smithery:e2b, smithery:@anthropic/mcp-server-fetch)
         - npm package: Starts with @ or contains no / or .
         - GitHub: Contains github.com or is owner/repo format
         - Docker: Contains docker.io or other registry patterns
@@ -259,7 +405,11 @@ class MCPInstaller:
         source_type = self._detect_source_type(source)
         logger.info(f"[MCP Installer] Installing from {source_type}: {source}")
 
-        if source_type == "npm":
+        if source_type == "smithery":
+            # Remove smithery: prefix
+            smithery_name = source[9:] if source.startswith("smithery:") else source
+            return await self._install_smithery(smithery_name, name, env, installed_by, args)
+        elif source_type == "npm":
             return await self._install_npm(source, name, env, installed_by, args)
         elif source_type == "github":
             return await self._install_github(source, name, env, installed_by)
@@ -277,9 +427,13 @@ class MCPInstaller:
             source: Source string
 
         Returns:
-            One of: "npm", "github", "docker", "local"
+            One of: "smithery", "npm", "github", "docker", "local"
         """
         source = source.strip()
+
+        # Smithery explicit prefix
+        if source.startswith("smithery:"):
+            return "smithery"
 
         # Local path
         if source.startswith(("/", "./", "~", "../")):
@@ -290,10 +444,7 @@ class MCPInstaller:
             return "github"
 
         # Docker image
-        if any(
-            x in source
-            for x in ["docker.io", "ghcr.io", "gcr.io", "quay.io", "registry.", "amazonaws.com"]
-        ):
+        if any(x in source for x in ["docker.io", "ghcr.io", "gcr.io", "quay.io", "registry.", "amazonaws.com"]):
             return "docker"
 
         # npm package (starts with @ or looks like a package name)
@@ -316,7 +467,18 @@ class MCPInstaller:
         Returns:
             Generated name
         """
-        if source_type == "npm":
+        if source_type == "smithery":
+            # @anthropic/mcp-server-fetch -> fetch
+            # e2b -> e2b
+            name = source.split("/")[-1]
+            # Remove common prefixes
+            for prefix in ["mcp-server-", "mcp-", "server-"]:
+                if name.startswith(prefix):
+                    name = name[len(prefix) :]
+                    break
+            return name.replace("-", "_")
+
+        elif source_type == "npm":
             # @scope/mcp-server-name -> name
             # mcp-server-name -> name
             name = source.split("/")[-1]
@@ -416,6 +578,102 @@ class MCPInstaller:
         self._save_server(server)
 
         logger.info(f"[MCP Installer] Installed npm server '{server_name}' with {server.tool_count} tools")
+        return InstallResult(
+            success=True,
+            server=server,
+            tools_discovered=server.tool_count,
+        )
+
+    async def _install_smithery(
+        self,
+        package: str,
+        name: str | None,
+        env: dict[str, str] | None,
+        installed_by: str | None,
+        extra_args: list[str] | None = None,
+    ) -> InstallResult:
+        """Install an MCP server from Smithery registry.
+
+        Looks up the server in Smithery and installs it (typically via npm).
+
+        Args:
+            package: Smithery package name (e.g., e2b, @anthropic/mcp-server-fetch)
+            name: Optional custom name
+            env: Optional environment variables
+            installed_by: Optional user ID
+            extra_args: Optional extra arguments
+        """
+        server_name = name or self._generate_name(package, "smithery")
+
+        # Check if server already exists
+        if self._server_exists(server_name):
+            return InstallResult(success=False, error=f"Server '{server_name}' already exists")
+
+        # Check if npx is available
+        npx_path = shutil.which("npx")
+        if not npx_path:
+            return InstallResult(
+                success=False,
+                error="npx not found. Please install Node.js and npm.",
+            )
+
+        # Look up the server in Smithery registry
+        smithery = SmitheryClient()
+        smithery_server = await smithery.get_server(package)
+
+        display_name = package.split("/")[-1]
+        if smithery_server:
+            display_name = smithery_server.display_name or display_name
+            logger.info(f"[MCP Installer] Found Smithery server: {smithery_server.display_name}")
+
+        # Try using Smithery CLI run command
+        # npx -y @smithery/cli run <package> -- [args]
+        server_args = ["-y", "-q", "@smithery/cli@latest", "run", package, "--"]
+        if extra_args:
+            server_args.extend(extra_args)
+
+        # Create server configuration
+        server = MCPServerConfig(
+            name=server_name,
+            source_type="smithery",
+            display_name=display_name,
+            source_url=f"smithery:{package}",
+            transport="stdio",
+            command="npx",
+            args=server_args,
+            env=env or {},
+            installed_by=installed_by,
+        )
+
+        # Test the connection
+        logger.info(f"[MCP Installer] Testing Smithery server '{server_name}'...")
+        test_result = await self._test_server(server)
+
+        if not test_result["success"]:
+            # Try fallback: install directly via npm if it looks like an npm package
+            logger.info("[MCP Installer] Smithery CLI approach failed, trying direct npm...")
+
+            # Build npm args
+            npm_args = ["-y", "-q", package]
+            if extra_args:
+                npm_args.extend(extra_args)
+
+            server.args = npm_args
+            server.source_type = "smithery"  # Keep as smithery for tracking
+
+            test_result = await self._test_server(server)
+
+            if not test_result["success"]:
+                return InstallResult(
+                    success=False,
+                    error=f"Server test failed: {test_result.get('error', 'Unknown error')}",
+                )
+
+        # Save config
+        server.set_tools(test_result.get("tools", []))
+        self._save_server(server)
+
+        logger.info(f"[MCP Installer] Installed Smithery server '{server_name}' with {server.tool_count} tools")
         return InstallResult(
             success=True,
             server=server,

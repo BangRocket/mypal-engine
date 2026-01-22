@@ -7,6 +7,7 @@ Tools:
 - mcp_list: List all installed MCP servers and their status
 - mcp_status: Get detailed status of a specific server
 - mcp_tools: List tools from a specific server
+- smithery_search: Search Smithery registry for MCP servers
 - mcp_install: Install an MCP server (admin only)
 - mcp_uninstall: Remove an MCP server (admin only)
 - mcp_enable: Enable a server
@@ -38,15 +39,20 @@ You can manage MCP (Model Context Protocol) plugin servers that provide addition
 - `mcp_list` - List all installed servers with their status
 - `mcp_status` - Get detailed status of a specific server
 - `mcp_tools` - List available tools from a server
+- `smithery_search` - Search Smithery registry for servers to install
 - `mcp_install` - Install a new server (requires admin)
 - `mcp_uninstall` - Remove a server (requires admin)
 - `mcp_enable` / `mcp_disable` - Toggle servers
 - `mcp_restart` - Restart a running server
 - `mcp_refresh` - Reload all servers from config (requires admin)
 
+**Installing from Smithery:**
+Use `smithery_search` to find servers, then install with `mcp_install` using the `smithery:` prefix.
+Example: `mcp_install(source="smithery:e2b")`
+
 **When to Use:**
 - User asks about available plugins/tools
-- User wants to install, enable, or manage MCP servers
+- User wants to find, install, enable, or manage MCP servers
 - Troubleshooting tool availability issues
 
 **Admin Operations:**
@@ -422,6 +428,44 @@ async def mcp_refresh(args: dict[str, Any], ctx: ToolContext) -> str:
         return f"Error refreshing MCP servers: {e}"
 
 
+async def smithery_search(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Search Smithery registry for MCP servers."""
+    query = args.get("query", "").strip()
+
+    if not query:
+        return "Error: No search query specified. Provide a search term like 'file system', 'github', or 'database'."
+
+    try:
+        from clara_core.mcp.installer import SmitheryClient
+
+        client = SmitheryClient()
+        result = await client.search(query, page_size=10)
+
+        if result.error:
+            return f"Search failed: {result.error}"
+
+        if not result.servers:
+            return f"No servers found for '{query}'. Try different search terms."
+
+        lines = [f"**Smithery Search Results for '{query}':**\n"]
+        lines.append(f"Found {result.total} servers (showing top {len(result.servers)}):\n")
+
+        for server in result.servers:
+            verified = " \u2713" if server.verified else ""
+            uses = f" ({server.use_count} uses)" if server.use_count > 0 else ""
+            desc = server.description[:80] + "..." if len(server.description) > 80 else server.description
+            lines.append(f"- **{server.qualified_name}**{verified}{uses}")
+            lines.append(f"  {desc}")
+
+        lines.append('\n*Install with:* `mcp_install(source="smithery:<name>")`')
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        logger.error(f"[mcp_management] Error searching Smithery: {e}")
+        return f"Error searching Smithery: {e}"
+
+
 # --- Tool Definitions ---
 
 TOOLS = [
@@ -478,19 +522,38 @@ TOOLS = [
         platforms=["discord"],
     ),
     ToolDef(
+        name="smithery_search",
+        description=(
+            "Search the Smithery registry for MCP servers. Returns a list of available servers "
+            "matching your query. Use this to discover servers before installing with mcp_install."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query (e.g., 'file system', 'github', 'database', 'web')",
+                },
+            },
+            "required": ["query"],
+        },
+        handler=smithery_search,
+        platforms=["discord"],
+    ),
+    ToolDef(
         name="mcp_install",
         description=(
-            "Install an MCP server from npm, GitHub, Docker, or local path. "
-            "Examples: '@modelcontextprotocol/server-everything', 'github.com/user/repo', "
+            "Install an MCP server from Smithery, npm, GitHub, Docker, or local path. "
+            "Examples: 'smithery:e2b', '@modelcontextprotocol/server-everything', 'github.com/user/repo', "
             "'ghcr.io/user/server:latest', '/path/to/local/server'. "
-            "Requires admin permission."
+            "Use smithery_search to find servers first. Requires admin permission."
         ),
         parameters={
             "type": "object",
             "properties": {
                 "source": {
                     "type": "string",
-                    "description": "Source to install from (npm package, GitHub URL, Docker image, or local path)",
+                    "description": "Source to install from (smithery:<name>, npm package, GitHub URL, Docker image, or local path)",
                 },
                 "name": {
                     "type": "string",

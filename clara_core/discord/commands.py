@@ -227,8 +227,48 @@ class ClaraCommands(commands.Cog):
             logger.error(f"[commands] Error listing MCP tools: {e}")
             await ctx.respond(embed=create_error_embed("Error", str(e)))
 
+    @mcp.command(name="search", description="Search Smithery registry for MCP servers")
+    @option("query", description="Search query (e.g., 'file system', 'github', 'database')")
+    async def mcp_search(self, ctx: discord.ApplicationContext, query: str):
+        """Search Smithery registry for MCP servers."""
+        await ctx.defer()
+
+        try:
+            from clara_core.mcp.installer import SmitheryClient
+
+            client = SmitheryClient()
+            result = await client.search(query, page_size=10)
+
+            if result.error:
+                await ctx.respond(embed=create_error_embed("Search Failed", result.error))
+                return
+
+            if not result.servers:
+                await ctx.respond(embed=create_info_embed("No Results", f"No servers found for '{query}'."))
+                return
+
+            # Build response
+            lines = []
+            for server in result.servers[:10]:
+                verified = " \u2713" if server.verified else ""
+                uses = f" ({server.use_count} uses)" if server.use_count > 0 else ""
+                desc = server.description[:60] + "..." if len(server.description) > 60 else server.description
+                lines.append(f"**{server.qualified_name}**{verified}{uses}\n{desc}")
+
+            embed = discord.Embed(
+                title=f"Smithery Search: {query}",
+                description="\n\n".join(lines),
+                color=EMBED_COLOR_PRIMARY,
+            )
+            embed.set_footer(text=f"Found {result.total} results | Install with: /mcp install smithery:<name>")
+            await ctx.respond(embed=embed)
+
+        except Exception as e:
+            logger.error(f"[commands] Error searching Smithery: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
     @mcp.command(name="install", description="Install an MCP server (admin only)")
-    @option("source", description="npm package, GitHub URL, or local path")
+    @option("source", description="npm package, GitHub URL, smithery:<name>, or local path")
     @option("name", description="Custom name for the server", required=False, default=None)
     @commands.has_permissions(administrator=True)
     async def mcp_install(self, ctx: discord.ApplicationContext, source: str, name: str = None):
@@ -956,7 +996,9 @@ class ClaraCommands(commands.Cog):
             # Last backup
             last = status.get("last_backup")
             if last:
-                fields.append(("Last Backup", f"{last.get('filename', 'unknown')} ({last.get('size_mb', 0):.2f} MB)", False))
+                fields.append(
+                    ("Last Backup", f"{last.get('filename', 'unknown')} ({last.get('size_mb', 0):.2f} MB)", False)
+                )
             else:
                 fields.append(("Last Backup", "None found", False))
 

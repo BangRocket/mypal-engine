@@ -30,17 +30,17 @@ def get_version() -> str:
 
 from clara_core.config import get_config, init_platform
 from clara_core.llm import (
+    DEFAULT_TIER,
     ModelTier,
+    anthropic_to_openai_response,
+    generate_tool_description,
+    get_current_tier,
+    get_model_for_tier,
+    get_tier_info,
     make_llm,
     make_llm_streaming,
     make_llm_with_tools,
     make_llm_with_tools_anthropic,
-    anthropic_to_openai_response,
-    generate_tool_description,
-    get_model_for_tier,
-    get_current_tier,
-    get_tier_info,
-    DEFAULT_TIER,
 )
 from clara_core.memory import MemoryManager, load_initial_profile
 from clara_core.platform import PlatformAdapter, PlatformContext, PlatformMessage

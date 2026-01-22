@@ -63,7 +63,7 @@ poetry run python clear_dbs.py --user <id> # Clear specific user
 ### MCP Plugin System
 - `clara_core/mcp/client.py` - MCPClient wrapper for connecting to MCP servers (stdio & HTTP transports)
 - `clara_core/mcp/manager.py` - MCPServerManager singleton for managing all server connections
-- `clara_core/mcp/installer.py` - Installation from npm, GitHub, Docker, or local paths
+- `clara_core/mcp/installer.py` - Installation from Smithery, npm, GitHub, Docker, or local paths
 - `clara_core/mcp/registry_adapter.py` - Bridge between MCP tools and Clara's ToolRegistry
 - `clara_core/mcp/models.py` - MCPServer SQLAlchemy model for configuration storage
 - `tools/mcp_management.py` - User-facing management tools (mcp_install, mcp_list, etc.)
@@ -489,7 +489,7 @@ Clara can delegate complex coding tasks to Claude Code, an autonomous AI coding 
 Clara can install and use tools from external MCP (Model Context Protocol) servers, similar to Claude Code's `/plugins` command.
 
 **How It Works:**
-- MCP servers are installed from npm, GitHub, Docker, or local paths
+- MCP servers are installed from Smithery registry, npm, GitHub, Docker, or local paths
 - Server configurations are stored in SQLite/PostgreSQL (`mcp_servers` table)
 - Cloned repos and built servers are stored in `MCP_SERVERS_DIR` (default: `.mcp_servers/`)
 - Tools from all connected servers are automatically registered with Clara
@@ -497,6 +497,7 @@ Clara can install and use tools from external MCP (Model Context Protocol) serve
 
 **Environment Variables:**
 - `MCP_SERVERS_DIR` - Directory for cloned repos and built servers (default: `.mcp_servers`)
+- `SMITHERY_API_TOKEN` - Optional Smithery API token for authenticated registry searches
 
 **Docker Configuration:**
 - MCP servers directory is mounted as a bind mount for external access
@@ -504,12 +505,14 @@ Clara can install and use tools from external MCP (Model Context Protocol) serve
 - Inside container, files are at `/app/mcp_servers`
 
 **Installation Sources:**
+- **Smithery registry**: `smithery:e2b`, `smithery:@anthropic/mcp-server-fetch`
 - **npm packages**: `@modelcontextprotocol/server-everything`
 - **GitHub repos**: `github.com/user/mcp-server`
 - **Docker images**: `ghcr.io/user/mcp-server:latest`
 - **Local paths**: `/path/to/mcp-server`
 
 **Management Tools:**
+- `smithery_search` - Search Smithery registry for available MCP servers
 - `mcp_install` - Install an MCP server from various sources
 - `mcp_uninstall` - Remove an installed server
 - `mcp_list` - List all installed servers and their tools
@@ -525,10 +528,21 @@ Admin operations require one of:
 
 **Example Usage in Discord:**
 ```
+@Clara search smithery for file system servers
+@Clara install the MCP server smithery:e2b
 @Clara install the MCP server @modelcontextprotocol/server-everything
 @Clara list MCP servers
 @Clara use everything__echo to echo "Hello World"
 ```
+
+**Discord Slash Commands:**
+- `/mcp search <query>` - Search Smithery registry
+- `/mcp install <source>` - Install a server (admin only)
+- `/mcp list` - List installed servers
+- `/mcp status <server>` - Get server status
+- `/mcp tools [server]` - List tools
+- `/mcp enable/disable <server>` - Toggle servers
+- `/mcp uninstall <server>` - Remove a server (admin only)
 
 **Dependencies:**
 - `mcp` - Official MCP Python SDK

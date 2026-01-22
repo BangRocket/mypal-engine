@@ -1,5 +1,5 @@
 """Clara core services."""
 
-from .backup import BackupService, BackupConfig
+from .backup import BackupConfig, BackupService
 
 __all__ = ["BackupService", "BackupConfig"]

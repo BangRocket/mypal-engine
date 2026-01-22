@@ -89,12 +89,11 @@ class MCPServerManager:
     def _load_configs_from_db(self) -> list[MCPServerConfig]:
         """Load configs from database (legacy mode)."""
         try:
-            from db import SessionLocal
-
             # Import the SQLAlchemy model for database mode
             from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
             from sqlalchemy.orm import declarative_base
 
+            from db import SessionLocal
             from db.models import Base
 
             # Check if mcp_servers table exists in the database
@@ -155,7 +154,7 @@ class MCPServerManager:
                     "SELECT name, source_type, display_name, source_url, transport, "
                     "command, args, cwd, env, endpoint_url, docker_config, enabled, "
                     "status, last_error, tool_count, tools_json, installed_by "
-                    f"FROM mcp_servers WHERE name = :name",
+                    "FROM mcp_servers WHERE name = :name",
                     {"name": server_name},
                 ).first()
 

@@ -215,8 +215,8 @@ def init_platform() -> None:
     4. Initialize ToolRegistry singleton
     5. Optionally load initial profile
     """
-    from clara_core.memory import MemoryManager, load_initial_profile
     from clara_core.llm import make_llm
+    from clara_core.memory import MemoryManager, load_initial_profile
     from clara_core.tools import ToolRegistry
     from db.connection import init_db
 
