@@ -12,6 +12,7 @@ Tools:
 - mcp_enable: Enable a server
 - mcp_disable: Disable a server
 - mcp_restart: Restart a server
+- mcp_refresh: Reload all MCP servers (admin only)
 
 Platform: Discord (requires channel context for admin checks)
 """
@@ -41,6 +42,7 @@ You can manage MCP (Model Context Protocol) plugin servers that provide addition
 - `mcp_uninstall` - Remove a server (requires admin)
 - `mcp_enable` / `mcp_disable` - Toggle servers
 - `mcp_restart` - Restart a running server
+- `mcp_refresh` - Reload all servers from config (requires admin)
 
 **When to Use:**
 - User asks about available plugins/tools
@@ -388,6 +390,38 @@ async def mcp_restart(args: dict[str, Any], ctx: ToolContext) -> str:
         return f"Error restarting server: {e}"
 
 
+async def mcp_refresh(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Reload all MCP server configurations and reconnect."""
+    # Check admin permission
+    is_admin, error = _check_admin_permission(ctx)
+    if not is_admin:
+        return f"Permission denied: {error}"
+
+    try:
+        manager = _get_manager()
+        results = await manager.reload()
+
+        if not results:
+            return "No MCP servers configured."
+
+        # Count results
+        connected = sum(1 for v in results.values() if v)
+        total = len(results)
+
+        lines = [f"**MCP Servers Refreshed:** {connected}/{total} connected\n"]
+
+        for name, success in sorted(results.items()):
+            emoji = "\u2705" if success else "\u274c"
+            status = "connected" if success else "failed"
+            lines.append(f"{emoji} **{name}**: {status}")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        logger.error(f"[mcp_management] Error refreshing servers: {e}")
+        return f"Error refreshing MCP servers: {e}"
+
+
 # --- Tool Definitions ---
 
 TOOLS = [
@@ -545,6 +579,22 @@ TOOLS = [
             "required": ["server_name"],
         },
         handler=mcp_restart,
+        platforms=["discord"],
+        requires=["admin"],
+    ),
+    ToolDef(
+        name="mcp_refresh",
+        description=(
+            "Reload all MCP server configurations and reconnect to all enabled servers. "
+            "Stops servers that were disabled and starts newly enabled ones. "
+            "Useful after modifying configs or when servers need reconnection. Requires admin permission."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+        handler=mcp_refresh,
         platforms=["discord"],
         requires=["admin"],
     ),

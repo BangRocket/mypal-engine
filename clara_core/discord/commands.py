@@ -380,6 +380,40 @@ class ClaraCommands(commands.Cog):
             logger.error(f"[commands] Error restarting MCP server: {e}")
             await ctx.respond(embed=create_error_embed("Error", str(e)))
 
+    @mcp.command(name="refresh", description="Reload all MCP servers (admin only)")
+    @commands.has_permissions(administrator=True)
+    async def mcp_refresh(self, ctx: discord.ApplicationContext):
+        """Reload all MCP server configurations and reconnect."""
+        await ctx.defer()
+
+        try:
+            from clara_core.mcp import get_mcp_manager
+
+            manager = get_mcp_manager()
+            results = await manager.reload()
+
+            if not results:
+                await ctx.respond(embed=create_info_embed("No Servers", "No MCP servers are configured."))
+                return
+
+            # Count results
+            connected = sum(1 for v in results.values() if v)
+            total = len(results)
+
+            # Build status lines
+            lines = []
+            for name, success in sorted(results.items()):
+                emoji = "\u2705" if success else "\u274c"
+                status = "connected" if success else "failed"
+                lines.append(f"{emoji} **{name}**: {status}")
+
+            embed = create_list_embed(f"MCP Refresh ({connected}/{total} connected)", lines)
+            await ctx.respond(embed=embed)
+
+        except Exception as e:
+            logger.error(f"[commands] Error refreshing MCP servers: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
     # ==========================================================================
     # Model Command Group
     # ==========================================================================
@@ -935,6 +969,7 @@ class ClaraCommands(commands.Cog):
 
     @mcp_install.error
     @mcp_uninstall.error
+    @mcp_refresh.error
     @model_tier.error
     @model_auto.error
     @ors_enable.error
