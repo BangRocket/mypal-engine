@@ -29,6 +29,31 @@ from .views import ConfirmView, HelpSelectView
 logger = logging.getLogger(__name__)
 
 
+async def safe_defer(ctx: discord.ApplicationContext) -> bool:
+    """Safely defer an interaction, handling timeout errors.
+
+    Discord interactions expire after 3 seconds. If the bot's event loop
+    is busy, we might miss this window. This helper handles that gracefully.
+
+    Args:
+        ctx: The application context
+
+    Returns:
+        True if defer succeeded, False if interaction expired
+    """
+    try:
+        if not await safe_defer(ctx):
+            return
+        return True
+    except discord.NotFound:
+        # Interaction expired (error code 10062)
+        logger.warning(f"[commands] Interaction expired before defer for /{ctx.command.qualified_name}")
+        return False
+    except Exception as e:
+        logger.warning(f"[commands] Failed to defer interaction: {e}")
+        return False
+
+
 def get_guild_config(guild_id: str) -> Optional[GuildConfig]:
     """Get guild configuration from database."""
     with SessionLocal() as session:
@@ -79,7 +104,8 @@ class ClaraCommands(commands.Cog):
     @mcp.command(name="list", description="List all installed MCP servers")
     async def mcp_list(self, ctx: discord.ApplicationContext):
         """List all MCP servers and their status."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             from clara_core.mcp import get_mcp_manager
@@ -125,7 +151,8 @@ class ClaraCommands(commands.Cog):
     @option("server", description="Server name (omit for overall status)", required=False, default=None)
     async def mcp_status(self, ctx: discord.ApplicationContext, server: str = None):
         """Get detailed MCP server status."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             from clara_core.mcp import get_mcp_manager
@@ -186,7 +213,8 @@ class ClaraCommands(commands.Cog):
     @option("server", description="Server name (omit for all tools)", required=False, default=None)
     async def mcp_tools(self, ctx: discord.ApplicationContext, server: str = None):
         """List tools from MCP servers."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             from clara_core.mcp import get_mcp_manager
@@ -231,7 +259,8 @@ class ClaraCommands(commands.Cog):
     @option("query", description="Search query (e.g., 'file system', 'github', 'database')")
     async def mcp_search(self, ctx: discord.ApplicationContext, query: str):
         """Search Smithery registry for MCP servers."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             from clara_core.mcp.installer import SmitheryClient
@@ -273,7 +302,8 @@ class ClaraCommands(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def mcp_install(self, ctx: discord.ApplicationContext, source: str, name: str = None):
         """Install an MCP server."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             from clara_core.mcp import get_mcp_manager
@@ -357,7 +387,8 @@ class ClaraCommands(commands.Cog):
     @commands.has_permissions(manage_channels=True)
     async def mcp_enable(self, ctx: discord.ApplicationContext, server: str):
         """Enable an MCP server."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             from clara_core.mcp import get_mcp_manager
@@ -381,7 +412,8 @@ class ClaraCommands(commands.Cog):
     @commands.has_permissions(manage_channels=True)
     async def mcp_disable(self, ctx: discord.ApplicationContext, server: str):
         """Disable an MCP server."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             from clara_core.mcp import get_mcp_manager
@@ -403,7 +435,8 @@ class ClaraCommands(commands.Cog):
     @commands.has_permissions(manage_channels=True)
     async def mcp_restart(self, ctx: discord.ApplicationContext, server: str):
         """Restart an MCP server."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             from clara_core.mcp import get_mcp_manager
@@ -424,7 +457,8 @@ class ClaraCommands(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def mcp_refresh(self, ctx: discord.ApplicationContext):
         """Reload all MCP server configurations and reconnect."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             from clara_core.mcp import get_mcp_manager
@@ -463,7 +497,8 @@ class ClaraCommands(commands.Cog):
     @model.command(name="status", description="Show current model and tier settings")
     async def model_status(self, ctx: discord.ApplicationContext):
         """Show model status."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             config = get_guild_config(str(ctx.guild_id)) if ctx.guild_id else None
@@ -496,7 +531,8 @@ class ClaraCommands(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def model_tier(self, ctx: discord.ApplicationContext, tier: str):
         """Set default model tier."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             if not ctx.guild_id:
@@ -523,7 +559,8 @@ class ClaraCommands(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def model_auto(self, ctx: discord.ApplicationContext, enabled: str):
         """Toggle auto-tier selection."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             if not ctx.guild_id:
@@ -552,7 +589,8 @@ class ClaraCommands(commands.Cog):
     @ors.command(name="status", description="Show ORS configuration")
     async def ors_status(self, ctx: discord.ApplicationContext):
         """Show ORS status."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             config = get_guild_config(str(ctx.guild_id)) if ctx.guild_id else None
@@ -584,7 +622,8 @@ class ClaraCommands(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def ors_enable(self, ctx: discord.ApplicationContext):
         """Enable ORS."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             if not ctx.guild_id:
@@ -605,7 +644,8 @@ class ClaraCommands(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def ors_disable(self, ctx: discord.ApplicationContext):
         """Disable ORS."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             if not ctx.guild_id:
@@ -627,7 +667,8 @@ class ClaraCommands(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def ors_channel(self, ctx: discord.ApplicationContext, channel: discord.TextChannel):
         """Set ORS channel."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             if not ctx.guild_id:
@@ -652,7 +693,8 @@ class ClaraCommands(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def ors_quiet(self, ctx: discord.ApplicationContext, start: str, end: str):
         """Set ORS quiet hours."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             # Validate time format
@@ -690,7 +732,8 @@ class ClaraCommands(commands.Cog):
     @sandbox.command(name="status", description="Show sandbox availability")
     async def sandbox_status(self, ctx: discord.ApplicationContext):
         """Show sandbox status."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             from sandbox.manager import get_sandbox_manager
@@ -720,7 +763,8 @@ class ClaraCommands(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def sandbox_mode(self, ctx: discord.ApplicationContext, mode: str):
         """Set sandbox mode."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             if not ctx.guild_id:
@@ -746,7 +790,8 @@ class ClaraCommands(commands.Cog):
     @memory.command(name="status", description="Show memory statistics")
     async def memory_status(self, ctx: discord.ApplicationContext):
         """Show memory status."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             # Get memory stats from mem0
@@ -775,7 +820,8 @@ class ClaraCommands(commands.Cog):
     @option("query", description="Search query")
     async def memory_search(self, ctx: discord.ApplicationContext, query: str):
         """Search memories."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             from vendor.mem0 import Memory
@@ -854,7 +900,8 @@ class ClaraCommands(commands.Cog):
     @email.command(name="status", description="Show email monitoring status")
     async def email_status(self, ctx: discord.ApplicationContext):
         """Show email status."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             from db.models import EmailAccount
@@ -887,7 +934,8 @@ class ClaraCommands(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def email_channel(self, ctx: discord.ApplicationContext, channel: discord.TextChannel):
         """Set email alert channel."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             # This would need to update user's email accounts
@@ -907,7 +955,8 @@ class ClaraCommands(commands.Cog):
     @email.command(name="presets", description="List available email presets")
     async def email_presets(self, ctx: discord.ApplicationContext):
         """List email presets."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         presets = {
             "job_hunting": "Recruiter emails, ATS platforms, job keywords",
@@ -933,7 +982,8 @@ class ClaraCommands(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def backup_now(self, ctx: discord.ApplicationContext, database: str = None):
         """Trigger immediate backup."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             from clara_core.services.backup import get_backup_service
@@ -966,7 +1016,8 @@ class ClaraCommands(commands.Cog):
     @backup.command(name="status", description="Show backup status")
     async def backup_status(self, ctx: discord.ApplicationContext):
         """Show backup status."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             from clara_core.services.backup import get_backup_service
@@ -1014,7 +1065,8 @@ class ClaraCommands(commands.Cog):
     @option("limit", description="Maximum backups to show", required=False, min_value=1, max_value=50)
     async def backup_list(self, ctx: discord.ApplicationContext, database: str = None, limit: int = 10):
         """List available backups."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             from clara_core.services.backup import get_backup_service
@@ -1065,7 +1117,8 @@ class ClaraCommands(commands.Cog):
     @clara.command(name="info", description="Show Clara system information")
     async def clara_info(self, ctx: discord.ApplicationContext):
         """Show Clara info."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             provider = os.getenv("LLM_PROVIDER", "openrouter")
@@ -1094,7 +1147,8 @@ class ClaraCommands(commands.Cog):
     @commands.has_permissions(manage_channels=True)
     async def clara_channel(self, ctx: discord.ApplicationContext, mode: str):
         """Set channel mode."""
-        await ctx.defer()
+        if not await safe_defer(ctx):
+            return
 
         try:
             from db.channel_config import set_channel_mode
