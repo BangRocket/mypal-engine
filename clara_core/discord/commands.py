@@ -889,36 +889,35 @@ class ClaraCommands(commands.Cog):
     backup = discord.SlashCommandGroup("backup", "Database backup management")
 
     @backup.command(name="now", description="Trigger an immediate backup (admin only)")
-    @option("destination", description="Destination name (optional)", required=False)
+    @option("database", description="Database to backup (clara, mem0, or both)", required=False)
     @commands.has_permissions(administrator=True)
-    async def backup_now(self, ctx: discord.ApplicationContext, destination: str = None):
+    async def backup_now(self, ctx: discord.ApplicationContext, database: str = None):
         """Trigger immediate backup."""
         await ctx.defer()
 
         try:
-            import aiohttp
+            from clara_core.services.backup import get_backup_service
 
-            api_url = os.getenv("CLARA_API_URL", "http://localhost:8000")
-            url = f"{api_url}/api/backup/now"
-            if destination:
-                url += f"?destination={destination}"
+            service = get_backup_service()
+            databases = [database] if database else None
+            result = await service.backup_now(databases=databases)
 
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        status = data.get("status", "unknown")
-                        message = data.get("message", "")
+            if result.success:
+                embed = create_success_embed(
+                    "Backup Complete",
+                    f"{result.message}\n\nDatabases: {', '.join(result.databases_backed_up)}",
+                )
+            elif result.databases_backed_up:
+                # Partial success
+                embed = create_info_embed(
+                    "Partial Backup",
+                    f"{result.message}\n\nSucceeded: {', '.join(result.databases_backed_up)}\n"
+                    f"Failed: {', '.join(result.databases_failed)}",
+                )
+            else:
+                embed = create_error_embed("Backup Failed", result.message)
 
-                        if status == "success":
-                            embed = create_success_embed("Backup Started", message or "Backup is in progress.")
-                        else:
-                            embed = create_info_embed("Backup Status", f"Status: {status}\n{message}")
-
-                        await ctx.respond(embed=embed)
-                    else:
-                        body = await resp.text()
-                        await ctx.respond(embed=create_error_embed("Backup Failed", body))
+            await ctx.respond(embed=embed)
 
         except Exception as e:
             logger.error(f"[commands] Error triggering backup: {e}")
@@ -930,44 +929,39 @@ class ClaraCommands(commands.Cog):
         await ctx.defer()
 
         try:
-            import aiohttp
+            from clara_core.services.backup import get_backup_service
 
-            api_url = os.getenv("CLARA_API_URL", "http://localhost:8000")
-            url = f"{api_url}/api/backup/status"
+            service = get_backup_service()
+            status = await service.get_status()
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
+            fields = []
 
-                        fields = []
-                        if data.get("last_backup"):
-                            fields.append(("Last Backup", data["last_backup"], False))
-                        else:
-                            fields.append(("Last Backup", "Never", False))
+            # Configuration status
+            config = status.get("configured", {})
+            connected = status.get("connected", {})
 
-                        if data.get("last_backup_size"):
-                            size = data["last_backup_size"]
-                            size_str = f"{size / (1024*1024):.2f} MB" if size > 1024*1024 else f"{size / 1024:.2f} KB"
-                            fields.append(("Last Size", size_str, True))
+            clara_status = "\u2705" if connected.get("clara_db") else ("\u26ab" if config.get("clara_db") else "\u274c")
+            mem0_status = "\u2705" if connected.get("mem0_db") else ("\u26ab" if config.get("mem0_db") else "\u274c")
+            s3_status = "\u2705" if connected.get("s3") else ("\u26ab" if config.get("s3") else "\u274c")
 
-                        if data.get("next_scheduled"):
-                            fields.append(("Next Scheduled", data["next_scheduled"], True))
+            fields.append(("Clara DB", clara_status, True))
+            fields.append(("Mem0 DB", mem0_status, True))
+            fields.append(("S3 Storage", s3_status, True))
 
-                        if data.get("total_backups"):
-                            fields.append(("Total Backups", str(data["total_backups"]), True))
+            # Settings
+            settings = status.get("settings", {})
+            fields.append(("S3 Bucket", settings.get("s3_bucket", "not set"), True))
+            fields.append(("Retention", f"{settings.get('retention_days', 7)} days", True))
 
-                        if data.get("schedule"):
-                            schedule = data["schedule"]
-                            enabled = "\u2705 Enabled" if schedule.get("enabled") else "\u274c Disabled"
-                            cron = schedule.get("cron", "not set")
-                            retention = schedule.get("retention_days", 7)
-                            fields.append(("Schedule", f"{enabled}\nCron: `{cron}`\nRetention: {retention} days", False))
+            # Last backup
+            last = status.get("last_backup")
+            if last:
+                fields.append(("Last Backup", f"{last.get('filename', 'unknown')} ({last.get('size_mb', 0):.2f} MB)", False))
+            else:
+                fields.append(("Last Backup", "None found", False))
 
-                        embed = create_status_embed("Backup Status", fields=fields)
-                        await ctx.respond(embed=embed)
-                    else:
-                        await ctx.respond(embed=create_error_embed("Error", "Failed to get backup status."))
+            embed = create_status_embed("Backup Status", fields=fields)
+            await ctx.respond(embed=embed)
 
         except Exception as e:
             logger.error(f"[commands] Error getting backup status: {e}")
@@ -981,132 +975,25 @@ class ClaraCommands(commands.Cog):
         await ctx.defer()
 
         try:
-            import aiohttp
+            from clara_core.services.backup import get_backup_service
 
-            api_url = os.getenv("CLARA_API_URL", "http://localhost:8000")
-            params = [f"limit={limit}"]
-            if database:
-                params.append(f"database={database}")
-            url = f"{api_url}/api/backup/list?{'&'.join(params)}"
+            service = get_backup_service()
+            backups = await service.list_backups(database=database, limit=limit)
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        backups = data.get("backups", [])
+            if not backups:
+                await ctx.respond(embed=create_info_embed("No Backups", "No backups found."))
+                return
 
-                        if not backups:
-                            await ctx.respond(embed=create_info_embed("No Backups", "No backups found."))
-                            return
+            lines = []
+            for b in backups:
+                ts = b.timestamp.strftime("%Y-%m-%d %H:%M")
+                lines.append(f"**{b.filename}** ({b.database}) - {b.size_mb:.2f} MB - {ts}")
 
-                        lines = []
-                        for b in backups:
-                            name = b.get("name", "unknown")
-                            db = b.get("database", "unknown")
-                            size = b.get("size_bytes", 0)
-                            size_str = f"{size / (1024*1024):.2f} MB" if size > 1024*1024 else f"{size / 1024:.2f} KB"
-                            lines.append(f"**{name}** ({db}) - {size_str}")
-
-                        embed = create_list_embed(f"Backups ({len(backups)})", lines)
-                        await ctx.respond(embed=embed)
-                    else:
-                        await ctx.respond(embed=create_error_embed("Error", "Failed to list backups."))
+            embed = create_list_embed(f"Backups ({len(backups)})", lines)
+            await ctx.respond(embed=embed)
 
         except Exception as e:
             logger.error(f"[commands] Error listing backups: {e}")
-            await ctx.respond(embed=create_error_embed("Error", str(e)))
-
-    @backup.command(name="schedule", description="Configure backup schedule (admin only)")
-    @option("enabled", description="Enable or disable scheduled backups")
-    @option("cron", description="Cron expression (e.g., '0 3 * * *' for daily at 3 AM)", required=False)
-    @option("retention", description="Days to keep backups", required=False, min_value=1, max_value=365)
-    @commands.has_permissions(administrator=True)
-    async def backup_schedule(
-        self,
-        ctx: discord.ApplicationContext,
-        enabled: bool,
-        cron: str = None,
-        retention: int = None,
-    ):
-        """Configure backup schedule."""
-        await ctx.defer()
-
-        try:
-            import aiohttp
-
-            api_url = os.getenv("CLARA_API_URL", "http://localhost:8000")
-            url = f"{api_url}/api/backup/schedule"
-
-            body = {"enabled": enabled}
-            if cron:
-                body["cron"] = cron
-            if retention:
-                body["retention_days"] = retention
-
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=body) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        schedule = data.get("schedule", {})
-
-                        fields = [
-                            ("Enabled", "\u2705 Yes" if schedule.get("enabled") else "\u274c No", True),
-                            ("Cron", f"`{schedule.get('cron', 'not set')}`", True),
-                            ("Retention", f"{schedule.get('retention_days', 7)} days", True),
-                        ]
-
-                        embed = create_status_embed("Schedule Updated", fields=fields)
-                        await ctx.respond(embed=embed)
-                    else:
-                        body_text = await resp.text()
-                        await ctx.respond(embed=create_error_embed("Error", body_text))
-
-        except Exception as e:
-            logger.error(f"[commands] Error setting backup schedule: {e}")
-            await ctx.respond(embed=create_error_embed("Error", str(e)))
-
-    @backup.command(name="destinations", description="List backup destinations")
-    async def backup_destinations(self, ctx: discord.ApplicationContext):
-        """List backup destinations."""
-        await ctx.defer()
-
-        try:
-            import aiohttp
-
-            api_url = os.getenv("CLARA_API_URL", "http://localhost:8000")
-            url = f"{api_url}/api/backup/destinations"
-
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        destinations = data.get("destinations", [])
-
-                        if not destinations:
-                            await ctx.respond(
-                                embed=create_info_embed(
-                                    "No Destinations",
-                                    "No backup destinations configured.\nUse `backup_config` tool to add one.",
-                                )
-                            )
-                            return
-
-                        lines = []
-                        for d in destinations:
-                            name = d.get("name", "unknown")
-                            dtype = d.get("type", "unknown")
-                            status = d.get("status", "unknown")
-                            is_default = " [default]" if d.get("is_default") else ""
-                            status_emoji = "\u2705" if status == "connected" else "\u26ab"
-                            lines.append(f"{status_emoji} **{name}** ({dtype}){is_default}")
-
-                        embed = create_list_embed(f"Backup Destinations ({len(destinations)})", lines)
-                        await ctx.respond(embed=embed)
-                    else:
-                        await ctx.respond(embed=create_error_embed("Error", "Failed to list destinations."))
-
-        except Exception as e:
-            logger.error(f"[commands] Error listing destinations: {e}")
             await ctx.respond(embed=create_error_embed("Error", str(e)))
 
     # ==========================================================================
@@ -1206,7 +1093,6 @@ class ClaraCommands(commands.Cog):
     @sandbox_mode.error
     @email_channel.error
     @backup_now.error
-    @backup_schedule.error
     @clara_channel.error
     async def permission_error_handler(self, ctx: discord.ApplicationContext, error: Exception):
         """Handle permission errors."""
