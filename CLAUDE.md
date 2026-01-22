@@ -204,11 +204,12 @@ When Clara is busy processing a message, incoming messages are queued. The queui
 This allows Clara to keep up with fast-moving conversations without flooding the channel with individual responses or queue notifications.
 
 **Image/Vision Support:**
-Clara can see and analyze images sent in Discord messages. Images are automatically resized to optimal dimensions for the Claude API before being sent.
+Clara can see and analyze images sent in Discord messages. Images are automatically resized to optimal dimensions and batched to avoid payload size limits.
 
 Configuration:
 - `DISCORD_MAX_IMAGE_DIMENSION` - Maximum pixels on longest edge (default: 1568, Claude's recommendation)
 - `DISCORD_MAX_IMAGE_SIZE` - Maximum image file size after resize in bytes (default: 4194304 = 4MB)
+- `DISCORD_MAX_IMAGES_PER_REQUEST` - Maximum images per LLM request (default: 1). When exceeded, images are processed in sequential batches with context preserved between calls.
 
 Supported formats: `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`
 
@@ -216,13 +217,17 @@ How it works:
 1. Images are automatically detected from Discord attachments
 2. Images are resized to fit within `MAX_IMAGE_DIMENSION` (preserving aspect ratio)
 3. Large images are converted to JPEG for efficient compression
-4. The resized image is base64-encoded and included in the LLM message
-5. The image format is converted appropriately for each LLM provider:
+4. **Multi-image batching**: If more than `MAX_IMAGES_PER_REQUEST` images are present:
+   - Images are processed in batches with separate LLM calls
+   - Each batch includes context from previous batches
+   - Responses are combined into a single Discord message
+5. The resized image is base64-encoded and included in the LLM message
+6. The image format is converted appropriately for each LLM provider:
    - OpenRouter/OpenAI: Uses `image_url` format with data URLs
    - Anthropic (native): Converts to Anthropic's `image` source format with base64 data
-6. Original images are also saved to local storage for later reference
+7. Original images are also saved to local storage for later reference
 
-Note: Vision capabilities depend on the model being used. Images are resized to ~1.15 megapixels as recommended by Claude's vision documentation. This keeps request sizes manageable while maintaining good image quality for analysis. Images larger than 20MB are skipped entirely.
+Note: Vision capabilities depend on the model being used. Images are resized to ~1.15 megapixels as recommended by Claude's vision documentation. The batching system prevents 413 payload errors when multiple images are posted in a single message.
 
 ### Sandbox Code Execution
 
@@ -330,21 +335,6 @@ Clara can interact with GitHub repositories, issues, PRs, and workflows:
 - `github_list_workflows` / `github_list_workflow_runs` / `github_run_workflow` - Manage Actions
 - `github_list_gists` / `github_create_gist` - Manage Gists
 - And many more (search users, branches, releases, tags, notifications, stars)
-
-### Azure DevOps Integration (Discord Bot)
-Clara can interact with Azure DevOps projects, repos, work items, and pipelines:
-- `AZURE_DEVOPS_ORG` - Azure DevOps organization name or URL (required)
-- `AZURE_DEVOPS_PAT` - Azure DevOps Personal Access Token (required)
-
-**Azure DevOps Tools** (requires AZURE_DEVOPS_ORG and AZURE_DEVOPS_PAT):
-- `ado_list_projects` / `ado_list_project_teams` - List projects and teams
-- `ado_list_repos` / `ado_get_repo` / `ado_list_branches` - Manage repositories
-- `ado_list_pull_requests` / `ado_create_pull_request` / `ado_list_pr_threads` - Manage PRs
-- `ado_get_work_item` / `ado_create_work_item` / `ado_search_work_items` / `ado_my_work_items` - Manage work items
-- `ado_list_pipelines` / `ado_list_builds` / `ado_run_pipeline` - Manage pipelines
-- `ado_list_wikis` / `ado_get_wiki_page` / `ado_create_or_update_wiki_page` - Manage wikis
-- `ado_search_code` - Search code across repos
-- `ado_list_iterations` / `ado_list_team_iterations` - View sprints/iterations
 
 ### Google Workspace Integration (Discord Bot)
 Clara can interact with Google Sheets, Drive, Docs, and Calendar using per-user OAuth 2.0:
@@ -543,7 +533,7 @@ Clara can install and use tools from external MCP (Model Context Protocol) serve
 
 **Environment Variables:**
 - `MCP_SERVERS_DIR` - Directory for cloned repos and built servers (default: `.mcp_servers`)
-- `SMITHERY_API_TOKEN` - Optional Smithery API token for authenticated registry searches
+- `SMITHERY_API_TOKEN` or `SMITHERY_API_KEY` - Smithery API key for authenticated registry access. Get your key from [Smithery API Keys](https://smithery.ai/docs/use/connect). Required for installing servers from Smithery registry.
 
 **Docker Configuration:**
 - MCP servers directory is mounted as a bind mount for external access

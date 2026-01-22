@@ -42,6 +42,9 @@ logger = logging.getLogger(__name__)
 # Smithery API configuration
 SMITHERY_REGISTRY_URL = "https://registry.smithery.ai/servers"
 SMITHERY_API_TOKEN = os.getenv("SMITHERY_API_TOKEN", "")
+# Alternative env var names for compatibility
+if not SMITHERY_API_TOKEN:
+    SMITHERY_API_TOKEN = os.getenv("SMITHERY_API_KEY", "")
 
 # Toggle for database vs JSON storage (JSON is default)
 USE_DATABASE = os.getenv("MCP_USE_DATABASE", "").lower() in ("true", "1", "yes")
@@ -632,6 +635,12 @@ class MCPInstaller:
         if extra_args:
             server_args.extend(extra_args)
 
+        # Build environment with Smithery API key if available
+        server_env = dict(env or {})
+        if SMITHERY_API_TOKEN:
+            # Pass API key to the Smithery CLI for authenticated connections
+            server_env["SMITHERY_API_KEY"] = SMITHERY_API_TOKEN
+
         # Create server configuration
         server = MCPServerConfig(
             name=server_name,
@@ -641,7 +650,7 @@ class MCPInstaller:
             transport="stdio",
             command="npx",
             args=server_args,
-            env=env or {},
+            env=server_env,
             installed_by=installed_by,
         )
 

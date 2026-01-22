@@ -48,14 +48,6 @@ OFFICIAL_MCP_SERVERS = [
         replaces_tool="github",
     ),
     OfficialMCPServer(
-        name="azure-devops",
-        description="Azure DevOps work items, repos, pipelines, and wiki",
-        npm_package="@azure-devops/mcp",
-        env_required=["AZURE_DEVOPS_ORG", "AZURE_DEVOPS_PAT"],
-        env_optional=["AZURE_DEVOPS_TENANT"],
-        replaces_tool="azure_devops",
-    ),
-    OfficialMCPServer(
         name="playwright",
         description="Browser automation using Playwright accessibility tree",
         npm_package="@playwright/mcp",
@@ -201,15 +193,6 @@ async def setup_official_mcp_servers() -> dict[str, bool]:
                 # Allow access to CLARA_FILES_DIR or current directory
                 files_dir = os.getenv("CLARA_FILES_DIR", "./clara_files")
                 args = [files_dir]
-            elif server_config.name == "azure-devops":
-                # Azure DevOps requires organization as positional arg and auth mode
-                org = os.getenv("AZURE_DEVOPS_ORG")
-                if org:
-                    args = [org, "--authentication", "env"]
-                    # Add tenant if provided
-                    tenant = os.getenv("AZURE_DEVOPS_TENANT")
-                    if tenant:
-                        args.extend(["--tenant", tenant])
 
             # Install the server
             logger.info(f"[core_tools] Installing official MCP server: {server_config.name}")
