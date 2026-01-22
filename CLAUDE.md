@@ -207,7 +207,7 @@ This allows Clara to keep up with fast-moving conversations without flooding the
 Clara can see and analyze images sent in Discord messages. When a user sends an image (PNG, JPG, JPEG, GIF, or WebP), Clara will process it and include it in the LLM context for vision-capable models.
 
 Configuration:
-- `DISCORD_MAX_IMAGE_SIZE` - Maximum image file size in bytes (default: 10485760 = 10MB)
+- `DISCORD_MAX_IMAGE_SIZE` - Maximum image file size in bytes (default: 4194304 = 4MB)
 
 Supported formats: `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`
 
@@ -219,7 +219,7 @@ How it works:
    - Anthropic (native): Converts to Anthropic's `image` source format with base64 data
 4. Images are also saved to local storage for later reference
 
-Note: Vision capabilities depend on the model being used. Most modern Claude and GPT-4 Vision models support image analysis.
+Note: Vision capabilities depend on the model being used. Most modern Claude and GPT-4 Vision models support image analysis. The 4MB default limit accounts for base64 encoding overhead (~33%) which increases the actual request size. Larger images will be saved locally but not sent to the LLM.
 
 ### Sandbox Code Execution
 
