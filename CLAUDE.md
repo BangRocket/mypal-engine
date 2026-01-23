@@ -173,6 +173,7 @@ poetry run python scripts/migrate_to_postgres.py --all
 - `DISCORD_ALLOWED_CHANNELS` - Comma-separated channel IDs to restrict bot (optional)
 - `DISCORD_ALLOWED_ROLES` - Comma-separated role IDs for access control (optional)
 - `DISCORD_MAX_MESSAGES` - Max messages in conversation chain (default: 25)
+- `DISCORD_MAX_TOOL_RESULT_CHARS` - Max chars per tool result before truncation (default: 50000). Large results are truncated with a message suggesting pagination.
 - `DISCORD_STOP_PHRASES` - Comma-separated phrases that interrupt running tasks (default: "clara stop,stop clara,nevermind,never mind")
 - `DISCORD_SUMMARY_AGE_MINUTES` - Messages older than this are summarized (default: 30)
 - `DISCORD_CHANNEL_HISTORY_LIMIT` - Max messages to fetch from channel (default: 50)
