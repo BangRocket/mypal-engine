@@ -14,10 +14,19 @@ Uses CalVer format: `YYYY.WW.N` (Year.Week.Build)
 - `2026.04.2` = Second build of week 4, 2026
 - `2026.05.1` = First build of week 5, 2026
 
+**Auto-bump:** Version is automatically bumped after each commit via git hook.
+
 ```bash
-python scripts/bump_version.py          # Bump version (increments build or starts new week)
-python scripts/bump_version.py --dry    # Preview without changing files
+# Install git hooks (run once after cloning)
+git config core.hooksPath .githooks
+
+# Manual version management
+python scripts/bump_version.py          # Bump version
+python scripts/bump_version.py --dry    # Preview without changing
 python scripts/bump_version.py --show   # Show current version
+
+# Skip auto-bump for a specific commit
+git commit -m "message [skip-version]"
 ```
 
 Version is stored in `VERSION` file and synced to `pyproject.toml`. Bot displays version on startup.

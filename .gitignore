@@ -81,3 +81,5 @@ railway_backup/stage/clara_main.dump
 railway_backup/stage/clara_vectors.dump
 docs/mypalclara-domain-setup.md
 scripts/migrate_podman_to_docker.sh
+
+webui/node_modules/
