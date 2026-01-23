@@ -42,8 +42,7 @@ async def safe_defer(ctx: discord.ApplicationContext) -> bool:
         True if defer succeeded, False if interaction expired
     """
     try:
-        if not await safe_defer(ctx):
-            return
+        await ctx.defer()
         return True
     except discord.NotFound:
         # Interaction expired (error code 10062)
