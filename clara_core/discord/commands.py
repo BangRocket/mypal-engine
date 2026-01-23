@@ -487,6 +487,265 @@ class ClaraCommands(commands.Cog):
             logger.error(f"[commands] Error refreshing MCP servers: {e}")
             await ctx.respond(embed=create_error_embed("Error", str(e)))
 
+    @mcp.command(name="oauth_start", description="Start OAuth flow for a hosted Smithery server")
+    @option("server", description="Server name to authorize")
+    async def mcp_oauth_start(self, ctx: discord.ApplicationContext, server: str):
+        """Start OAuth authorization flow for a hosted Smithery server."""
+        if not await safe_defer(ctx):
+            return
+
+        try:
+            from clara_core.mcp.models import load_server_config
+            from clara_core.mcp.oauth import SmitheryOAuthClient
+
+            # Check if server exists
+            config = load_server_config(server)
+            if not config:
+                await ctx.respond(embed=create_error_embed("Not Found", f"Server '{server}' not found."))
+                return
+
+            if config.source_type != "smithery-hosted":
+                await ctx.respond(
+                    embed=create_error_embed(
+                        "Not Hosted",
+                        f"'{server}' is not a hosted Smithery server. OAuth is only for `smithery-hosted:` servers.",
+                    )
+                )
+                return
+
+            # Get redirect URI
+            import os
+
+            api_url = os.getenv("CLARA_API_URL", "")
+            if api_url:
+                redirect_uri = f"{api_url}/oauth/mcp/callback"
+            else:
+                redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
+
+            # Start OAuth flow
+            oauth_client = SmitheryOAuthClient(server, config.endpoint_url)
+            auth_url = await oauth_client.start_oauth_flow(redirect_uri)
+
+            if not auth_url:
+                await ctx.respond(
+                    embed=create_error_embed("OAuth Failed", "Failed to start OAuth flow. Check logs for details.")
+                )
+                return
+
+            # Build response embed
+            embed = discord.Embed(
+                title=f"OAuth Authorization for {server}",
+                description="Click the link below to authorize Clara to access this Smithery server.",
+                color=EMBED_COLOR_PRIMARY,
+            )
+            embed.add_field(name="Authorization URL", value=auth_url, inline=False)
+
+            if redirect_uri == "urn:ietf:wg:oauth:2.0:oob":
+                embed.add_field(
+                    name="Next Step",
+                    value=f"After authorizing, copy the code and run:\n`/mcp oauth_complete server:{server} code:<your-code>`",
+                    inline=False,
+                )
+            else:
+                embed.add_field(
+                    name="Next Step",
+                    value="After authorizing, you'll be redirected back automatically.",
+                    inline=False,
+                )
+
+            await ctx.respond(embed=embed)
+
+        except Exception as e:
+            logger.error(f"[commands] Error starting OAuth: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @mcp.command(name="oauth_complete", description="Complete OAuth with authorization code")
+    @option("server", description="Server name")
+    @option("code", description="Authorization code from OAuth callback")
+    async def mcp_oauth_complete(self, ctx: discord.ApplicationContext, server: str, code: str):
+        """Complete OAuth authorization for a hosted Smithery server."""
+        if not await safe_defer(ctx):
+            return
+
+        try:
+            from clara_core.mcp import get_mcp_manager
+            from clara_core.mcp.models import load_server_config, save_server_config
+            from clara_core.mcp.oauth import SmitheryOAuthClient
+
+            # Check if server exists
+            config = load_server_config(server)
+            if not config:
+                await ctx.respond(embed=create_error_embed("Not Found", f"Server '{server}' not found."))
+                return
+
+            # Get redirect URI (must match what was used in oauth_start)
+            import os
+
+            api_url = os.getenv("CLARA_API_URL", "")
+            if api_url:
+                redirect_uri = f"{api_url}/oauth/mcp/callback"
+            else:
+                redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
+
+            # Exchange code for tokens
+            oauth_client = SmitheryOAuthClient(server, config.endpoint_url)
+            success = await oauth_client.exchange_code(code, redirect_uri)
+
+            if not success:
+                await ctx.respond(
+                    embed=create_error_embed(
+                        "Token Exchange Failed",
+                        "Could not exchange authorization code. The code may be invalid or expired.\n"
+                        "Try starting the flow again with `/mcp oauth_start`.",
+                    )
+                )
+                return
+
+            # Update server status and try to connect
+            config.status = "stopped"
+            config.last_error = None
+            save_server_config(config)
+
+            # Try to start the server
+            manager = get_mcp_manager()
+            connected = await manager.start_server(server)
+
+            if connected:
+                status = manager.get_server_status(server)
+                tool_count = status.get("tool_count", 0) if status else 0
+                await ctx.respond(
+                    embed=create_success_embed(
+                        "OAuth Complete",
+                        f"**{server}** is now authorized and connected!\n" f"Tools available: {tool_count}",
+                    )
+                )
+            else:
+                await ctx.respond(
+                    embed=create_info_embed(
+                        "OAuth Complete",
+                        f"Tokens saved for **{server}**, but server failed to connect.\n"
+                        "Use `/mcp status {server}` to check for errors.",
+                    )
+                )
+
+        except Exception as e:
+            logger.error(f"[commands] Error completing OAuth: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @mcp.command(name="oauth_status", description="Check OAuth status of a hosted server")
+    @option("server", description="Server name to check")
+    async def mcp_oauth_status(self, ctx: discord.ApplicationContext, server: str):
+        """Check OAuth status for a hosted Smithery server."""
+        if not await safe_defer(ctx):
+            return
+
+        try:
+            from clara_core.mcp.models import load_server_config
+            from clara_core.mcp.oauth import load_oauth_state
+
+            # Check server config
+            config = load_server_config(server)
+            if not config:
+                await ctx.respond(embed=create_error_embed("Not Found", f"Server '{server}' not found."))
+                return
+
+            if config.source_type != "smithery-hosted":
+                await ctx.respond(
+                    embed=create_info_embed(
+                        "Not Hosted", f"'{server}' is not a hosted Smithery server. OAuth not required."
+                    )
+                )
+                return
+
+            # Check OAuth state
+            oauth_state = load_oauth_state(server)
+
+            fields = [
+                ("Server Type", config.source_type, True),
+                ("Server Status", config.status, True),
+            ]
+
+            if oauth_state and oauth_state.tokens:
+                fields.append(("OAuth", "\u2705 Authorized", True))
+                if oauth_state.tokens.expires_at:
+                    fields.append(("Token Expires", oauth_state.tokens.expires_at[:19], False))
+                if oauth_state.tokens.is_expired():
+                    fields.append(("Token Status", "\u26a0\ufe0f Expired (will auto-refresh)", False))
+                else:
+                    fields.append(("Token Status", "\u2705 Valid", False))
+            else:
+                fields.append(("OAuth", "\u274c Not authorized", True))
+
+            embed = create_status_embed(f"OAuth Status: {server}", fields=fields)
+
+            if not oauth_state or not oauth_state.tokens:
+                embed.set_footer(text=f"Start authorization with: /mcp oauth_start server:{server}")
+
+            await ctx.respond(embed=embed)
+
+        except Exception as e:
+            logger.error(f"[commands] Error checking OAuth status: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
+    @mcp.command(name="oauth_set_token", description="Manually set OAuth token (admin only)")
+    @option("server", description="Server name")
+    @option("access_token", description="OAuth access token")
+    @option("refresh_token", description="Optional refresh token", required=False, default=None)
+    @commands.has_permissions(administrator=True)
+    async def mcp_oauth_set_token(
+        self, ctx: discord.ApplicationContext, server: str, access_token: str, refresh_token: str = None
+    ):
+        """Manually set OAuth tokens for a hosted Smithery server."""
+        if not await safe_defer(ctx):
+            return
+
+        try:
+            from clara_core.mcp import get_mcp_manager
+            from clara_core.mcp.models import load_server_config, save_server_config
+            from clara_core.mcp.oauth import SmitheryOAuthClient
+
+            # Check server config
+            config = load_server_config(server)
+            if not config:
+                await ctx.respond(embed=create_error_embed("Not Found", f"Server '{server}' not found."))
+                return
+
+            # Set tokens manually
+            oauth_client = SmitheryOAuthClient(server, config.endpoint_url)
+            oauth_client.set_tokens_manually(access_token, refresh_token)
+
+            # Update server status
+            config.status = "stopped"
+            config.last_error = None
+            save_server_config(config)
+
+            # Try to connect
+            manager = get_mcp_manager()
+            connected = await manager.start_server(server)
+
+            if connected:
+                status = manager.get_server_status(server)
+                tool_count = status.get("tool_count", 0) if status else 0
+                await ctx.respond(
+                    embed=create_success_embed(
+                        "Token Set",
+                        f"Token configured for **{server}**!\n"
+                        f"Server connected with {tool_count} tools available.",
+                    )
+                )
+            else:
+                await ctx.respond(
+                    embed=create_info_embed(
+                        "Token Set",
+                        f"Token saved for **{server}**, but server failed to connect.\n"
+                        "The token may be invalid. Check `/mcp status {server}` for errors.",
+                    )
+                )
+
+        except Exception as e:
+            logger.error(f"[commands] Error setting OAuth token: {e}")
+            await ctx.respond(embed=create_error_embed("Error", str(e)))
+
     # ==========================================================================
     # Model Command Group
     # ==========================================================================
@@ -1179,6 +1438,7 @@ class ClaraCommands(commands.Cog):
     @mcp_install.error
     @mcp_uninstall.error
     @mcp_refresh.error
+    @mcp_oauth_set_token.error
     @model_tier.error
     @model_auto.error
     @ors_enable.error
