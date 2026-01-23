@@ -408,7 +408,11 @@ class MCPInstaller:
         source_type = self._detect_source_type(source)
         logger.info(f"[MCP Installer] Installing from {source_type}: {source}")
 
-        if source_type == "smithery":
+        if source_type == "smithery-hosted":
+            # Remove smithery-hosted: prefix
+            smithery_name = source[16:] if source.startswith("smithery-hosted:") else source
+            return await self._install_smithery_hosted(smithery_name, name, env, installed_by)
+        elif source_type == "smithery":
             # Remove smithery: prefix
             smithery_name = source[9:] if source.startswith("smithery:") else source
             return await self._install_smithery(smithery_name, name, env, installed_by, args)
@@ -430,11 +434,15 @@ class MCPInstaller:
             source: Source string
 
         Returns:
-            One of: "smithery", "npm", "github", "docker", "local"
+            One of: "smithery", "smithery-hosted", "npm", "github", "docker", "local"
         """
         source = source.strip()
 
-        # Smithery explicit prefix
+        # Smithery hosted (remote) - uses HTTP transport
+        if source.startswith("smithery-hosted:"):
+            return "smithery-hosted"
+
+        # Smithery local (CLI) - uses stdio transport
         if source.startswith("smithery:"):
             return "smithery"
 
@@ -470,9 +478,10 @@ class MCPInstaller:
         Returns:
             Generated name
         """
-        if source_type == "smithery":
+        if source_type in ("smithery", "smithery-hosted"):
             # @anthropic/mcp-server-fetch -> fetch
             # e2b -> e2b
+            # @smithery/notion -> notion
             name = source.split("/")[-1]
             # Remove common prefixes
             for prefix in ["mcp-server-", "mcp-", "server-"]:
@@ -687,6 +696,98 @@ class MCPInstaller:
             success=True,
             server=server,
             tools_discovered=server.tool_count,
+        )
+
+    async def _install_smithery_hosted(
+        self,
+        package: str,
+        name: str | None,
+        env: dict[str, str] | None,
+        installed_by: str | None,
+    ) -> InstallResult:
+        """Install a hosted Smithery MCP server (via HTTP transport).
+
+        Hosted Smithery servers run on Smithery's infrastructure and connect
+        via HTTP transport with OAuth authentication.
+
+        Args:
+            package: Smithery package name (e.g., exa, @smithery/notion)
+            name: Optional custom name
+            env: Optional environment variables (can include SMITHERY_ACCESS_TOKEN)
+            installed_by: Optional user ID
+        """
+        from .oauth import SmitheryOAuthClient, get_smithery_server_url
+
+        server_name = name or self._generate_name(package, "smithery")
+
+        # Check if server already exists
+        if self._server_exists(server_name):
+            return InstallResult(success=False, error=f"Server '{server_name}' already exists")
+
+        # Get the server URL
+        server_url = get_smithery_server_url(package)
+
+        # Look up server info in Smithery registry
+        smithery = SmitheryClient()
+        smithery_server = await smithery.get_server(package)
+
+        display_name = package.split("/")[-1]
+        if smithery_server:
+            display_name = smithery_server.display_name or display_name
+            logger.info(f"[MCP Installer] Found Smithery hosted server: {smithery_server.display_name}")
+
+        # Create server configuration for HTTP transport
+        server = MCPServerConfig(
+            name=server_name,
+            source_type="smithery-hosted",
+            display_name=display_name,
+            source_url=f"smithery-hosted:{package}",
+            transport="streamable-http",
+            endpoint_url=server_url,
+            env=env or {},
+            installed_by=installed_by,
+        )
+
+        # Check if we have an access token (manual or via OAuth)
+        access_token = (env or {}).get("SMITHERY_ACCESS_TOKEN")
+
+        if access_token:
+            # Test connection with the provided token
+            logger.info(f"[MCP Installer] Testing Smithery hosted server '{server_name}' with provided token...")
+            test_result = await self._test_server(server)
+
+            if test_result["success"]:
+                server.set_tools(test_result.get("tools", []))
+                self._save_server(server)
+
+                logger.info(
+                    f"[MCP Installer] Installed Smithery hosted server '{server_name}' "
+                    f"with {server.tool_count} tools"
+                )
+                return InstallResult(
+                    success=True,
+                    server=server,
+                    tools_discovered=server.tool_count,
+                )
+            else:
+                logger.warning(f"[MCP Installer] Connection test failed: {test_result.get('error')}")
+
+        # No token or test failed - set up for OAuth flow
+        # Save the config without testing (user will need to complete OAuth)
+        server.status = "pending_auth"
+        server.last_error = "OAuth authentication required. Use mcp_oauth_start to begin authorization."
+        self._save_server(server)
+
+        logger.info(
+            f"[MCP Installer] Installed Smithery hosted server '{server_name}' (pending OAuth). "
+            "User must complete OAuth flow to connect."
+        )
+
+        return InstallResult(
+            success=True,
+            server=server,
+            tools_discovered=0,
+            error="OAuth authentication required. Use mcp_oauth_start to begin the authorization flow.",
         )
 
     def _extract_github_owner_repo(self, source: str) -> tuple[str, str] | None:

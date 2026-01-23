@@ -526,8 +526,7 @@ Clara can install and use tools from external MCP (Model Context Protocol) serve
 
 **How It Works:**
 - MCP servers are installed from Smithery registry, npm, GitHub, Docker, or local paths
-- Server configurations are stored in SQLite/PostgreSQL (`mcp_servers` table)
-- Cloned repos and built servers are stored in `MCP_SERVERS_DIR` (default: `.mcp_servers/`)
+- Server configurations are stored as JSON in `MCP_SERVERS_DIR` (default: `.mcp_servers/`)
 - Tools from all connected servers are automatically registered with Clara
 - Tools use namespaced names: `{server_name}__{tool_name}` (e.g., `everything__echo`)
 
@@ -541,11 +540,23 @@ Clara can install and use tools from external MCP (Model Context Protocol) serve
 - Inside container, files are at `/app/mcp_servers`
 
 **Installation Sources:**
-- **Smithery registry**: `smithery:e2b`, `smithery:@anthropic/mcp-server-fetch`
+- **Smithery local**: `smithery:e2b` - Runs server locally via @smithery/cli (stdio transport)
+- **Smithery hosted**: `smithery-hosted:@smithery/notion` - Connects to Smithery's hosted infrastructure (HTTP transport with OAuth)
 - **npm packages**: `@modelcontextprotocol/server-everything`
 - **GitHub repos**: `github.com/user/mcp-server`
 - **Docker images**: `ghcr.io/user/mcp-server:latest`
 - **Local paths**: `/path/to/mcp-server`
+
+**Hosted Smithery Servers (OAuth):**
+Hosted Smithery servers run on Smithery's infrastructure and connect via HTTP transport. They often require OAuth authentication:
+1. Install: `mcp_install(source="smithery-hosted:@smithery/notion")`
+2. Server status shows "pending_auth"
+3. Start OAuth: `mcp_oauth_start(server_name="notion")` - returns authorization URL
+4. User visits URL, authorizes access on Smithery
+5. Complete: `mcp_oauth_complete(server_name="notion", code="<code>")` - exchanges code for tokens
+6. Server connects and tools become available
+
+OAuth tokens are stored in `.mcp_servers/.oauth/` and auto-refresh when expired.
 
 **Management Tools:**
 - `smithery_search` - Search Smithery registry for available MCP servers
@@ -555,6 +566,12 @@ Clara can install and use tools from external MCP (Model Context Protocol) serve
 - `mcp_enable` / `mcp_disable` - Toggle servers without uninstalling
 - `mcp_restart` - Restart a running server
 - `mcp_status` - Get detailed status of servers
+
+**OAuth Tools (for hosted Smithery):**
+- `mcp_oauth_start` - Start OAuth flow, returns authorization URL
+- `mcp_oauth_complete` - Complete OAuth with authorization code
+- `mcp_oauth_status` - Check OAuth status of a server
+- `mcp_oauth_set_token` - Manually set access token (admin only)
 
 **Permissions (Discord):**
 Admin operations require one of:
@@ -566,7 +583,9 @@ Admin operations require one of:
 ```
 @Clara search smithery for file system servers
 @Clara install the MCP server smithery:e2b
-@Clara install the MCP server @modelcontextprotocol/server-everything
+@Clara install the hosted MCP server smithery-hosted:@smithery/notion
+@Clara start oauth for notion
+@Clara complete oauth for notion with code ABC123
 @Clara list MCP servers
 @Clara use everything__echo to echo "Hello World"
 ```

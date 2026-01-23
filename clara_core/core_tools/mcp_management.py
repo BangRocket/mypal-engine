@@ -48,7 +48,15 @@ You can manage MCP (Model Context Protocol) plugin servers that provide addition
 
 **Installing from Smithery:**
 Use `smithery_search` to find servers, then install with `mcp_install` using the `smithery:` prefix.
-Example: `mcp_install(source="smithery:e2b")`
+- Local mode (runs server locally): `mcp_install(source="smithery:e2b")`
+- Hosted mode (Smithery infrastructure): `mcp_install(source="smithery-hosted:@smithery/notion")`
+
+**Hosted Smithery Servers (OAuth):**
+Hosted servers run on Smithery's infrastructure and may require OAuth authentication.
+- `mcp_oauth_start` - Start OAuth flow (returns auth URL)
+- `mcp_oauth_complete` - Complete OAuth with authorization code
+- `mcp_oauth_status` - Check OAuth status of a server
+- `mcp_oauth_set_token` - Manually set an access token
 
 **When to Use:**
 - User asks about available plugins/tools
@@ -458,12 +466,234 @@ async def smithery_search(args: dict[str, Any], ctx: ToolContext) -> str:
             lines.append(f"  {desc}")
 
         lines.append('\n*Install with:* `mcp_install(source="smithery:<name>")`')
+        lines.append('*For hosted:* `mcp_install(source="smithery-hosted:<name>")`')
 
         return "\n".join(lines)
 
     except Exception as e:
         logger.error(f"[mcp_management] Error searching Smithery: {e}")
         return f"Error searching Smithery: {e}"
+
+
+# --- OAuth Tools ---
+
+
+async def mcp_oauth_start(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Start OAuth authorization flow for a hosted Smithery server."""
+    server_name = args.get("server_name", "").strip()
+    redirect_uri = args.get("redirect_uri", "").strip()
+
+    if not server_name:
+        return "Error: No server name specified."
+
+    # Default redirect URI - could be customized per deployment
+    if not redirect_uri:
+        import os
+
+        api_url = os.getenv("CLARA_API_URL", "")
+        if api_url:
+            redirect_uri = f"{api_url}/oauth/mcp/callback"
+        else:
+            # Use a simple "out of band" redirect for manual code entry
+            redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
+
+    try:
+        from clara_core.mcp.models import load_server_config
+        from clara_core.mcp.oauth import SmitheryOAuthClient
+
+        # Check if server exists and is smithery-hosted
+        config = load_server_config(server_name)
+        if not config:
+            return f"Server '{server_name}' not found. Install it first with mcp_install."
+
+        if config.source_type != "smithery-hosted":
+            return f"Server '{server_name}' is not a hosted Smithery server. OAuth is only needed for smithery-hosted servers."
+
+        # Create OAuth client
+        oauth_client = SmitheryOAuthClient(server_name, config.endpoint_url)
+
+        # Start the OAuth flow
+        auth_url = await oauth_client.start_oauth_flow(redirect_uri)
+
+        if not auth_url:
+            return f"Failed to start OAuth flow for '{server_name}'. Check logs for details."
+
+        # Return instructions
+        lines = [
+            f"**OAuth Authorization for {server_name}**\n",
+            "1. Click or copy this link to authorize:",
+            f"   {auth_url}\n",
+            "2. Sign in to Smithery and authorize access.",
+        ]
+
+        if redirect_uri == "urn:ietf:wg:oauth:2.0:oob":
+            lines.append("3. Copy the authorization code shown after authorization.")
+            lines.append(f'4. Complete with: `mcp_oauth_complete(server_name="{server_name}", code="<your-code>")`')
+        else:
+            lines.append("3. After authorizing, you'll be redirected back automatically.")
+            lines.append("4. The connection will be completed when the callback is processed.")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        logger.error(f"[mcp_management] OAuth start error for {server_name}: {e}")
+        return f"Error starting OAuth: {e}"
+
+
+async def mcp_oauth_complete(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Complete OAuth authorization with the code from the callback."""
+    server_name = args.get("server_name", "").strip()
+    code = args.get("code", "").strip()
+    redirect_uri = args.get("redirect_uri", "").strip()
+
+    if not server_name:
+        return "Error: No server name specified."
+
+    if not code:
+        return "Error: No authorization code specified."
+
+    try:
+        from clara_core.mcp.models import load_server_config, save_server_config
+        from clara_core.mcp.oauth import SmitheryOAuthClient
+
+        # Check if server exists
+        config = load_server_config(server_name)
+        if not config:
+            return f"Server '{server_name}' not found."
+
+        # Default redirect URI
+        if not redirect_uri:
+            import os
+
+            api_url = os.getenv("CLARA_API_URL", "")
+            if api_url:
+                redirect_uri = f"{api_url}/oauth/mcp/callback"
+            else:
+                redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
+
+        # Exchange code for tokens
+        oauth_client = SmitheryOAuthClient(server_name, config.endpoint_url)
+        success = await oauth_client.exchange_code(code, redirect_uri)
+
+        if not success:
+            return f"Failed to exchange authorization code. The code may be invalid or expired. Try starting the flow again with mcp_oauth_start."
+
+        # Update server status and try to connect
+        config.status = "stopped"  # Clear pending_auth status
+        config.last_error = None
+        save_server_config(config)
+
+        # Try to start the server
+        manager = _get_manager()
+        connected = await manager.start_server(server_name)
+
+        if connected:
+            status = manager.get_server_status(server_name)
+            tool_count = status.get("tool_count", 0) if status else 0
+            return f"✅ OAuth completed for **{server_name}**! Server connected with {tool_count} tools available."
+        else:
+            return f"✅ OAuth tokens saved for **{server_name}**, but server failed to connect. Check mcp_status for details."
+
+    except Exception as e:
+        logger.error(f"[mcp_management] OAuth complete error for {server_name}: {e}")
+        return f"Error completing OAuth: {e}"
+
+
+async def mcp_oauth_status(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Check OAuth status for a hosted Smithery server."""
+    server_name = args.get("server_name", "").strip()
+
+    if not server_name:
+        return "Error: No server name specified."
+
+    try:
+        from clara_core.mcp.models import load_server_config
+        from clara_core.mcp.oauth import load_oauth_state
+
+        # Check server config
+        config = load_server_config(server_name)
+        if not config:
+            return f"Server '{server_name}' not found."
+
+        if config.source_type != "smithery-hosted":
+            return f"Server '{server_name}' is not a hosted Smithery server."
+
+        # Check OAuth state
+        oauth_state = load_oauth_state(server_name)
+
+        lines = [f"**OAuth Status for {server_name}:**\n"]
+        lines.append(f"- Server Type: {config.source_type}")
+        lines.append(f"- Endpoint: {config.endpoint_url}")
+        lines.append(f"- Server Status: {config.status}")
+
+        if oauth_state and oauth_state.tokens:
+            lines.append(f"- OAuth: ✅ Authorized")
+            if oauth_state.tokens.expires_at:
+                lines.append(f"- Token Expires: {oauth_state.tokens.expires_at}")
+            if oauth_state.tokens.is_expired():
+                lines.append("- Token Status: ⚠️ Expired (will auto-refresh)")
+            else:
+                lines.append("- Token Status: ✅ Valid")
+        else:
+            lines.append("- OAuth: ❌ Not authorized")
+            lines.append(f'\nUse `mcp_oauth_start(server_name="{server_name}")` to begin authorization.')
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        logger.error(f"[mcp_management] OAuth status error for {server_name}: {e}")
+        return f"Error checking OAuth status: {e}"
+
+
+async def mcp_oauth_set_token(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Manually set an OAuth token for a hosted Smithery server."""
+    # Check admin permission
+    is_admin, error = _check_admin_permission(ctx)
+    if not is_admin:
+        return f"Permission denied: {error}"
+
+    server_name = args.get("server_name", "").strip()
+    access_token = args.get("access_token", "").strip()
+    refresh_token = args.get("refresh_token", "").strip() or None
+
+    if not server_name:
+        return "Error: No server name specified."
+
+    if not access_token:
+        return "Error: No access token specified."
+
+    try:
+        from clara_core.mcp.models import load_server_config, save_server_config
+        from clara_core.mcp.oauth import SmitheryOAuthClient
+
+        # Check server config
+        config = load_server_config(server_name)
+        if not config:
+            return f"Server '{server_name}' not found."
+
+        # Set tokens manually
+        oauth_client = SmitheryOAuthClient(server_name, config.endpoint_url)
+        oauth_client.set_tokens_manually(access_token, refresh_token)
+
+        # Update server status
+        config.status = "stopped"
+        config.last_error = None
+        save_server_config(config)
+
+        # Try to connect
+        manager = _get_manager()
+        connected = await manager.start_server(server_name)
+
+        if connected:
+            status = manager.get_server_status(server_name)
+            tool_count = status.get("tool_count", 0) if status else 0
+            return f"✅ Token set for **{server_name}**! Server connected with {tool_count} tools available."
+        else:
+            return f"✅ Token saved for **{server_name}**, but server failed to connect. The token may be invalid."
+
+    except Exception as e:
+        logger.error(f"[mcp_management] OAuth set token error for {server_name}: {e}")
+        return f"Error setting token: {e}"
 
 
 # --- Tool Definitions ---
@@ -544,16 +774,18 @@ TOOLS = [
         name="mcp_install",
         description=(
             "Install an MCP server from Smithery, npm, GitHub, Docker, or local path. "
-            "Examples: 'smithery:e2b', '@modelcontextprotocol/server-everything', 'github.com/user/repo', "
+            "Examples: 'smithery:e2b' (local), 'smithery-hosted:@smithery/notion' (hosted with OAuth), "
+            "'@modelcontextprotocol/server-everything', 'github.com/user/repo', "
             "'ghcr.io/user/server:latest', '/path/to/local/server'. "
-            "Use smithery_search to find servers first. Requires admin permission."
+            "Use smithery_search to find servers first. Requires admin permission. "
+            "Hosted servers may require OAuth authorization after install."
         ),
         parameters={
             "type": "object",
             "properties": {
                 "source": {
                     "type": "string",
-                    "description": "Source to install from (smithery:<name>, npm package, GitHub URL, Docker image, or local path)",
+                    "description": "Source to install from (smithery:<name>, smithery-hosted:<name>, npm package, GitHub URL, Docker image, or local path)",
                 },
                 "name": {
                     "type": "string",
@@ -658,6 +890,104 @@ TOOLS = [
             "required": [],
         },
         handler=mcp_refresh,
+        platforms=["discord"],
+        requires=["admin"],
+    ),
+    # OAuth tools for hosted Smithery servers
+    ToolDef(
+        name="mcp_oauth_start",
+        description=(
+            "Start OAuth authorization flow for a hosted Smithery server. Returns an authorization URL "
+            "that the user must visit to grant access. After authorizing, use mcp_oauth_complete with the code."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "server_name": {
+                    "type": "string",
+                    "description": "Name of the hosted Smithery server to authorize",
+                },
+                "redirect_uri": {
+                    "type": "string",
+                    "description": "Optional custom redirect URI for the OAuth callback",
+                },
+            },
+            "required": ["server_name"],
+        },
+        handler=mcp_oauth_start,
+        platforms=["discord"],
+    ),
+    ToolDef(
+        name="mcp_oauth_complete",
+        description=(
+            "Complete OAuth authorization for a hosted Smithery server by providing the authorization code "
+            "received after the user authorizes access. Call mcp_oauth_start first to get the auth URL."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "server_name": {
+                    "type": "string",
+                    "description": "Name of the hosted Smithery server",
+                },
+                "code": {
+                    "type": "string",
+                    "description": "Authorization code from the OAuth callback",
+                },
+                "redirect_uri": {
+                    "type": "string",
+                    "description": "Optional redirect URI (must match the one used in mcp_oauth_start)",
+                },
+            },
+            "required": ["server_name", "code"],
+        },
+        handler=mcp_oauth_complete,
+        platforms=["discord"],
+    ),
+    ToolDef(
+        name="mcp_oauth_status",
+        description=(
+            "Check OAuth authorization status for a hosted Smithery server. Shows whether the server "
+            "is authorized, token expiry, and current connection status."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "server_name": {
+                    "type": "string",
+                    "description": "Name of the hosted Smithery server to check",
+                },
+            },
+            "required": ["server_name"],
+        },
+        handler=mcp_oauth_status,
+        platforms=["discord"],
+    ),
+    ToolDef(
+        name="mcp_oauth_set_token",
+        description=(
+            "Manually set an OAuth access token for a hosted Smithery server. Use this if you have "
+            "a pre-obtained token (e.g., from Smithery's web interface). Requires admin permission."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "server_name": {
+                    "type": "string",
+                    "description": "Name of the hosted Smithery server",
+                },
+                "access_token": {
+                    "type": "string",
+                    "description": "OAuth access token",
+                },
+                "refresh_token": {
+                    "type": "string",
+                    "description": "Optional refresh token for token renewal",
+                },
+            },
+            "required": ["server_name", "access_token"],
+        },
+        handler=mcp_oauth_set_token,
         platforms=["discord"],
         requires=["admin"],
     ),

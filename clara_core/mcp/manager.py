@@ -350,10 +350,25 @@ class MCPServerManager:
             logger.warning(f"[MCP] Server '{config.name}' already running")
             return self._clients[config.name].is_connected
 
+        # Skip servers pending OAuth authentication
+        if config.status == "pending_auth":
+            logger.info(f"[MCP] Server '{config.name}' pending OAuth authorization, skipping")
+            return False
+
         logger.info(f"[MCP] Starting server '{config.name}' ({config.source_type})")
 
         try:
-            client = MCPClient(config)
+            # For smithery-hosted servers, set up OAuth client
+            oauth_client = None
+            if config.source_type == "smithery-hosted":
+                from .oauth import SmitheryOAuthClient, load_oauth_state
+
+                oauth_state = load_oauth_state(config.name)
+                if oauth_state and oauth_state.tokens:
+                    oauth_client = SmitheryOAuthClient(config.name, config.endpoint_url)
+                    logger.info(f"[MCP] Using OAuth authentication for '{config.name}'")
+
+            client = MCPClient(config, oauth_client=oauth_client)
             success = await client.connect()
 
             if success:

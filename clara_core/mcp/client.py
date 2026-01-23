@@ -2,6 +2,11 @@
 
 This module provides the MCPClient class which wraps the official MCP SDK
 to connect to a single MCP server, discover tools, and execute tool calls.
+
+Supports:
+- stdio transport (local servers via subprocess)
+- HTTP/SSE transport (remote servers)
+- OAuth authentication (for Smithery-hosted servers)
 """
 
 from __future__ import annotations
@@ -18,6 +23,7 @@ from mcp.client.stdio import stdio_client
 
 if TYPE_CHECKING:
     from .models import MCPServer
+    from .oauth import SmitheryOAuthClient
 
 logger = logging.getLogger(__name__)
 
@@ -55,19 +61,22 @@ class MCPClient:
 
     Supports stdio and HTTP transports based on server configuration.
     Handles connection lifecycle, tool discovery, and tool execution.
+    Supports OAuth authentication for Smithery-hosted servers.
     """
 
-    def __init__(self, server: MCPServer) -> None:
+    def __init__(self, server: MCPServer, oauth_client: SmitheryOAuthClient | None = None) -> None:
         """Initialize the MCP client.
 
         Args:
             server: MCPServer configuration from the database
+            oauth_client: Optional OAuth client for authenticated connections
         """
         self.server = server
         self.state = MCPClientState()
         self._session: ClientSession | None = None
         self._lock = asyncio.Lock()
         self._exit_stack: Any = None
+        self._oauth_client = oauth_client
 
     @property
     def name(self) -> str:
@@ -161,7 +170,11 @@ class MCPClient:
             return False
 
     async def _connect_http(self) -> bool:
-        """Connect using HTTP/SSE transport."""
+        """Connect using HTTP/SSE transport.
+
+        Supports OAuth authentication for Smithery-hosted servers.
+        If OAuth client is provided and has valid tokens, they will be used.
+        """
         if not self.server.endpoint_url:
             self.state.last_error = "No endpoint URL specified for HTTP transport"
             return False
@@ -174,16 +187,37 @@ class MCPClient:
 
         logger.info(f"[MCP:{self.name}] Connecting via HTTP: {self.server.endpoint_url}")
 
+        # Build headers with OAuth token if available
+        headers: dict[str, str] = {}
+
+        if self._oauth_client:
+            # Ensure we have a valid token
+            if await self._oauth_client.ensure_valid_token():
+                headers = self._oauth_client.get_auth_headers()
+                logger.info(f"[MCP:{self.name}] Using OAuth authentication")
+            else:
+                logger.warning(f"[MCP:{self.name}] OAuth client present but no valid token")
+
+        # Also check for manual token in server env
+        if not headers and self.server.get_env().get("SMITHERY_ACCESS_TOKEN"):
+            headers["Authorization"] = f"Bearer {self.server.get_env()['SMITHERY_ACCESS_TOKEN']}"
+            logger.info(f"[MCP:{self.name}] Using manual access token")
+
         try:
             from contextlib import AsyncExitStack
 
             self._exit_stack = AsyncExitStack()
             await self._exit_stack.__aenter__()
 
-            # Enter HTTP client context
-            read_stream, write_stream, _ = await self._exit_stack.enter_async_context(
-                streamablehttp_client(self.server.endpoint_url)
-            )
+            # Enter HTTP client context with optional headers
+            if headers:
+                read_stream, write_stream, _ = await self._exit_stack.enter_async_context(
+                    streamablehttp_client(self.server.endpoint_url, headers=headers)
+                )
+            else:
+                read_stream, write_stream, _ = await self._exit_stack.enter_async_context(
+                    streamablehttp_client(self.server.endpoint_url)
+                )
 
             # Enter session context
             self._session = await self._exit_stack.enter_async_context(ClientSession(read_stream, write_stream))
@@ -200,8 +234,15 @@ class MCPClient:
             return True
 
         except Exception as e:
-            self.state.last_error = str(e)
+            error_msg = str(e)
+            self.state.last_error = error_msg
             self.state.connected = False
+
+            # Check if this is an auth error (401)
+            if "401" in error_msg or "unauthorized" in error_msg.lower():
+                self.state.last_error = "Authentication required. Use OAuth flow to connect."
+                logger.warning(f"[MCP:{self.name}] Authentication required for this server")
+
             if self._exit_stack:
                 try:
                     await self._exit_stack.__aexit__(None, None, None)
