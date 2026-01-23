@@ -6,6 +6,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MyPalClara is a personal AI assistant with session management and persistent memory (via mem0). The assistant's name is Clara. It uses a Discord bot interface with SQLite/PostgreSQL storage.
 
+## Versioning
+
+Uses CalVer format: `YYYY.WW.N` (Year.Week.Build)
+
+- `2026.04.1` = First build of week 4, 2026
+- `2026.04.2` = Second build of week 4, 2026
+- `2026.05.1` = First build of week 5, 2026
+
+```bash
+python scripts/bump_version.py          # Bump version (increments build or starts new week)
+python scripts/bump_version.py --dry    # Preview without changing files
+python scripts/bump_version.py --show   # Show current version
+```
+
+Version is stored in `VERSION` file and synced to `pyproject.toml`. Bot displays version on startup.
+
 ## Development Commands
 
 ### Backend (Python)
