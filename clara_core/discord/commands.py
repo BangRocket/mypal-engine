@@ -94,6 +94,25 @@ class ClaraCommands(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+    def _is_gateway_mode(self) -> bool:
+        """Check if the bot is running in gateway mode.
+
+        Returns:
+            True if connected to gateway, False if running standalone
+        """
+        gateway_client = getattr(self.bot, "gateway_client", None)
+        return gateway_client is not None and gateway_client.is_connected
+
+    def _get_gateway_client(self):
+        """Get the gateway client if in gateway mode.
+
+        Returns:
+            Gateway client or None
+        """
+        if self._is_gateway_mode():
+            return getattr(self.bot, "gateway_client", None)
+        return None
+
     # ==========================================================================
     # MCP Command Group
     # ==========================================================================
@@ -107,10 +126,31 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
-            from clara_core.mcp import get_mcp_manager
+            gateway = self._get_gateway_client()
 
-            manager = get_mcp_manager()
-            statuses = manager.get_all_server_status()
+            if gateway:
+                # Route through gateway
+                response = await gateway.mcp_list()
+                if not response.success:
+                    await ctx.respond(embed=create_error_embed("Error", response.error or "Unknown error"))
+                    return
+
+                statuses = [
+                    {
+                        "name": s.name,
+                        "status": s.status,
+                        "enabled": s.enabled,
+                        "tool_count": s.tool_count,
+                        "source_type": s.source_type,
+                    }
+                    for s in response.servers
+                ]
+            else:
+                # Local mode
+                from clara_core.mcp import get_mcp_manager
+
+                manager = get_mcp_manager()
+                statuses = manager.get_all_server_status()
 
             if not statuses:
                 embed = create_info_embed(
@@ -154,6 +194,57 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
+            gateway = self._get_gateway_client()
+
+            if gateway:
+                # Route through gateway
+                response = await gateway.mcp_status(server_name=server)
+                if not response.success:
+                    await ctx.respond(embed=create_error_embed("Not Found", response.error or "Unknown error"))
+                    return
+
+                if not server:
+                    # Overall status
+                    embed = create_status_embed(
+                        "MCP System Status",
+                        fields=[
+                            ("Total Servers", str(response.total_servers), True),
+                            ("Enabled", str(response.enabled_servers), True),
+                            ("Connected", str(response.connected_servers), True),
+                        ],
+                    )
+                    await ctx.respond(embed=embed)
+                    return
+
+                # Specific server from gateway
+                status = response.server
+                if not status:
+                    await ctx.respond(embed=create_error_embed("Not Found", f"Server '{server}' not found."))
+                    return
+
+                fields = [
+                    ("Status", status.status, True),
+                    ("Connected", "Yes" if status.connected else "No", True),
+                    ("Transport", status.transport or "unknown", True),
+                    ("Tools", str(status.tool_count), True),
+                ]
+
+                if status.last_error:
+                    fields.append(("Last Error", status.last_error[:100], False))
+
+                embed = create_status_embed(f"Server: {server}", fields=fields)
+
+                # Add tools list
+                if status.tools:
+                    tools_text = ", ".join(status.tools[:10])
+                    if len(status.tools) > 10:
+                        tools_text += f" ... +{len(status.tools) - 10} more"
+                    embed.add_field(name="Tools", value=tools_text, inline=False)
+
+                await ctx.respond(embed=embed)
+                return
+
+            # Local mode
             from clara_core.mcp import get_mcp_manager
 
             manager = get_mcp_manager()
@@ -305,6 +396,30 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
+            gateway = self._get_gateway_client()
+
+            if gateway:
+                # Route through gateway
+                response = await gateway.mcp_install(
+                    source=source,
+                    name=name,
+                    requested_by=str(ctx.author.id),
+                    timeout=120.0,
+                )
+
+                if response.success:
+                    embed = create_success_embed(
+                        "Server Installed",
+                        f"**{response.server_name}** installed successfully!\n"
+                        f"Source: `{source}`\n"
+                        f"Tools discovered: {response.tools_discovered}",
+                    )
+                    await ctx.respond(embed=embed)
+                else:
+                    await ctx.respond(embed=create_error_embed("Installation Failed", response.error or "Unknown error"))
+                return
+
+            # Local mode
             from clara_core.mcp import get_mcp_manager
             from clara_core.mcp.installer import MCPInstaller
 
@@ -358,6 +473,22 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
+            gateway = self._get_gateway_client()
+
+            if gateway:
+                # Route through gateway
+                response = await gateway.mcp_uninstall(server_name=server)
+
+                if response.success:
+                    embed = create_success_embed("Server Uninstalled", f"**{server}** has been removed.")
+                else:
+                    embed = create_error_embed("Failed", response.error or f"Could not uninstall '{server}'.")
+
+                if view.interaction:
+                    await view.interaction.response.edit_message(embed=embed, view=None)
+                return
+
+            # Local mode
             from clara_core.mcp import get_mcp_manager
             from clara_core.mcp.installer import MCPInstaller
 
@@ -390,6 +521,21 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
+            gateway = self._get_gateway_client()
+
+            if gateway:
+                # Route through gateway
+                response = await gateway.mcp_enable(server_name=server, enabled=True)
+
+                if response.success:
+                    await ctx.respond(
+                        embed=create_success_embed("Server Enabled", f"**{server}** is now enabled and running.")
+                    )
+                else:
+                    await ctx.respond(embed=create_error_embed("Failed", response.error or f"Could not enable '{server}'."))
+                return
+
+            # Local mode
             from clara_core.mcp import get_mcp_manager
 
             manager = get_mcp_manager()
@@ -415,6 +561,19 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
+            gateway = self._get_gateway_client()
+
+            if gateway:
+                # Route through gateway
+                response = await gateway.mcp_enable(server_name=server, enabled=False)
+
+                if response.success:
+                    await ctx.respond(embed=create_success_embed("Server Disabled", f"**{server}** is now disabled."))
+                else:
+                    await ctx.respond(embed=create_error_embed("Failed", response.error or f"Could not disable '{server}'."))
+                return
+
+            # Local mode
             from clara_core.mcp import get_mcp_manager
 
             manager = get_mcp_manager()
@@ -438,6 +597,19 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
+            gateway = self._get_gateway_client()
+
+            if gateway:
+                # Route through gateway
+                response = await gateway.mcp_restart(server_name=server, timeout=60.0)
+
+                if response.success:
+                    await ctx.respond(embed=create_success_embed("Server Restarted", f"**{server}** has been restarted."))
+                else:
+                    await ctx.respond(embed=create_error_embed("Failed", response.error or f"Could not restart '{server}'."))
+                return
+
+            # Local mode
             from clara_core.mcp import get_mcp_manager
 
             manager = get_mcp_manager()
