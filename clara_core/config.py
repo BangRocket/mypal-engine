@@ -5,10 +5,16 @@ Loads environment variables and provides a unified configuration interface.
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
+
+logger = logging.getLogger("clara_core.config")
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from dotenv import load_dotenv
 
@@ -205,7 +211,9 @@ def get_config() -> ClaraConfig:
     return ClaraConfig.get_instance()
 
 
-def init_platform() -> None:
+def init_platform(
+    on_memory_event: "Callable[[str, dict], None] | None" = None,
+) -> None:
     """Initialize the Clara platform.
 
     Call this once at application startup to:
@@ -214,6 +222,12 @@ def init_platform() -> None:
     3. Initialize MemoryManager singleton
     4. Initialize ToolRegistry singleton
     5. Optionally load initial profile
+
+    Args:
+        on_memory_event: Optional callback for memory events (retrieval, extraction).
+            Called with (event_type, data) where event_type is "memory_retrieved"
+            or "memory_extracted". Platform adapters (e.g., Discord) use this to
+            display notifications when memories are accessed.
     """
     from clara_core.llm import make_llm
     from clara_core.memory import MemoryManager, load_initial_profile
@@ -224,17 +238,17 @@ def init_platform() -> None:
 
     # Mark as initialized
     if ClaraConfig._initialized:
-        print("[clara_core] Platform already initialized, skipping")
+        logger.debug("Platform already initialized, skipping")
         return
 
-    print("[clara_core] Initializing platform...")
+    logger.info("Initializing platform...")
 
     # 1. Initialize database
     init_db()
 
-    # 2. Initialize LLM and MemoryManager
+    # 2. Initialize LLM and MemoryManager with optional callback
     llm = make_llm()
-    MemoryManager.initialize(llm_callable=llm)
+    MemoryManager.initialize(llm_callable=llm, on_memory_event=on_memory_event)
 
     # 3. Initialize ToolRegistry
     ToolRegistry.initialize()
@@ -244,4 +258,4 @@ def init_platform() -> None:
         load_initial_profile(config.user_id)
 
     ClaraConfig._initialized = True
-    print("[clara_core] Platform initialized successfully")
+    logger.info("Platform initialized successfully")

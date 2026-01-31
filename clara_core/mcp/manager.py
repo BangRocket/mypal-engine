@@ -1,49 +1,45 @@
-"""MCP Server Manager for managing multiple MCP server connections.
+"""MCP Server Manager - Unified management for local and remote MCP servers.
 
-This module provides the MCPServerManager class which is responsible for:
-- Loading server configurations from JSON files (default) or database
-- Starting and stopping MCP server connections
-- Managing the lifecycle of all MCP clients
-- Aggregating tools from all connected servers
+This module provides the MCPServerManager class which unifies management of:
+- Local MCP servers (stdio transport, run as subprocesses)
+- Remote MCP servers (HTTP transport, connect to external endpoints)
 
-Storage modes:
-- JSON (default): Configs stored in .mcp_servers/{name}/config.json
-- Database: Configs stored in mcp_servers table (set MCP_USE_DATABASE=true)
+The manager provides a single interface for:
+- Initializing all servers
+- Starting/stopping servers
+- Calling tools across all servers
+- Getting aggregated tool lists
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import os
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 
-from .client import MCPClient, MCPTool
+from .local_server import LocalServerManager, MCPTool
 from .models import (
-    MCPServerConfig,
-    delete_server_config,
-    get_enabled_servers,
-    list_server_configs,
-    load_server_config,
-    save_server_config,
+    LocalServerConfig,
+    RemoteServerConfig,
+    ServerType,
+    find_server_config,
+    list_all_server_configs,
+    load_local_server_config,
+    load_remote_server_config,
+    save_local_server_config,
+    save_remote_server_config,
     utcnow_iso,
 )
-
-if TYPE_CHECKING:
-    pass
+from .remote_server import RemoteServerManager
 
 logger = logging.getLogger(__name__)
 
-# Toggle for database vs JSON storage (JSON is default)
-USE_DATABASE = os.getenv("MCP_USE_DATABASE", "").lower() in ("true", "1", "yes")
-
 
 class MCPServerManager:
-    """Central manager for all MCP server connections.
+    """Unified manager for all MCP server connections.
 
-    This singleton class manages the lifecycle of MCP clients, loading
-    configurations from JSON files (default) or database and maintaining
-    connections to enabled servers.
+    This singleton class manages both local and remote MCP servers,
+    providing a unified interface for tool discovery and execution.
 
     Usage:
         manager = MCPServerManager.get_instance()
@@ -63,8 +59,8 @@ class MCPServerManager:
 
     def __init__(self) -> None:
         """Initialize the manager. Use get_instance() instead."""
-        self._clients: dict[str, MCPClient] = {}  # server_name -> MCPClient
-        self._configs: dict[str, MCPServerConfig] = {}  # server_name -> config (for JSON mode)
+        self._local = LocalServerManager()
+        self._remote = RemoteServerManager()
         self._initialized = False
         self._lock = asyncio.Lock()
 
@@ -80,239 +76,8 @@ class MCPServerManager:
         """Reset the singleton instance. Useful for testing."""
         cls._instance = None
 
-    def _load_configs(self) -> list[MCPServerConfig]:
-        """Load all enabled server configs from storage."""
-        if USE_DATABASE:
-            return self._load_configs_from_db()
-        return get_enabled_servers()
-
-    def _load_configs_from_db(self) -> list[MCPServerConfig]:
-        """Load configs from database (legacy mode)."""
-        try:
-            # Import the SQLAlchemy model for database mode
-            from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
-            from sqlalchemy.orm import declarative_base
-
-            from db import SessionLocal
-            from db.models import Base
-
-            # Check if mcp_servers table exists in the database
-            with SessionLocal() as session:
-                # Query using raw SQL to avoid model dependency
-                result = session.execute(
-                    "SELECT name, source_type, display_name, source_url, transport, "
-                    "command, args, cwd, env, endpoint_url, docker_config, enabled, "
-                    "status, last_error, tool_count, tools_json, installed_by "
-                    "FROM mcp_servers WHERE enabled = true"
-                )
-
-                configs = []
-                for row in result:
-                    config = MCPServerConfig(
-                        name=row[0],
-                        source_type=row[1],
-                        display_name=row[2],
-                        source_url=row[3],
-                        transport=row[4] or "stdio",
-                        command=row[5],
-                        args=row[6] if isinstance(row[6], list) else [],
-                        cwd=row[7],
-                        env=row[8] if isinstance(row[8], dict) else {},
-                        endpoint_url=row[9],
-                        docker_config=row[10] if isinstance(row[10], dict) else {},
-                        enabled=row[11],
-                        status=row[12] or "stopped",
-                        last_error=row[13],
-                        tool_count=row[14] or 0,
-                        installed_by=row[16],
-                    )
-                    configs.append(config)
-
-                return configs
-
-        except Exception as e:
-            logger.warning(f"[MCP] Database mode failed, falling back to JSON: {e}")
-            return get_enabled_servers()
-
-    def _get_config(self, server_name: str) -> MCPServerConfig | None:
-        """Get a specific server config from storage."""
-        # Check in-memory cache first
-        if server_name in self._configs:
-            return self._configs[server_name]
-
-        if USE_DATABASE:
-            return self._get_config_from_db(server_name)
-        return load_server_config(server_name)
-
-    def _get_config_from_db(self, server_name: str) -> MCPServerConfig | None:
-        """Get a config from database (legacy mode)."""
-        try:
-            from db import SessionLocal
-
-            with SessionLocal() as session:
-                result = session.execute(
-                    "SELECT name, source_type, display_name, source_url, transport, "
-                    "command, args, cwd, env, endpoint_url, docker_config, enabled, "
-                    "status, last_error, tool_count, tools_json, installed_by "
-                    "FROM mcp_servers WHERE name = :name",
-                    {"name": server_name},
-                ).first()
-
-                if not result:
-                    return None
-
-                return MCPServerConfig(
-                    name=result[0],
-                    source_type=result[1],
-                    display_name=result[2],
-                    source_url=result[3],
-                    transport=result[4] or "stdio",
-                    command=result[5],
-                    args=result[6] if isinstance(result[6], list) else [],
-                    cwd=result[7],
-                    env=result[8] if isinstance(result[8], dict) else {},
-                    endpoint_url=result[9],
-                    docker_config=result[10] if isinstance(result[10], dict) else {},
-                    enabled=result[11],
-                    status=result[12] or "stopped",
-                    last_error=result[13],
-                    tool_count=result[14] or 0,
-                    installed_by=result[16],
-                )
-        except Exception as e:
-            logger.warning(f"[MCP] Database lookup failed: {e}")
-            return load_server_config(server_name)
-
-    def _save_config(self, config: MCPServerConfig) -> bool:
-        """Save a server config to storage."""
-        # Update in-memory cache
-        self._configs[config.name] = config
-
-        if USE_DATABASE:
-            return self._save_config_to_db(config)
-        return save_server_config(config)
-
-    def _save_config_to_db(self, config: MCPServerConfig) -> bool:
-        """Save config to database (legacy mode)."""
-        try:
-            from db import SessionLocal
-
-            with SessionLocal() as session:
-                # Upsert using raw SQL
-                session.execute(
-                    """
-                    INSERT INTO mcp_servers (name, source_type, display_name, source_url,
-                        transport, command, args, cwd, env, endpoint_url, docker_config,
-                        enabled, status, last_error, tool_count, tools_json, installed_by)
-                    VALUES (:name, :source_type, :display_name, :source_url,
-                        :transport, :command, :args, :cwd, :env, :endpoint_url, :docker_config,
-                        :enabled, :status, :last_error, :tool_count, :tools_json, :installed_by)
-                    ON CONFLICT (name) DO UPDATE SET
-                        source_type = :source_type, display_name = :display_name,
-                        source_url = :source_url, transport = :transport, command = :command,
-                        args = :args, cwd = :cwd, env = :env, endpoint_url = :endpoint_url,
-                        docker_config = :docker_config, enabled = :enabled, status = :status,
-                        last_error = :last_error, tool_count = :tool_count, tools_json = :tools_json,
-                        installed_by = :installed_by, updated_at = CURRENT_TIMESTAMP
-                    """,
-                    {
-                        "name": config.name,
-                        "source_type": config.source_type,
-                        "display_name": config.display_name,
-                        "source_url": config.source_url,
-                        "transport": config.transport,
-                        "command": config.command,
-                        "args": config.args,
-                        "cwd": config.cwd,
-                        "env": config.env,
-                        "endpoint_url": config.endpoint_url,
-                        "docker_config": config.docker_config,
-                        "enabled": config.enabled,
-                        "status": config.status,
-                        "last_error": config.last_error,
-                        "tool_count": config.tool_count,
-                        "tools_json": config.tools,
-                        "installed_by": config.installed_by,
-                    },
-                )
-                session.commit()
-                return True
-        except Exception as e:
-            logger.warning(f"[MCP] Database save failed, using JSON fallback: {e}")
-            return save_server_config(config)
-
-    def _delete_config(self, server_name: str) -> bool:
-        """Delete a server config from storage."""
-        # Remove from in-memory cache
-        self._configs.pop(server_name, None)
-
-        if USE_DATABASE:
-            return self._delete_config_from_db(server_name)
-        return delete_server_config(server_name)
-
-    def _delete_config_from_db(self, server_name: str) -> bool:
-        """Delete config from database (legacy mode)."""
-        try:
-            from db import SessionLocal
-
-            with SessionLocal() as session:
-                session.execute(
-                    "DELETE FROM mcp_servers WHERE name = :name", {"name": server_name}
-                )
-                session.commit()
-                return True
-        except Exception as e:
-            logger.warning(f"[MCP] Database delete failed: {e}")
-            return delete_server_config(server_name)
-
-    def _list_all_configs(self) -> list[MCPServerConfig]:
-        """List all server configs (enabled and disabled)."""
-        if USE_DATABASE:
-            return self._list_all_configs_from_db()
-        return list_server_configs()
-
-    def _list_all_configs_from_db(self) -> list[MCPServerConfig]:
-        """List all configs from database."""
-        try:
-            from db import SessionLocal
-
-            with SessionLocal() as session:
-                result = session.execute(
-                    "SELECT name, source_type, display_name, source_url, transport, "
-                    "command, args, cwd, env, endpoint_url, docker_config, enabled, "
-                    "status, last_error, tool_count, tools_json, installed_by "
-                    "FROM mcp_servers"
-                )
-
-                configs = []
-                for row in result:
-                    config = MCPServerConfig(
-                        name=row[0],
-                        source_type=row[1],
-                        display_name=row[2],
-                        source_url=row[3],
-                        transport=row[4] or "stdio",
-                        command=row[5],
-                        args=row[6] if isinstance(row[6], list) else [],
-                        cwd=row[7],
-                        env=row[8] if isinstance(row[8], dict) else {},
-                        endpoint_url=row[9],
-                        docker_config=row[10] if isinstance(row[10], dict) else {},
-                        enabled=row[11],
-                        status=row[12] or "stopped",
-                        last_error=row[13],
-                        tool_count=row[14] or 0,
-                        installed_by=row[16],
-                    )
-                    configs.append(config)
-
-                return configs
-        except Exception as e:
-            logger.warning(f"[MCP] Database list failed: {e}")
-            return list_server_configs()
-
     async def initialize(self) -> dict[str, bool]:
-        """Initialize all enabled MCP servers.
+        """Initialize all enabled MCP servers (local and remote).
 
         Returns:
             Dict mapping server names to connection success status
@@ -320,99 +85,34 @@ class MCPServerManager:
         async with self._lock:
             if self._initialized:
                 logger.debug("[MCP] Manager already initialized")
-                return {name: client.is_connected for name, client in self._clients.items()}
+                return self._get_current_status()
 
             logger.info("[MCP] Initializing MCP server manager...")
             results = {}
 
-            # Load all enabled servers
-            configs = self._load_configs()
-            logger.info(f"[MCP] Found {len(configs)} enabled MCP servers")
+            # Initialize local servers
+            local_results = await self._local.initialize()
+            results.update(local_results)
 
-            for config in configs:
-                self._configs[config.name] = config
-                results[config.name] = await self._start_server(config)
+            # Initialize remote servers
+            remote_results = await self._remote.initialize()
+            results.update(remote_results)
 
             self._initialized = True
-            logger.info(f"[MCP] Initialization complete: {sum(results.values())}/{len(results)} servers connected")
+            connected = sum(1 for v in results.values() if v)
+            logger.info(
+                f"[MCP] Initialization complete: {connected}/{len(results)} servers connected"
+            )
             return results
 
-    async def _start_server(self, config: MCPServerConfig) -> bool:
-        """Start a single MCP server connection.
-
-        Args:
-            config: MCPServerConfig configuration
-
-        Returns:
-            True if connection was successful
-        """
-        if config.name in self._clients:
-            logger.warning(f"[MCP] Server '{config.name}' already running")
-            return self._clients[config.name].is_connected
-
-        # Skip servers pending OAuth authentication
-        if config.status == "pending_auth":
-            logger.info(f"[MCP] Server '{config.name}' pending OAuth authorization, skipping")
-            return False
-
-        logger.info(f"[MCP] Starting server '{config.name}' ({config.source_type})")
-
-        try:
-            # For smithery-hosted servers, set up OAuth client
-            oauth_client = None
-            if config.source_type == "smithery-hosted":
-                from .oauth import SmitheryOAuthClient, load_oauth_state
-
-                oauth_state = load_oauth_state(config.name)
-                if oauth_state and oauth_state.tokens:
-                    oauth_client = SmitheryOAuthClient(config.name, config.endpoint_url)
-                    logger.info(f"[MCP] Using OAuth authentication for '{config.name}'")
-
-            client = MCPClient(config, oauth_client=oauth_client)
-            success = await client.connect()
-
-            if success:
-                self._clients[config.name] = client
-                # Update config with tool info
-                await self._update_server_status(config.name, "running", client.get_tools())
-                return True
-            else:
-                await self._update_server_status(config.name, "error", error=client.state.last_error)
-                return False
-
-        except Exception as e:
-            logger.error(f"[MCP] Failed to start server '{config.name}': {e}")
-            await self._update_server_status(config.name, "error", error=str(e))
-            return False
-
-    async def _update_server_status(
-        self,
-        server_name: str,
-        status: str,
-        tools: list[MCPTool] | None = None,
-        error: str | None = None,
-    ) -> None:
-        """Update server status in storage.
-
-        Args:
-            server_name: Name of the server
-            status: New status ("running", "stopped", "error")
-            tools: Optional list of discovered tools
-            error: Optional error message
-        """
-        try:
-            config = self._get_config(server_name)
-            if config:
-                config.status = status
-                if tools is not None:
-                    config.set_tools([t.to_dict() for t in tools])
-                if error:
-                    config.last_error = error
-                    config.last_error_at = utcnow_iso()
-                config.updated_at = utcnow_iso()
-                self._save_config(config)
-        except Exception as e:
-            logger.warning(f"[MCP] Failed to update server status: {e}")
+    def _get_current_status(self) -> dict[str, bool]:
+        """Get current connection status of all servers."""
+        status = {}
+        for name, process in self._local._servers.items():
+            status[name] = process.is_connected
+        for name, conn in self._remote._connections.items():
+            status[name] = conn.is_connected
+        return status
 
     async def start_server(self, server_name: str) -> bool:
         """Start a specific server by name.
@@ -423,13 +123,17 @@ class MCPServerManager:
         Returns:
             True if the server was started successfully
         """
-        async with self._lock:
-            config = self._get_config(server_name)
-            if not config:
-                logger.error(f"[MCP] Server '{server_name}' not found")
-                return False
+        result = find_server_config(server_name)
+        if not result:
+            logger.error(f"[MCP] Server '{server_name}' not found")
+            return False
 
-            return await self._start_server(config)
+        server_type, config = result
+
+        if server_type == ServerType.LOCAL:
+            return await self._local.start_server(server_name)
+        else:
+            return await self._remote.connect_server(server_name)
 
     async def stop_server(self, server_name: str) -> bool:
         """Stop a specific server by name.
@@ -440,16 +144,16 @@ class MCPServerManager:
         Returns:
             True if the server was stopped successfully
         """
-        async with self._lock:
-            if server_name not in self._clients:
-                logger.warning(f"[MCP] Server '{server_name}' not running")
-                return False
+        # Try local first
+        if server_name in self._local._servers:
+            return await self._local.stop_server(server_name)
 
-            client = self._clients.pop(server_name)
-            await client.disconnect()
-            await self._update_server_status(server_name, "stopped")
-            logger.info(f"[MCP] Server '{server_name}' stopped")
-            return True
+        # Try remote
+        if server_name in self._remote._connections:
+            return await self._remote.disconnect_server(server_name)
+
+        logger.warning(f"[MCP] Server '{server_name}' not running")
+        return False
 
     async def restart_server(self, server_name: str) -> bool:
         """Restart a specific server.
@@ -460,7 +164,15 @@ class MCPServerManager:
         Returns:
             True if the server was restarted successfully
         """
-        await self.stop_server(server_name)
+        # Try local first
+        if server_name in self._local._servers:
+            return await self._local.restart_server(server_name)
+
+        # Try remote
+        if server_name in self._remote._connections:
+            return await self._remote.reconnect_server(server_name)
+
+        # Server not running, try to start it
         return await self.start_server(server_name)
 
     async def enable_server(self, server_name: str) -> bool:
@@ -472,12 +184,18 @@ class MCPServerManager:
         Returns:
             True if successful
         """
-        config = self._get_config(server_name)
-        if not config:
+        result = find_server_config(server_name)
+        if not result:
             return False
 
-        config.enabled = True
-        self._save_config(config)
+        server_type, config = result
+
+        if server_type == ServerType.LOCAL:
+            config.enabled = True
+            save_local_server_config(config)
+        else:
+            config.enabled = True
+            save_remote_server_config(config)
 
         return await self.start_server(server_name)
 
@@ -492,25 +210,42 @@ class MCPServerManager:
         """
         await self.stop_server(server_name)
 
-        config = self._get_config(server_name)
-        if not config:
+        result = find_server_config(server_name)
+        if not result:
             return False
 
-        config.enabled = False
-        self._save_config(config)
+        server_type, config = result
+
+        if server_type == ServerType.LOCAL:
+            config.enabled = False
+            save_local_server_config(config)
+        else:
+            config.enabled = False
+            save_remote_server_config(config)
 
         return True
 
-    def get_client(self, server_name: str) -> MCPClient | None:
-        """Get a client by server name.
+    async def hot_reload_server(self, server_name: str) -> bool:
+        """Enable hot reload for a local server.
 
         Args:
             server_name: Name of the server
 
         Returns:
-            MCPClient if found and connected, None otherwise
+            True if hot reload was enabled
         """
-        return self._clients.get(server_name)
+        return await self._local.hot_reload_server(server_name)
+
+    async def disable_hot_reload(self, server_name: str) -> bool:
+        """Disable hot reload for a local server.
+
+        Args:
+            server_name: Name of the server
+
+        Returns:
+            True if hot reload was disabled
+        """
+        return await self._local.disable_hot_reload(server_name)
 
     def get_all_tools(self) -> list[tuple[str, MCPTool]]:
         """Get all tools from all connected servers.
@@ -519,10 +254,8 @@ class MCPServerManager:
             List of (server_name, tool) tuples
         """
         tools = []
-        for server_name, client in self._clients.items():
-            if client.is_connected:
-                for tool in client.get_tools():
-                    tools.append((server_name, tool))
+        tools.extend(self._local.get_all_tools())
+        tools.extend(self._remote.get_all_tools())
         return tools
 
     def get_namespaced_tools(self) -> dict[str, MCPTool]:
@@ -534,9 +267,8 @@ class MCPServerManager:
             Dict mapping namespaced tool names to MCPTool objects
         """
         result = {}
-        for server_name, tool in self.get_all_tools():
-            namespaced_name = f"{server_name}__{tool.name}"
-            result[namespaced_name] = tool
+        result.update(self._local.get_namespaced_tools())
+        result.update(self._remote.get_namespaced_tools())
         return result
 
     def parse_tool_name(self, namespaced_name: str) -> tuple[str | None, str]:
@@ -566,24 +298,37 @@ class MCPServerManager:
 
         if server_hint:
             # Explicit server specified
-            client = self._clients.get(server_hint)
-            if client and base_name in client.get_tool_names():
+            # Check local
+            process = self._local.get_server(server_hint)
+            if process and base_name in process.get_tool_names():
                 return (server_hint, base_name)
+
+            # Check remote
+            conn = self._remote.get_connection(server_hint)
+            if conn and base_name in conn.get_tool_names():
+                return (server_hint, base_name)
+
             return None
 
         # Search all servers for the tool
         matches = []
-        for server_name, client in self._clients.items():
-            if base_name in client.get_tool_names():
+
+        # Check local servers
+        for server_name, process in self._local._servers.items():
+            if base_name in process.get_tool_names():
+                matches.append((server_name, base_name))
+
+        # Check remote servers
+        for server_name, conn in self._remote._connections.items():
+            if base_name in conn.get_tool_names():
                 matches.append((server_name, base_name))
 
         if len(matches) == 1:
             return matches[0]
         elif len(matches) > 1:
-            # Ambiguous - return the first match but log a warning
             logger.warning(
-                f"[MCP] Ambiguous tool name '{base_name}' found in: {[m[0] for m in matches]}. "
-                f"Using '{matches[0][0]}'. Use namespaced name for explicit selection."
+                f"[MCP] Ambiguous tool name '{base_name}' found in: "
+                f"{[m[0] for m in matches]}. Using '{matches[0][0]}'."
             )
             return matches[0]
 
@@ -602,15 +347,22 @@ class MCPServerManager:
         location = self.find_tool(tool_name)
         if not location:
             available = list(self.get_namespaced_tools().keys())
-            return f"Error: Tool '{tool_name}' not found. Available MCP tools: {', '.join(available[:10])}"
+            return (
+                f"Error: Tool '{tool_name}' not found. "
+                f"Available MCP tools: {', '.join(available[:10])}"
+            )
 
         server_name, actual_tool_name = location
-        client = self._clients.get(server_name)
 
-        if not client:
-            return f"Error: Server '{server_name}' not connected"
+        # Try local first
+        if server_name in self._local._servers:
+            return await self._local.call_tool(server_name, actual_tool_name, arguments)
 
-        return await client.call_tool(actual_tool_name, arguments)
+        # Try remote
+        if server_name in self._remote._connections:
+            return await self._remote.call_tool(server_name, actual_tool_name, arguments)
+
+        return f"Error: Server '{server_name}' not connected"
 
     def get_server_status(self, server_name: str) -> dict[str, Any] | None:
         """Get status of a specific server.
@@ -621,33 +373,13 @@ class MCPServerManager:
         Returns:
             Status dict or None if not found
         """
-        # Get config first (needed for both cases)
-        config = self._get_config(server_name)
-
-        client = self._clients.get(server_name)
-        if client:
-            # Merge client status with config info
-            status = client.get_status()
-            if config:
-                status["enabled"] = config.enabled
-                status["source_type"] = config.source_type
-                status["status"] = "running" if client.is_connected else "error"
+        # Check local
+        status = self._local.get_server_status(server_name)
+        if status:
             return status
 
-        # Check storage for stopped servers
-        if config:
-            return {
-                "name": config.name,
-                "connected": False,
-                "enabled": config.enabled,
-                "transport": config.transport,
-                "source_type": config.source_type,
-                "tool_count": config.tool_count,
-                "tools": [t["name"] for t in config.get_tools()],
-                "last_error": config.last_error,
-                "status": config.status,
-            }
-        return None
+        # Check remote
+        return self._remote.get_server_status(server_name)
 
     def get_all_server_status(self) -> list[dict[str, Any]]:
         """Get status of all known servers.
@@ -656,46 +388,44 @@ class MCPServerManager:
             List of status dicts for all servers
         """
         statuses = []
-
-        configs = self._list_all_configs()
-        for config in configs:
-            client = self._clients.get(config.name)
-            if client:
-                # Merge client status with config info
-                status = client.get_status()
-                status["enabled"] = config.enabled
-                status["source_type"] = config.source_type
-                status["status"] = "running" if client.is_connected else "error"
-                statuses.append(status)
-            else:
-                statuses.append(
-                    {
-                        "name": config.name,
-                        "connected": False,
-                        "enabled": config.enabled,
-                        "transport": config.transport,
-                        "source_type": config.source_type,
-                        "tool_count": config.tool_count,
-                        "status": config.status,
-                        "last_error": config.last_error,
-                    }
-                )
-
+        statuses.extend(self._local.get_all_status())
+        statuses.extend(self._remote.get_all_status())
         return statuses
 
     async def shutdown(self) -> None:
         """Shutdown all MCP server connections."""
         async with self._lock:
-            logger.info(f"[MCP] Shutting down {len(self._clients)} servers...")
+            total = len(self._local) + len(self._remote)
+            logger.info(f"[MCP] Shutting down {total} servers...")
 
-            for server_name, client in list(self._clients.items()):
-                try:
-                    await client.disconnect()
-                except Exception as e:
-                    logger.warning(f"[MCP] Error disconnecting '{server_name}': {e}")
+            # Suppress noisy asyncio errors during async generator cleanup
+            # These occur when stdio_client generators are closed from a different task
+            loop = asyncio.get_running_loop()
+            original_handler = loop.get_exception_handler()
 
-            self._clients.clear()
-            self._configs.clear()
+            def _shutdown_exception_handler(loop, context):
+                msg = context.get("message", "")
+                exc = context.get("exception")
+                # Suppress known harmless shutdown errors
+                if "closing of asynchronous generator" in msg:
+                    return
+                if exc and ("cancel scope" in str(exc).lower() or "GeneratorExit" in str(exc)):
+                    return
+                # Fall through to original handler for other errors
+                if original_handler:
+                    original_handler(loop, context)
+                else:
+                    loop.default_exception_handler(context)
+
+            loop.set_exception_handler(_shutdown_exception_handler)
+
+            try:
+                await self._local.shutdown()
+                await self._remote.shutdown()
+            finally:
+                # Restore original handler
+                loop.set_exception_handler(original_handler)
+
             self._initialized = False
             logger.info("[MCP] Shutdown complete")
 
@@ -709,40 +439,72 @@ class MCPServerManager:
         """
         async with self._lock:
             results = {}
+            all_configs = list_all_server_configs()
 
-            configs = self._list_all_configs()
+            # Build sets of enabled servers
+            enabled_local = {
+                c.name for c in all_configs
+                if isinstance(c, LocalServerConfig) and c.enabled
+            }
+            enabled_remote = {
+                c.name for c in all_configs
+                if isinstance(c, RemoteServerConfig) and c.enabled
+            }
 
-            # Build sets for comparison
-            enabled_names = {c.name for c in configs if c.enabled}
-            running_names = set(self._clients.keys())
+            # Handle local servers
+            running_local = set(self._local._servers.keys())
 
-            # Stop servers that should be stopped
-            for name in running_names - enabled_names:
-                logger.info(f"[MCP] Stopping disabled server '{name}'")
-                client = self._clients.pop(name)
-                await client.disconnect()
+            # Stop disabled local servers
+            for name in running_local - enabled_local:
+                logger.info(f"[MCP] Stopping disabled local server '{name}'")
+                await self._local.stop_server(name)
                 results[name] = False
 
-            # Start servers that should be running
-            for config in configs:
-                if config.enabled:
-                    self._configs[config.name] = config
-                    if config.name not in self._clients:
-                        logger.info(f"[MCP] Starting newly enabled server '{config.name}'")
-                        results[config.name] = await self._start_server(config)
-                    else:
-                        # Already running
-                        results[config.name] = self._clients[config.name].is_connected
+            # Start newly enabled local servers
+            for name in enabled_local:
+                if name not in self._local._servers:
+                    logger.info(f"[MCP] Starting newly enabled local server '{name}'")
+                results[name] = await self._local.start_server(name)
+
+            # Handle remote servers
+            connected_remote = set(self._remote._connections.keys())
+
+            # Stop disabled remote servers
+            for name in connected_remote - enabled_remote:
+                logger.info(f"[MCP] Disconnecting disabled remote server '{name}'")
+                await self._remote.disconnect_server(name)
+                results[name] = False
+
+            # Start newly enabled remote servers
+            for name in enabled_remote:
+                if name not in self._remote._connections:
+                    logger.info(f"[MCP] Connecting newly enabled remote server '{name}'")
+                results[name] = await self._remote.connect_server(name)
 
             return results
 
     def __len__(self) -> int:
         """Return number of connected servers."""
-        return len(self._clients)
+        return len(self._local) + len(self._remote)
 
     def __contains__(self, server_name: str) -> bool:
         """Check if a server is connected."""
-        return server_name in self._clients
+        return server_name in self._local or server_name in self._remote
+
+    # --- Compatibility Properties ---
+
+    @property
+    def _clients(self) -> dict[str, Any]:
+        """Legacy compatibility: return dict of all connected clients.
+
+        Provides backwards compatibility with code that accesses _clients directly.
+        """
+        clients = {}
+        for name, process in self._local._servers.items():
+            clients[name] = process
+        for name, conn in self._remote._connections.items():
+            clients[name] = conn
+        return clients
 
     # --- Format Conversion Methods ---
 
@@ -813,13 +575,20 @@ class MCPServerManager:
             return None
 
         server_name, tool_name = location
-        client = self._clients.get(server_name)
-        if not client:
-            return None
 
-        for tool in client.get_tools():
-            if tool.name == tool_name:
-                return tool.input_schema
+        # Check local
+        process = self._local.get_server(server_name)
+        if process:
+            for tool in process.get_tools():
+                if tool.name == tool_name:
+                    return tool.input_schema
+
+        # Check remote
+        conn = self._remote.get_connection(server_name)
+        if conn:
+            for tool in conn.get_tools():
+                if tool.name == tool_name:
+                    return tool.input_schema
 
         return None
 

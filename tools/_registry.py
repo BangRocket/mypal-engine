@@ -7,10 +7,13 @@ methods for tool discovery, filtering, and execution.
 from __future__ import annotations
 
 import json
+import logging
 import traceback
 from typing import Any, ClassVar
 
 from ._base import ToolContext, ToolDef
+
+logger = logging.getLogger("tools.registry")
 
 
 def validate_tool_args(
@@ -266,9 +269,7 @@ class ToolRegistry:
             return await tool.handler(arguments, context)
         except Exception as e:
             error_msg = f"Error executing {tool_name}: {str(e)}"
-            # Include traceback in debug mode
-            tb = traceback.format_exc()
-            print(f"[tools] {error_msg}\n{tb}")
+            logger.error(error_msg, exc_info=True)
             return error_msg
 
     def register_system_prompt(self, module_name: str, prompt: str) -> None:

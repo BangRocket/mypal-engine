@@ -36,11 +36,14 @@ Tool Module Contract:
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ._base import ToolContext, ToolDef, ToolHandler
+
+logger = logging.getLogger("tools")
 from ._loader import ToolLoader
 from ._registry import ToolRegistry
 
@@ -107,7 +110,7 @@ async def init_tools(
 
             skip_modules = get_replaced_tool_modules()
             if skip_modules:
-                print(f"[tools] Skipping modules replaced by MCP: {skip_modules}")
+                logger.debug(f"Skipping modules replaced by MCP: {skip_modules}")
         except ImportError:
             pass  # clara_core.tools not available
 
@@ -123,9 +126,9 @@ async def init_tools(
 
         registry = get_registry()
         core_count = await register_core_tools(registry)
-        print(f"[tools] Registered {core_count} core tools from clara_core")
+        logger.debug(f"Registered {core_count} core tools from clara_core")
     except ImportError as e:
-        print(f"[tools] Warning: Could not load core tools: {e}")
+        logger.warning(f"Could not load core tools: {e}")
 
     # Determine hot-reload setting
     if hot_reload is None:

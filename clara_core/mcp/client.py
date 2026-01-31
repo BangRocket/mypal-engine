@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -26,6 +27,56 @@ if TYPE_CHECKING:
     from .oauth import SmitheryOAuthClient
 
 logger = logging.getLogger(__name__)
+
+
+class LoggerPipe:
+    """Pipe-based file object that routes writes to a logger.
+
+    Creates a real OS pipe so subprocess can write to it, then reads
+    from the pipe in a background thread and logs each line.
+
+    Used to capture MCP server stderr and route it through Python logging
+    instead of printing directly to console.
+    """
+
+    def __init__(self, log: logging.Logger, level: int = logging.DEBUG, prefix: str = "") -> None:
+        self._logger = log
+        self._level = level
+        self._prefix = prefix
+        self._read_fd, self._write_fd = os.pipe()
+        self._closed = False
+        self._thread = threading.Thread(target=self._reader_loop, daemon=True)
+        self._thread.start()
+
+    def _reader_loop(self) -> None:
+        """Background thread that reads from pipe and logs."""
+        with os.fdopen(self._read_fd, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.rstrip()
+                if line:
+                    self._logger.log(self._level, f"{self._prefix}{line}")
+
+    def fileno(self) -> int:
+        """Return the write end file descriptor for subprocess."""
+        return self._write_fd
+
+    def write(self, message: str) -> int:
+        """Write directly to the pipe."""
+        if self._closed:
+            return 0
+        data = message.encode("utf-8")
+        os.write(self._write_fd, data)
+        return len(message)
+
+    def flush(self) -> None:
+        """Flush is a no-op for pipes."""
+        pass
+
+    def close(self) -> None:
+        """Close the write end of the pipe."""
+        if not self._closed:
+            self._closed = True
+            os.close(self._write_fd)
 
 
 @dataclass
@@ -140,8 +191,14 @@ class MCPClient:
             self._exit_stack = AsyncExitStack()
             await self._exit_stack.__aenter__()
 
-            # Enter stdio client context
-            read_stream, write_stream = await self._exit_stack.enter_async_context(stdio_client(params))
+            # Route MCP server stderr through our logging system
+            # This captures server startup messages without polluting the console
+            server_logger = LoggerPipe(logger, logging.DEBUG, prefix=f"[{self.name}] ")
+
+            # Enter stdio client context with logged stderr
+            read_stream, write_stream = await self._exit_stack.enter_async_context(
+                stdio_client(params, errlog=server_logger)
+            )
 
             # Enter session context
             self._session = await self._exit_stack.enter_async_context(ClientSession(read_stream, write_stream))

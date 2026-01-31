@@ -13,12 +13,13 @@ Key components:
 from __future__ import annotations
 
 import statistics
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from clara_core.sentiment import analyze_sentiment
-from config.logging import get_discord_handler, get_logger
+from config.logging import get_logger
 
 logger = get_logger("emotional")
 
@@ -140,6 +141,7 @@ def finalize_conversation_emotional_context(
     energy: str,
     summary: str,
     agent_id: str = "clara",
+    on_event: Callable[[str, dict], None] | None = None,
 ) -> EmotionalSummary | None:
     """
     Finalize emotional context for a conversation and store to mem0.
@@ -154,6 +156,8 @@ def finalize_conversation_emotional_context(
         energy: Energy level from ORS extraction (stressed, focused, casual, etc.)
         summary: Topic summary from ORS extraction
         agent_id: Clara's agent ID for mem0
+        on_event: Optional callback for emotional context events.
+            Called with ("emotional_context_stored", data_dict).
 
     Returns:
         EmotionalSummary if successful, None if no data to finalize
@@ -206,14 +210,15 @@ def finalize_conversation_emotional_context(
                 metadata=metadata,
             )
             logger.info(f"Stored emotional context for {user_id}: {arc} arc, {energy} energy")
-            # Send Discord embed for emotional context
-            _send_emotional_context_embed(
-                user_id=user_id,
-                arc=arc,
-                energy=energy,
-                channel_name=channel_name,
-                is_dm=is_dm,
-            )
+            # Notify via callback if registered
+            if on_event:
+                on_event("emotional_context_stored", {
+                    "user_id": user_id,
+                    "arc": arc,
+                    "energy": energy,
+                    "channel_name": channel_name,
+                    "is_dm": is_dm,
+                })
         except Exception as e:
             logger.error(f"Error storing emotional context: {e}", exc_info=True)
 
@@ -254,47 +259,3 @@ def has_pending_emotional_context(user_id: str, channel_id: str) -> bool:
     return len(sentiments) > 0
 
 
-def _send_emotional_context_embed(
-    user_id: str,
-    arc: str,
-    energy: str,
-    channel_name: str,
-    is_dm: bool,
-) -> None:
-    """Send a Discord embed when emotional context is stored."""
-    discord_handler = get_discord_handler()
-    if not discord_handler:
-        return
-
-    # Arc emoji mapping
-    arc_emoji = {
-        "stable": "➡️",
-        "improving": "📈",
-        "declining": "📉",
-        "volatile": "〰️",
-    }
-
-    # Energy emoji mapping
-    energy_emoji = {
-        "stressed": "😰",
-        "focused": "🎯",
-        "casual": "😊",
-        "excited": "✨",
-        "tired": "😴",
-        "neutral": "😐",
-    }
-
-    arc_icon = arc_emoji.get(arc, "➡️")
-    energy_icon = energy_emoji.get(energy, "😐")
-    channel_hint = "DM" if is_dm else (channel_name if channel_name.startswith("#") else f"#{channel_name}")
-
-    # Extract short user ID
-    short_id = user_id.split("-")[-1][:8] if "-" in user_id else user_id[:8]
-
-    discord_handler.queue_embed(
-        title="Emotional Context Stored",
-        description=f"{arc_icon} **{arc}** arc • {energy_icon} **{energy}** energy",
-        fields=[{"name": "Channel", "value": channel_hint, "inline": True}],
-        footer=f"user: {short_id}",
-        tag="emotional",
-    )

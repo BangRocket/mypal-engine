@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import logging
 import os
 import sys
 import time
@@ -17,6 +18,8 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ._registry import ToolRegistry
+
+logger = logging.getLogger("tools.loader")
 
 
 class ToolLoader:
@@ -77,7 +80,7 @@ class ToolLoader:
                 continue
             # Skip modules replaced by MCP servers
             if f.stem in self.skip_modules:
-                print(f"[tools] Skipping {f.stem} (replaced by MCP server)")
+                logger.debug(f"Skipping {f.stem} (replaced by MCP server)")
                 continue
             modules.append(f.stem)
         return sorted(modules)
@@ -93,7 +96,7 @@ class ToolLoader:
         """
         module_path = self.tools_dir / f"{module_name}.py"
         if not module_path.exists():
-            print(f"[tools] Module not found: {module_path}")
+            logger.warning(f"Module not found: {module_path}")
             return False
 
         # Get file modification time
@@ -113,7 +116,7 @@ class ToolLoader:
             # Load the module
             spec = importlib.util.spec_from_file_location(f"tools.{module_name}", module_path)
             if spec is None or spec.loader is None:
-                print(f"[tools] Failed to load spec for {module_name}")
+                logger.warning(f"Failed to load spec for {module_name}")
                 return False
 
             module = importlib.util.module_from_spec(spec)
@@ -122,7 +125,7 @@ class ToolLoader:
 
             # Validate module interface
             if not hasattr(module, "TOOLS"):
-                print(f"[tools] Module {module_name} missing TOOLS export")
+                logger.warning(f"Module {module_name} missing TOOLS export")
                 return False
 
             # Get module metadata
@@ -154,14 +157,11 @@ class ToolLoader:
             self._module_mtimes[module_name] = mtime
 
             tool_names = [t.name for t in tools]
-            print(f"[tools] Loaded {mod_name} v{mod_version}: {tool_names}")
+            logger.debug(f"Loaded {mod_name} v{mod_version}: {tool_names}")
             return True
 
         except Exception as e:
-            print(f"[tools] Error loading {module_name}: {e}")
-            import traceback
-
-            traceback.print_exc()
+            logger.error(f"Error loading {module_name}: {e}", exc_info=True)
             return False
 
     async def _cleanup_module(self, module_name: str) -> None:
@@ -179,13 +179,13 @@ class ToolLoader:
                 else:
                     cleanup_fn()
             except Exception as e:
-                print(f"[tools] Error during cleanup of {module_name}: {e}")
+                logger.error(f"Error during cleanup of {module_name}: {e}")
 
         # Unregister tools and system prompt
         mod_name = getattr(module, "MODULE_NAME", module_name)
         removed = self.registry.unregister_module(mod_name)
         if removed:
-            print(f"[tools] Unregistered tools from {mod_name}: {removed}")
+            logger.debug(f"Unregistered tools from {mod_name}: {removed}")
         self.registry.unregister_system_prompt(mod_name)
 
         # Remove from sys.modules
@@ -249,7 +249,7 @@ class ToolLoader:
                 else:
                     callback(module_name, success)
             except Exception as e:
-                print(f"[tools] Reload callback error: {e}")
+                logger.error(f"Reload callback error: {e}")
 
         return success
 
@@ -284,8 +284,7 @@ class ToolLoader:
             from watchdog.events import FileSystemEventHandler
             from watchdog.observers import Observer
         except ImportError:
-            print("[tools] watchdog not installed, hot-reload disabled")
-            print("[tools] Install with: pip install watchdog")
+            logger.debug("watchdog not installed, hot-reload disabled")
             return False
 
         class ToolFileHandler(FileSystemEventHandler):
@@ -313,7 +312,7 @@ class ToolLoader:
                     return
                 handler_self._debounce[module_name] = now
 
-                print(f"[tools] Detected change in {module_name}, reloading...")
+                logger.info(f"Detected change in {module_name}, reloading...")
                 asyncio.create_task(handler_self.loader.reload_module(module_name))
 
             def on_created(handler_self, event):
@@ -325,7 +324,7 @@ class ToolLoader:
         self._observer.schedule(handler, str(self.tools_dir), recursive=False)
         self._observer.start()
         self._watching = True
-        print(f"[tools] Watching {self.tools_dir} for changes")
+        logger.debug(f"Watching {self.tools_dir} for changes")
         return True
 
     def stop_watching(self) -> None:
@@ -335,7 +334,7 @@ class ToolLoader:
             self._observer.join()
             self._observer = None
         self._watching = False
-        print("[tools] Stopped watching for changes")
+        logger.debug("Stopped watching for changes")
 
     def is_watching(self) -> bool:
         """Check if hot-reload watching is active."""

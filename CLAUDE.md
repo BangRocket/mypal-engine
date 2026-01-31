@@ -45,6 +45,13 @@ poetry run python discord_bot.py --daemon                    # Run in background
 poetry run python discord_bot.py --daemon --logfile bot.log  # With log file
 poetry run python discord_bot.py --status                    # Check if running
 poetry run python discord_bot.py --stop                      # Stop daemon
+
+# Restart with confirmation and optional delay
+poetry run python scripts/restart_bot.py              # Interactive restart
+poetry run python scripts/restart_bot.py -y           # Skip confirmation
+poetry run python scripts/restart_bot.py -y -d 30     # 30 second delay before restart
+poetry run python scripts/restart_bot.py --no-start   # Stop only, don't restart
+poetry run python scripts/restart_bot.py --logfile /var/log/clara.log  # With log file
 ```
 
 ### Docker
@@ -64,6 +71,35 @@ poetry run python clear_dbs.py             # With confirmation prompt
 poetry run python clear_dbs.py --yes       # Skip confirmation
 poetry run python clear_dbs.py --user <id> # Clear specific user
 ```
+
+### Database Migrations
+```bash
+# Run pending migrations (default)
+poetry run python scripts/migrate.py
+
+# Show migration status
+poetry run python scripts/migrate.py status
+
+# Create new migration (autogenerate from model changes)
+poetry run python scripts/migrate.py create "add user preferences table"
+
+# Rollback last migration
+poetry run python scripts/migrate.py rollback
+
+# Rollback multiple migrations
+poetry run python scripts/migrate.py rollback 3
+
+# Show current heads
+poetry run python scripts/migrate.py heads
+
+# Show migration history
+poetry run python scripts/migrate.py history
+
+# Reset to base (DANGEROUS - drops all tables)
+poetry run python scripts/migrate.py reset
+```
+
+**Auto-migration on startup:** The bot automatically runs pending migrations when `init_db()` is called. If migrations fail, it falls back to `create_all()`.
 
 ## Architecture
 
@@ -92,6 +128,21 @@ poetry run python clear_dbs.py --user <id> # Clear specific user
 - `clara_core/mcp/registry_adapter.py` - Bridge between MCP tools and Clara's ToolRegistry
 - `clara_core/mcp/models.py` - MCPServer SQLAlchemy model for configuration storage
 - `tools/mcp_management.py` - User-facing management tools (mcp_install, mcp_list, etc.)
+
+### Gateway System
+WebSocket-based gateway for platform adapters (in development):
+- `gateway/server.py` - WebSocket server accepting adapter connections
+- `gateway/processor.py` - Message processing and context building
+- `gateway/llm_orchestrator.py` - Streaming LLM responses with tool detection
+- `gateway/tool_executor.py` - Tool execution wrapper
+- `gateway/events.py` - Event system for gateway lifecycle and message events
+- `gateway/hooks.py` - Hook registration and execution (shell commands or Python callables)
+- `gateway/scheduler.py` - Task scheduler (one-shot, interval, cron)
+
+**Run the gateway:**
+```bash
+poetry run python -m gateway --host 127.0.0.1 --port 18789
+```
 
 ### Memory System
 - **User memories**: Persistent facts/preferences per user (stored in mem0, searched via `_fetch_mem0_context`)
@@ -257,21 +308,42 @@ Note: Vision capabilities depend on the model being used. Images are resized to 
 
 ### Sandbox Code Execution
 
-Clara supports code execution via local Docker or a remote self-hosted sandbox service.
+Clara supports code execution via Docker, Incus containers/VMs, or a remote sandbox service.
 
 **Mode Selection:**
-- `SANDBOX_MODE` - Backend selection: "local", "remote", or "auto" (default: auto)
-  - `local`: Use local Docker containers only
+- `SANDBOX_MODE` - Backend selection (default: auto)
+  - `docker` or `local`: Use local Docker containers
+  - `incus`: Use Incus containers (lighter, faster)
+  - `incus-vm`: Use Incus VMs (stronger isolation for untrusted code)
   - `remote`: Use remote sandbox API only
-  - `auto`: Use remote if configured, fall back to local Docker
+  - `auto`: Use remote if configured, fall back to Incus/Docker
 
-**Local Docker** (`SANDBOX_MODE=local` or fallback):
+**Docker** (`SANDBOX_MODE=docker`):
 - `DOCKER_SANDBOX_IMAGE` - Docker image for sandbox (default: python:3.12-slim)
 - `DOCKER_SANDBOX_TIMEOUT` - Container idle timeout in seconds (default: 900)
 - `DOCKER_SANDBOX_MEMORY` - Memory limit per container (default: 512m)
 - `DOCKER_SANDBOX_CPU` - CPU limit per container (default: 1.0)
 
-**Remote Sandbox** (`SANDBOX_MODE=remote` or auto with config):
+**Incus** (`SANDBOX_MODE=incus` or `incus-vm`):
+Incus provides system containers and VMs via the [Linux Containers project](https://linuxcontainers.org/incus/).
+- `INCUS_SANDBOX_IMAGE` - Base image (default: images:debian/12/cloud)
+- `INCUS_SANDBOX_TYPE` - "container" or "vm" (default: container)
+- `INCUS_SANDBOX_TIMEOUT` - Instance idle timeout in seconds (default: 900)
+- `INCUS_SANDBOX_MEMORY` - Memory limit (default: 512MiB)
+- `INCUS_SANDBOX_CPU` - CPU limit (default: 1)
+- `INCUS_REMOTE` - Incus remote to use (default: local)
+
+**Incus vs Docker:**
+| Feature | Docker | Incus Container | Incus VM |
+|---------|--------|-----------------|----------|
+| Startup time | ~1s | ~2s | ~10s |
+| Isolation | Namespace | Namespace + user ns | Full hardware |
+| Memory overhead | Low | Low | ~100-300MB |
+| Untrusted code | Moderate | Moderate | High |
+
+Use `incus-vm` when running untrusted code that requires stronger isolation boundaries.
+
+**Remote Sandbox** (`SANDBOX_MODE=remote`):
 - `SANDBOX_API_URL` - Remote sandbox service URL (e.g., https://sandbox.example.com)
 - `SANDBOX_API_KEY` - API key for authentication
 - `SANDBOX_TIMEOUT` - Request timeout in seconds (default: 60)
@@ -284,7 +356,76 @@ docker-compose up -d                # Start API service
 ```
 
 **Web Search:**
-- `TAVILY_API_KEY` - Tavily API key for web search (optional but recommended)
+- `TAVILY_API_KEY` - Tavily API key for web search (Docker sandbox only)
+
+### Gateway (WebSocket Server)
+
+The gateway provides a central message processing hub for platform adapters. Run separately from the Discord bot.
+
+**Environment Variables:**
+- `CLARA_GATEWAY_HOST` - Bind address (default: 127.0.0.1)
+- `CLARA_GATEWAY_PORT` - Port to listen on (default: 18789)
+- `CLARA_GATEWAY_SECRET` - Shared secret for authentication (optional)
+- `CLARA_HOOKS_DIR` - Directory containing hooks.yaml (default: ./hooks)
+- `CLARA_SCHEDULER_DIR` - Directory containing scheduler.yaml (default: .)
+
+**Hooks System:**
+Hooks are automations triggered by gateway events. Configure in `hooks/hooks.yaml`:
+
+```yaml
+hooks:
+  - name: log-startup
+    event: gateway:startup
+    command: echo "Gateway started at ${CLARA_TIMESTAMP}"
+
+  - name: notify-errors
+    event: tool:error
+    command: curl -X POST https://webhook.example.com/notify -d "${CLARA_EVENT_DATA}"
+    timeout: 10
+```
+
+Event types: `gateway:startup`, `gateway:shutdown`, `adapter:connected`, `adapter:disconnected`, `session:start`, `session:end`, `session:timeout`, `message:received`, `message:sent`, `message:cancelled`, `tool:start`, `tool:end`, `tool:error`, `scheduler:task_run`, `scheduler:task_error`
+
+Environment variables available in hook commands:
+- `CLARA_EVENT_TYPE`, `CLARA_TIMESTAMP` - Event metadata
+- `CLARA_NODE_ID`, `CLARA_PLATFORM` - Adapter info
+- `CLARA_USER_ID`, `CLARA_CHANNEL_ID`, `CLARA_REQUEST_ID` - Context
+- `CLARA_EVENT_DATA` - Full event data as JSON
+
+**Scheduler System:**
+Schedule tasks with one-shot, interval, or cron expressions. Configure in `scheduler.yaml`:
+
+```yaml
+tasks:
+  - name: cleanup-sessions
+    type: interval
+    interval: 3600  # Every hour
+    command: poetry run python -m scripts.cleanup_sessions
+
+  - name: daily-backup
+    type: cron
+    cron: "0 3 * * *"  # 3 AM daily
+    command: ./scripts/backup.sh
+    timeout: 1800
+```
+
+Task types: `one_shot` (run once), `interval` (every N seconds), `cron` (cron expression)
+
+**Python Decorators:**
+Register hooks and tasks programmatically:
+
+```python
+from gateway import hook, scheduled, EventType, TaskType, Event
+
+@hook(EventType.SESSION_START)
+async def on_session_start(event: Event):
+    print(f"Session started: {event.user_id}")
+
+@scheduled(type=TaskType.INTERVAL, interval=3600)
+async def hourly_cleanup():
+    # Cleanup logic
+    pass
+```
 
 ### Tool Calling LLM
 By default, tool calling uses the **same endpoint and model as your main chat LLM**. This means if you're using a custom endpoint (like clewdr), tool calls go through it too.
@@ -628,51 +769,6 @@ Admin operations require one of:
 **Dependencies:**
 - `mcp` - Official MCP Python SDK
 - `gitpython` - For cloning GitHub repos
-
-### Organic Response System (ORS) - Proactive Conversations
-Clara can initiate conversations without user prompting when there's genuine reason to reach out.
-
-**Philosophy:** Reach out when there's genuine reason - not on a schedule. Feel like a thoughtful friend who texts at the right moment, not because a timer went off.
-
-**Environment Variables:**
-- `ORS_ENABLED` or `PROACTIVE_ENABLED` - Enable ORS (default: false)
-- `ORS_BASE_INTERVAL_MINUTES` - Base check interval, adapts dynamically (default: 15)
-- `ORS_MIN_SPEAK_GAP_HOURS` - Minimum hours between proactive messages (default: 2)
-- `ORS_ACTIVE_DAYS` - Only check users active in last N days (default: 7)
-- `ORS_NOTE_DECAY_DAYS` - Days before note relevance decays to 0 (default: 7)
-- `ORS_IDLE_TIMEOUT_MINUTES` - Minutes before extracting conversation summary (default: 30)
-
-**State Machine:**
-```
-WAIT  ◄──► THINK ◄──► SPEAK
-  ▲                      │
-  └──────────────────────┘
-```
-
-- **WAIT** - No action needed. Stay quiet, but keep gathering context.
-- **THINK** - Something's brewing. Process and file an observation/note for later.
-- **SPEAK** - There's a clear reason to reach out now with purpose.
-
-**How it works:**
-1. Continuous loop with adaptive timing (not fixed polling)
-2. Gathers rich context: temporal, calendar, conversation, notes, patterns
-3. Situation assessment: What's going on with the user?
-4. Action decision: WAIT, THINK, or SPEAK based on assessment
-5. Adaptive timing: Next check in 5 min to 8 hours based on context
-6. Note system: Observations accumulate, connect, and decay over time
-
-**Context Sources:**
-- Temporal: Time of day, day of week, active hours, time since last interaction
-- Calendar: Upcoming events (if Google Calendar connected)
-- Conversation: Last interaction summary, energy level, open threads
-- Notes: Accumulated observations with relevance scoring
-- Patterns: Response rates, preferred times, explicit boundaries
-
-**Database Tables:**
-- `proactive_messages` - History of proactive messages sent
-- `proactive_assessments` - Situation assessments for continuity
-- `proactive_notes` - Internal observations with relevance decay
-- `user_interaction_patterns` - Learned patterns per user (enhanced)
 
 ## Key Patterns
 

@@ -8,9 +8,12 @@ Provides a central registry for all tools that Clara can use, with support for:
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
+
+logger = logging.getLogger("clara_core.tools")
 
 
 @dataclass
@@ -299,12 +302,12 @@ def register_docker_tools(registry: ToolRegistry) -> None:
         from sandbox.docker import DOCKER_TOOLS
         from sandbox.manager import get_sandbox_manager
     except ImportError:
-        print("[tools] Docker tools not available (sandbox.docker module not found)")
+        logger.debug("Docker tools not available (sandbox.docker module not found)")
         return
 
     manager = get_sandbox_manager()
     if manager is None:
-        print("[tools] Docker tools not available (sandbox manager not initialized)")
+        logger.debug("Docker tools not available (sandbox manager not initialized)")
         return
 
     # Register each Docker tool
@@ -337,7 +340,7 @@ def register_docker_tools(registry: ToolRegistry) -> None:
             requires_docker=True,
         )
 
-    print(f"[tools] Registered {len(DOCKER_TOOLS)} Docker tools")
+    logger.debug(f"Registered {len(DOCKER_TOOLS)} Docker tools")
 
 
 def register_local_file_tools(registry: ToolRegistry) -> None:
@@ -348,12 +351,12 @@ def register_local_file_tools(registry: ToolRegistry) -> None:
     try:
         from storage.local_files import LOCAL_FILE_TOOLS, get_file_manager
     except ImportError:
-        print("[tools] Local file tools not available")
+        logger.debug("Local file tools not available")
         return
 
     manager = get_file_manager()
     if manager is None:
-        print("[tools] Local file manager not initialized")
+        logger.debug("Local file manager not initialized")
         return
 
     for tool_def in LOCAL_FILE_TOOLS:
@@ -382,7 +385,7 @@ def register_local_file_tools(registry: ToolRegistry) -> None:
             requires_files=True,
         )
 
-    print(f"[tools] Registered {len(LOCAL_FILE_TOOLS)} local file tools")
+    logger.debug(f"Registered {len(LOCAL_FILE_TOOLS)} local file tools")
 
 
 def register_email_tools(registry: ToolRegistry) -> None:
@@ -390,7 +393,7 @@ def register_email_tools(registry: ToolRegistry) -> None:
     try:
         from email_monitor import EMAIL_TOOLS
     except ImportError:
-        print("[tools] Email tools not available")
+        logger.debug("Email tools not available")
         return
 
     for tool_def in EMAIL_TOOLS:
@@ -416,4 +419,4 @@ def register_email_tools(registry: ToolRegistry) -> None:
             requires_email=True,
         )
 
-    print(f"[tools] Registered {len(EMAIL_TOOLS)} email tools")
+    logger.debug(f"Registered {len(EMAIL_TOOLS)} email tools")

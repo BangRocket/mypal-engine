@@ -3,6 +3,10 @@
 Provides tools for managing MCP (Model Context Protocol) servers.
 These tools are always available as core abilities, independent of MCP server status.
 
+Supports two server types:
+- Local servers: Run as subprocesses (stdio transport), support hot reload
+- Remote servers: Connect via HTTP transport, use standard MCP config format
+
 Tools:
 - mcp_list: List all installed MCP servers and their status
 - mcp_status: Get detailed status of a specific server
@@ -13,6 +17,7 @@ Tools:
 - mcp_enable: Enable a server
 - mcp_disable: Disable a server
 - mcp_restart: Restart a server
+- mcp_hot_reload: Enable/disable hot reload for local servers
 - mcp_refresh: Reload all MCP servers (admin only)
 
 Platform: Discord (requires channel context for admin checks)
@@ -35,6 +40,10 @@ SYSTEM_PROMPT = """
 
 You can manage MCP (Model Context Protocol) plugin servers that provide additional tools.
 
+**Server Types:**
+- **Local servers**: Run as subprocesses, stored in `.mcp_servers/local/`
+- **Remote servers**: Connect via HTTP, stored in `.mcp_servers/remote/`
+
 **Tools:**
 - `mcp_list` - List all installed servers with their status
 - `mcp_status` - Get detailed status of a specific server
@@ -44,6 +53,7 @@ You can manage MCP (Model Context Protocol) plugin servers that provide addition
 - `mcp_uninstall` - Remove a server (requires admin)
 - `mcp_enable` / `mcp_disable` - Toggle servers
 - `mcp_restart` - Restart a running server
+- `mcp_hot_reload` - Enable/disable hot reload for local servers
 - `mcp_refresh` - Reload all servers from config (requires admin)
 
 **Installing from Smithery:**
@@ -57,6 +67,10 @@ Hosted servers run on Smithery's infrastructure and may require OAuth authentica
 - `mcp_oauth_complete` - Complete OAuth with authorization code
 - `mcp_oauth_status` - Check OAuth status of a server
 - `mcp_oauth_set_token` - Manually set an access token
+
+**Hot Reload (Local Servers):**
+Local servers can be configured to automatically restart when their source files change.
+- `mcp_hot_reload(server_name="name", enable=True)` - Enable watching for file changes
 
 **When to Use:**
 - User asks about available plugins/tools
@@ -128,22 +142,40 @@ async def mcp_list(args: dict[str, Any], ctx: ToolContext) -> str:
         if not statuses:
             return "No MCP servers installed. Use `mcp_install` to add servers."
 
+        # Separate local and remote servers
+        local_servers = [s for s in statuses if s.get("type") == "local"]
+        remote_servers = [s for s in statuses if s.get("type") == "remote"]
+
         lines = ["**Installed MCP Servers:**\n"]
 
-        for s in statuses:
+        def format_server(s: dict) -> str:
             status_emoji = {
                 "running": "\u2705",  # Green check
                 "stopped": "\u26ab",  # Black circle
                 "error": "\u274c",  # Red X
-            }.get(s.get("status", "stopped"), "\u2753")  # Question mark default
+                "pending_auth": "\U0001f511",  # Key emoji
+            }.get(s.get("status", "stopped"), "\u2753")
 
             enabled_text = "enabled" if s.get("enabled", False) else "disabled"
             tool_count = s.get("tool_count", 0)
+            hot_reload = " 🔄" if s.get("hot_reload") else ""
 
-            lines.append(
+            return (
                 f"{status_emoji} **{s['name']}** ({s.get('source_type', 'unknown')}) - "
-                f"{s.get('status', 'unknown')}, {enabled_text}, {tool_count} tools"
+                f"{s.get('status', 'unknown')}, {enabled_text}, {tool_count} tools{hot_reload}"
             )
+
+        if local_servers:
+            lines.append("**Local Servers:**")
+            for s in local_servers:
+                lines.append(format_server(s))
+
+        if remote_servers:
+            if local_servers:
+                lines.append("")
+            lines.append("**Remote Servers:**")
+            for s in remote_servers:
+                lines.append(format_server(s))
 
         return "\n".join(lines)
 
@@ -163,10 +195,12 @@ async def mcp_status(args: dict[str, Any], ctx: ToolContext) -> str:
         statuses = manager.get_all_server_status()
         total = len(statuses)
         enabled = sum(1 for s in statuses if s.get("enabled", False))
+        local_count = sum(1 for s in statuses if s.get("type") == "local")
+        remote_count = sum(1 for s in statuses if s.get("type") == "remote")
 
         return (
             f"**MCP System Status:**\n"
-            f"- Total servers: {total}\n"
+            f"- Total servers: {total} ({local_count} local, {remote_count} remote)\n"
             f"- Enabled: {enabled}\n"
             f"- Connected: {connected}"
         )
@@ -181,10 +215,21 @@ async def mcp_status(args: dict[str, Any], ctx: ToolContext) -> str:
         lines = [f"**Server: {status['name']}**\n"]
 
         # Basic info
+        server_type = status.get("type", "unknown")
+        lines.append(f"- Type: {server_type}")
         lines.append(f"- Status: {status.get('status', 'unknown')}")
         lines.append(f"- Connected: {'Yes' if status.get('connected', False) else 'No'}")
-        lines.append(f"- Transport: {status.get('transport', 'unknown')}")
+        lines.append(f"- Enabled: {'Yes' if status.get('enabled', False) else 'No'}")
         lines.append(f"- Tools: {status.get('tool_count', 0)}")
+
+        # Type-specific info
+        if server_type == "local":
+            lines.append(f"- Command: {status.get('command', 'N/A')}")
+            lines.append(f"- Hot Reload: {'Yes' if status.get('hot_reload') else 'No'}")
+        elif server_type == "remote":
+            lines.append(f"- Server URL: {status.get('server_url', 'N/A')}")
+            if status.get("oauth_required"):
+                lines.append("- OAuth: Required")
 
         # Error info if present
         if status.get("last_error"):
@@ -215,11 +260,19 @@ async def mcp_tools(args: dict[str, Any], ctx: ToolContext) -> str:
 
         if server_name:
             # Tools from specific server
-            client = manager.get_client(server_name)
-            if not client:
+            status = manager.get_server_status(server_name)
+            if not status:
+                return f"Server '{server_name}' not found."
+
+            if not status.get("connected", False):
                 return f"Server '{server_name}' is not connected. Use `mcp_enable` to start it."
 
-            tools = client.get_tools()
+            # Get tools from the server
+            tools = []
+            for srv_name, tool in manager.get_all_tools():
+                if srv_name == server_name:
+                    tools.append(tool)
+
             if not tools:
                 return f"No tools available from '{server_name}'."
 
@@ -279,13 +332,28 @@ async def mcp_install(args: dict[str, Any], ctx: ToolContext) -> str:
         )
 
         if result.success:
-            # Auto-start the server
+            # Determine server name from result
+            server_name = name or "unknown"
+            if result.local_config:
+                server_name = result.local_config.name
+            elif result.remote_config:
+                server_name = result.remote_config.name
+
+            # Auto-start the server (unless pending auth)
             manager = _get_manager()
-            server_name = result.server.name if result.server else name or "unknown"
+            server_type = result.server_type
+
+            if result.remote_config and result.remote_config.status == "pending_auth":
+                return (
+                    f"\u2705 Successfully installed **{server_name}** ({server_type})!\n"
+                    f"- Source: {source}\n"
+                    f"- OAuth required. Use `mcp_oauth_start` to authorize."
+                )
+
             await manager.start_server(server_name)
 
             return (
-                f"\u2705 Successfully installed **{server_name}**!\n"
+                f"\u2705 Successfully installed **{server_name}** ({server_type})!\n"
                 f"- Source: {source}\n"
                 f"- Tools discovered: {result.tools_discovered}\n"
                 f"- Server is now running."
@@ -498,19 +566,19 @@ async def mcp_oauth_start(args: dict[str, Any], ctx: ToolContext) -> str:
             redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
 
     try:
-        from clara_core.mcp.models import load_server_config
+        from clara_core.mcp.models import load_remote_server_config
         from clara_core.mcp.oauth import SmitheryOAuthClient
 
         # Check if server exists and is smithery-hosted
-        config = load_server_config(server_name)
+        config = load_remote_server_config(server_name)
         if not config:
-            return f"Server '{server_name}' not found. Install it first with mcp_install."
+            return f"Server '{server_name}' not found or is not a remote server. Install it first with mcp_install."
 
         if config.source_type != "smithery-hosted":
             return f"Server '{server_name}' is not a hosted Smithery server. OAuth is only needed for smithery-hosted servers."
 
         # Create OAuth client
-        oauth_client = SmitheryOAuthClient(server_name, config.endpoint_url)
+        oauth_client = SmitheryOAuthClient(server_name, config.server_url)
 
         # Start the OAuth flow
         auth_url = await oauth_client.start_oauth_flow(redirect_uri)
@@ -553,13 +621,13 @@ async def mcp_oauth_complete(args: dict[str, Any], ctx: ToolContext) -> str:
         return "Error: No authorization code specified."
 
     try:
-        from clara_core.mcp.models import load_server_config, save_server_config
+        from clara_core.mcp.models import load_remote_server_config, save_remote_server_config
         from clara_core.mcp.oauth import SmitheryOAuthClient
 
         # Check if server exists
-        config = load_server_config(server_name)
+        config = load_remote_server_config(server_name)
         if not config:
-            return f"Server '{server_name}' not found."
+            return f"Server '{server_name}' not found or is not a remote server."
 
         # Default redirect URI
         if not redirect_uri:
@@ -572,7 +640,7 @@ async def mcp_oauth_complete(args: dict[str, Any], ctx: ToolContext) -> str:
                 redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
 
         # Exchange code for tokens
-        oauth_client = SmitheryOAuthClient(server_name, config.endpoint_url)
+        oauth_client = SmitheryOAuthClient(server_name, config.server_url)
         success = await oauth_client.exchange_code(code, redirect_uri)
 
         if not success:
@@ -581,7 +649,7 @@ async def mcp_oauth_complete(args: dict[str, Any], ctx: ToolContext) -> str:
         # Update server status and try to connect
         config.status = "stopped"  # Clear pending_auth status
         config.last_error = None
-        save_server_config(config)
+        save_remote_server_config(config)
 
         # Try to start the server
         manager = _get_manager()
@@ -607,13 +675,13 @@ async def mcp_oauth_status(args: dict[str, Any], ctx: ToolContext) -> str:
         return "Error: No server name specified."
 
     try:
-        from clara_core.mcp.models import load_server_config
+        from clara_core.mcp.models import load_remote_server_config
         from clara_core.mcp.oauth import load_oauth_state
 
         # Check server config
-        config = load_server_config(server_name)
+        config = load_remote_server_config(server_name)
         if not config:
-            return f"Server '{server_name}' not found."
+            return f"Server '{server_name}' not found or is not a remote server."
 
         if config.source_type != "smithery-hosted":
             return f"Server '{server_name}' is not a hosted Smithery server."
@@ -623,7 +691,7 @@ async def mcp_oauth_status(args: dict[str, Any], ctx: ToolContext) -> str:
 
         lines = [f"**OAuth Status for {server_name}:**\n"]
         lines.append(f"- Server Type: {config.source_type}")
-        lines.append(f"- Endpoint: {config.endpoint_url}")
+        lines.append(f"- Server URL: {config.server_url}")
         lines.append(f"- Server Status: {config.status}")
 
         if oauth_state and oauth_state.tokens:
@@ -663,22 +731,22 @@ async def mcp_oauth_set_token(args: dict[str, Any], ctx: ToolContext) -> str:
         return "Error: No access token specified."
 
     try:
-        from clara_core.mcp.models import load_server_config, save_server_config
+        from clara_core.mcp.models import load_remote_server_config, save_remote_server_config
         from clara_core.mcp.oauth import SmitheryOAuthClient
 
         # Check server config
-        config = load_server_config(server_name)
+        config = load_remote_server_config(server_name)
         if not config:
-            return f"Server '{server_name}' not found."
+            return f"Server '{server_name}' not found or is not a remote server."
 
         # Set tokens manually
-        oauth_client = SmitheryOAuthClient(server_name, config.endpoint_url)
+        oauth_client = SmitheryOAuthClient(server_name, config.server_url)
         oauth_client.set_tokens_manually(access_token, refresh_token)
 
         # Update server status
         config.status = "stopped"
         config.last_error = None
-        save_server_config(config)
+        save_remote_server_config(config)
 
         # Try to connect
         manager = _get_manager()
@@ -694,6 +762,47 @@ async def mcp_oauth_set_token(args: dict[str, Any], ctx: ToolContext) -> str:
     except Exception as e:
         logger.error(f"[mcp_management] OAuth set token error for {server_name}: {e}")
         return f"Error setting token: {e}"
+
+
+async def mcp_hot_reload(args: dict[str, Any], ctx: ToolContext) -> str:
+    """Enable or disable hot reload for a local MCP server."""
+    # Check admin permission
+    is_admin, error = _check_admin_permission(ctx)
+    if not is_admin:
+        return f"Permission denied: {error}"
+
+    server_name = args.get("server_name", "").strip()
+    enable = args.get("enable", True)
+
+    if not server_name:
+        return "Error: No server name specified."
+
+    try:
+        from clara_core.mcp.models import load_local_server_config
+
+        # Check if server exists and is local
+        config = load_local_server_config(server_name)
+        if not config:
+            return f"Server '{server_name}' not found or is not a local server. Hot reload only works with local servers."
+
+        manager = _get_manager()
+
+        if enable:
+            success = await manager.hot_reload_server(server_name)
+            if success:
+                return f"🔄 Hot reload enabled for **{server_name}**. Server will restart when source files change."
+            else:
+                return f"❌ Failed to enable hot reload for '{server_name}'."
+        else:
+            success = await manager.disable_hot_reload(server_name)
+            if success:
+                return f"✅ Hot reload disabled for **{server_name}**."
+            else:
+                return f"❌ Failed to disable hot reload for '{server_name}'."
+
+    except Exception as e:
+        logger.error(f"[mcp_management] Hot reload error for {server_name}: {e}")
+        return f"Error configuring hot reload: {e}"
 
 
 # --- Tool Definitions ---
@@ -890,6 +999,31 @@ TOOLS = [
             "required": [],
         },
         handler=mcp_refresh,
+        platforms=["discord"],
+        requires=["admin"],
+    ),
+    ToolDef(
+        name="mcp_hot_reload",
+        description=(
+            "Enable or disable hot reload for a local MCP server. When enabled, the server "
+            "will automatically restart when source files change. Useful for development. "
+            "Only works with local servers (not remote). Requires admin permission."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "server_name": {
+                    "type": "string",
+                    "description": "Name of the local server",
+                },
+                "enable": {
+                    "type": "boolean",
+                    "description": "True to enable hot reload, False to disable (default: True)",
+                },
+            },
+            "required": ["server_name"],
+        },
+        handler=mcp_hot_reload,
         platforms=["discord"],
         requires=["admin"],
     ),

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "mypalclara"
-version = "2026.05.1"
+version = "2026.05.17"
 description = "MyPalClara - AI assistant with session management and memory"
 authors = ["Joshua Heidorn <heidornj@icloud.com>"]
 license = "PolyForm-Noncommercial-1.0.0"
@@ -23,6 +23,8 @@ pydantic = "^2.0"  # Config validation
 qdrant-client = "^1.7.0"  # Vector store for local dev
 neo4j = "^5.0"  # Graph database driver
 kuzu = "^0.9.0"  # Embedded graph database (optional)
+langchain-neo4j = "^0.4.0"  # Graph memory operations for Neo4j
+rank-bm25 = "^0.2.0"  # BM25 ranking for Kuzu graph search
 posthog = "^3.0.0"  # Telemetry
 pytz = "^2024.1"  # Timezone handling
 
@@ -65,9 +67,18 @@ imap-tools = "^1.11.0"
 # MCP (Model Context Protocol) plugin system
 mcp = "^1.0.0"  # Official MCP Python SDK
 gitpython = "^3.1.0"  # For cloning GitHub repos
+alembic = "^1.18.1"
+
+# CLI interface
+prompt_toolkit = "^3.0.52"
+rich = "^14.0.0"
+
+# Gateway
+websockets = "^15.0"  # WebSocket server for gateway architecture
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"
+pytest-asyncio = "^0.24.0"
 ruff = "^0.8"
 
 [build-system]
@@ -97,3 +108,8 @@ ignore = [
 "__init__.py" = ["F401"]
 "tools/*.py" = ["E501"]
 "sandbox/*.py" = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]

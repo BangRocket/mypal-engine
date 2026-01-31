@@ -18,7 +18,7 @@ from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Callable
 
-from config.logging import get_discord_handler, get_logger
+from config.logging import get_logger
 
 if TYPE_CHECKING:
     pass
@@ -204,6 +204,7 @@ async def extract_and_store_topics(
     conversation_sentiment: float,
     llm_call: Callable,
     agent_id: str = "clara",
+    on_event: Callable[[str, dict], None] | None = None,
 ) -> list[dict]:
     """
     Extract topics from a conversation and store them to mem0.
@@ -219,6 +220,8 @@ async def extract_and_store_topics(
         conversation_sentiment: Overall sentiment score (-1 to +1)
         llm_call: Async function for LLM calls
         agent_id: Clara's agent ID for mem0
+        on_event: Optional callback for topic events.
+            Called with ("topics_extracted", data_dict).
 
     Returns:
         List of extracted topics
@@ -265,52 +268,17 @@ async def extract_and_store_topics(
         if success:
             stored_topics.append(topic)
 
-    # Send Discord embed summarizing extracted topics
-    if stored_topics:
-        _send_topics_embed(user_id, stored_topics, channel_name, is_dm)
+    # Notify via callback if registered
+    if stored_topics and on_event:
+        on_event("topics_extracted", {
+            "user_id": user_id,
+            "topics": stored_topics,
+            "channel_name": channel_name,
+            "is_dm": is_dm,
+        })
 
     return topics
 
-
-def _send_topics_embed(
-    user_id: str,
-    topics: list[dict],
-    channel_name: str,
-    is_dm: bool,
-) -> None:
-    """Send a Discord embed when topics are extracted and stored."""
-    discord_handler = get_discord_handler()
-    if not discord_handler or not topics:
-        return
-
-    # Weight emoji mapping
-    weight_emoji = {
-        "light": "🔵",
-        "moderate": "🟡",
-        "heavy": "🔴",
-    }
-
-    # Format topics
-    topic_lines = []
-    for t in topics[:3]:
-        emoji = weight_emoji.get(t.get("emotional_weight", "moderate"), "🟡")
-        name = t.get("topic", "")
-        topic_type = t.get("topic_type", "theme")
-        type_badge = "👤" if topic_type == "entity" else "💭"
-        topic_lines.append(f"{emoji} {type_badge} **{name}**")
-
-    channel_hint = "DM" if is_dm else (channel_name if channel_name.startswith("#") else f"#{channel_name}")
-
-    # Extract short user ID
-    short_id = user_id.split("-")[-1][:8] if "-" in user_id else user_id[:8]
-
-    discord_handler.queue_embed(
-        title=f"Topics Extracted ({len(topics)})",
-        description="\n".join(topic_lines),
-        fields=[{"name": "Channel", "value": channel_hint, "inline": True}],
-        footer=f"user: {short_id}",
-        tag="topic",
-    )
 
 
 def fetch_topic_mentions(

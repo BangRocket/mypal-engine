@@ -1,0 +1,64 @@
+# Clara Gateway Hooks Configuration
+#
+# Hooks are automations triggered by gateway events.
+# Copy this file to hooks.yaml and customize.
+#
+# Event types:
+#   gateway:startup      - Gateway has started
+#   gateway:shutdown     - Gateway is shutting down
+#   adapter:connected    - An adapter connected
+#   adapter:disconnected - An adapter disconnected
+#   session:start        - User session started
+#   session:end          - User session ended
+#   session:timeout      - Session timed out
+#   message:received     - Message received from adapter
+#   message:sent         - Response sent to adapter
+#   message:cancelled    - Message processing cancelled
+#   tool:start           - Tool execution started
+#   tool:end             - Tool execution completed
+#   tool:error           - Tool execution failed
+#   scheduler:task_run   - Scheduled task ran
+#   scheduler:task_error - Scheduled task failed
+#
+# Environment variables available in commands:
+#   CLARA_EVENT_TYPE    - The event type
+#   CLARA_TIMESTAMP     - Event timestamp (ISO format)
+#   CLARA_NODE_ID       - Adapter node ID (if applicable)
+#   CLARA_PLATFORM      - Platform name (if applicable)
+#   CLARA_USER_ID       - User ID (if applicable)
+#   CLARA_CHANNEL_ID    - Channel ID (if applicable)
+#   CLARA_REQUEST_ID    - Request ID (if applicable)
+#   CLARA_EVENT_DATA    - Full event data as JSON
+#
+# Example hooks:
+
+hooks:
+  # Log when gateway starts
+  - name: log-startup
+    event: gateway:startup
+    command: echo "Gateway started at ${CLARA_TIMESTAMP}"
+    description: Log gateway startup
+
+  # Notify on shutdown (e.g., for monitoring)
+  # - name: notify-shutdown
+  #   event: gateway:shutdown
+  #   command: curl -X POST https://webhook.example.com/notify -d '{"event": "shutdown"}'
+  #   timeout: 10
+
+  # Log session activity
+  # - name: log-sessions
+  #   event: session:start
+  #   command: echo "Session started for user ${CLARA_USER_ID}"
+
+  # Alert on tool errors
+  # - name: alert-tool-errors
+  #   event: tool:error
+  #   command: |
+  #     echo "Tool error: ${CLARA_EVENT_DATA}" >> /var/log/clara/tool_errors.log
+
+  # Run custom script on adapter connect
+  # - name: adapter-health-check
+  #   event: adapter:connected
+  #   command: ./scripts/check_adapter.sh ${CLARA_NODE_ID}
+  #   working_dir: /opt/clara
+  #   timeout: 30

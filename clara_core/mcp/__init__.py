@@ -3,9 +3,16 @@
 This package provides functionality for Clara to discover, install, and use
 tools from external MCP servers.
 
-Storage modes:
-- JSON (default): Configs stored in .mcp_servers/{name}/config.json
-- Database: Configs stored in mcp_servers table (set MCP_USE_DATABASE=true)
+Architecture:
+- Local servers: Run as subprocesses (stdio transport)
+  - Stored in .mcp_servers/local/{name}/config.json
+  - Supports hot reload for development
+  - Includes built-in servers (rustterm, clara-mcp)
+
+- Remote servers: Connect via HTTP transport
+  - Stored in .mcp_servers/remote/{name}/config.json
+  - Uses standard MCP config format
+  - Supports OAuth authentication (Smithery-hosted)
 
 Usage:
     from clara_core.mcp import (
@@ -37,35 +44,113 @@ from __future__ import annotations
 import logging
 import os
 
-from .client import MCPClient, MCPTool
-from .installer import InstallResult, MCPInstaller
+from .installer import InstallResult, MCPInstaller, SmitheryClient, SmitherySearchResult
+from .local_server import LocalServerManager, LocalServerProcess, MCPTool
 from .manager import MCPServerManager
-from .models import MCPServer, MCPServerConfig, load_server_config, save_server_config
+from .models import (
+    LocalServerConfig,
+    MCPServer,
+    MCPServerConfig,
+    MCP_SERVERS_DIR,
+    RemoteServerConfig,
+    ServerConfig,
+    ServerStatus,
+    ServerType,
+    delete_local_server_config,
+    delete_remote_server_config,
+    delete_server_config,
+    find_server_config,
+    get_enabled_local_servers,
+    get_enabled_remote_servers,
+    get_enabled_servers,
+    get_local_config_path,
+    get_local_server_dir,
+    get_local_servers_dir,
+    get_remote_config_path,
+    get_remote_server_dir,
+    get_remote_servers_dir,
+    list_all_server_configs,
+    list_local_server_configs,
+    list_remote_server_configs,
+    list_server_configs,
+    load_local_server_config,
+    load_remote_server_config,
+    load_server_config,
+    save_local_server_config,
+    save_remote_server_config,
+    save_server_config,
+)
+from .remote_server import (
+    RemoteServerConnection,
+    RemoteServerManager,
+    add_remote_server,
+    add_remote_server_from_standard_config,
+)
 
 # Keep deprecated imports for backwards compatibility
 from .registry_adapter import MCPRegistryAdapter, get_mcp_adapter, init_mcp_adapter
 
 logger = logging.getLogger(__name__)
 
-# Toggle for database vs JSON storage (JSON is default)
-USE_DATABASE = os.getenv("MCP_USE_DATABASE", "").lower() in ("true", "1", "yes")
-
 __all__ = [
     # Core classes
-    "MCPClient",
-    "MCPTool",
     "MCPServerManager",
     "MCPInstaller",
-    "MCPServer",
-    "MCPServerConfig",
     "InstallResult",
+    "MCPTool",
+    # Local server management
+    "LocalServerManager",
+    "LocalServerProcess",
+    "LocalServerConfig",
+    # Remote server management
+    "RemoteServerManager",
+    "RemoteServerConnection",
+    "RemoteServerConfig",
+    "add_remote_server",
+    "add_remote_server_from_standard_config",
+    # Smithery
+    "SmitheryClient",
+    "SmitherySearchResult",
+    # Models
+    "MCPServer",  # Legacy alias
+    "MCPServerConfig",  # Legacy alias
+    "ServerConfig",
+    "ServerType",
+    "ServerStatus",
+    "MCP_SERVERS_DIR",
     # Initialization
     "init_mcp",
+    "shutdown_mcp",
+    "is_initialized",
     "get_mcp_manager",
-    # Storage functions
+    # Local server config functions
+    "load_local_server_config",
+    "save_local_server_config",
+    "delete_local_server_config",
+    "list_local_server_configs",
+    "get_local_server_dir",
+    "get_local_servers_dir",
+    "get_local_config_path",
+    "get_enabled_local_servers",
+    # Remote server config functions
+    "load_remote_server_config",
+    "save_remote_server_config",
+    "delete_remote_server_config",
+    "list_remote_server_configs",
+    "get_remote_server_dir",
+    "get_remote_servers_dir",
+    "get_remote_config_path",
+    "get_enabled_remote_servers",
+    # Combined config functions
+    "list_all_server_configs",
+    "get_enabled_servers",
+    "find_server_config",
+    # Legacy config functions (deprecated)
     "load_server_config",
     "save_server_config",
-    # Deprecated (kept for backwards compatibility)
+    "delete_server_config",
+    "list_server_configs",
+    # Deprecated registry adapter (kept for backwards compatibility)
     "MCPRegistryAdapter",
     "get_mcp_adapter",
     "init_mcp_adapter",
@@ -124,7 +209,7 @@ async def init_mcp() -> MCPServerManager:
     total = len(init_results)
 
     # Count total tools discovered
-    tool_count = sum(len(client.get_tools()) for client in _manager._clients.values() if client.is_connected)
+    tool_count = len(_manager.get_all_tools())
 
     logger.info(f"[MCP] Initialized {connected}/{total} servers with {tool_count} tools")
 
@@ -153,87 +238,28 @@ def _ensure_clara_tools_server() -> None:
         logger.warning("[MCP] clara-mcp-server binary not found, skipping native tools")
         return
 
-    if USE_DATABASE:
-        _ensure_clara_tools_server_db(binary_path)
-    else:
-        _ensure_clara_tools_server_json(binary_path)
-
-
-def _ensure_clara_tools_server_json(binary_path: str) -> None:
-    """Register clara-tools using JSON config."""
-    existing = load_server_config("clara-tools")
+    existing = load_local_server_config("clara-tools")
 
     if existing:
         # Update binary path if changed
         if existing.command != binary_path:
             logger.info(f"[MCP] Updating clara-tools binary path: {binary_path}")
             existing.command = binary_path
-            save_server_config(existing)
+            save_local_server_config(existing)
         return
 
     # Register new server
     logger.info(f"[MCP] Registering clara-tools native MCP server: {binary_path}")
-    server = MCPServerConfig(
+    server = LocalServerConfig(
         name="clara-tools",
+        command=binary_path,
         source_type="local",
         display_name="Clara Native Tools",
         source_url=binary_path,
-        transport="stdio",
-        command=binary_path,
         enabled=True,
         status="stopped",
     )
-    save_server_config(server)
-
-
-def _ensure_clara_tools_server_db(binary_path: str) -> None:
-    """Register clara-tools using database (legacy mode)."""
-    try:
-        from db import SessionLocal
-
-        with SessionLocal() as session:
-            # Check if exists
-            result = session.execute(
-                "SELECT command FROM mcp_servers WHERE name = :name",
-                {"name": "clara-tools"},
-            ).first()
-
-            if result:
-                # Update if path changed
-                if result[0] != binary_path:
-                    logger.info(f"[MCP] Updating clara-tools binary path: {binary_path}")
-                    session.execute(
-                        "UPDATE mcp_servers SET command = :cmd WHERE name = :name",
-                        {"cmd": binary_path, "name": "clara-tools"},
-                    )
-                    session.commit()
-                return
-
-            # Insert new
-            logger.info(f"[MCP] Registering clara-tools native MCP server: {binary_path}")
-            session.execute(
-                """
-                INSERT INTO mcp_servers (name, display_name, source_type, source_url,
-                    transport, command, enabled, status)
-                VALUES (:name, :display_name, :source_type, :source_url,
-                    :transport, :command, :enabled, :status)
-                """,
-                {
-                    "name": "clara-tools",
-                    "display_name": "Clara Native Tools",
-                    "source_type": "local",
-                    "source_url": binary_path,
-                    "transport": "stdio",
-                    "command": binary_path,
-                    "enabled": True,
-                    "status": "stopped",
-                },
-            )
-            session.commit()
-
-    except Exception as e:
-        logger.warning(f"[MCP] Database registration failed, using JSON fallback: {e}")
-        _ensure_clara_tools_server_json(binary_path)
+    save_local_server_config(server)
 
 
 async def shutdown_mcp() -> None:
