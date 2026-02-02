@@ -17,6 +17,9 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from config.logging import get_logger
 
+# Import personality at module level to ensure it loads early
+from config.bot import PERSONALITY, BOT_NAME
+
 # Module loggers
 logger = get_logger("mem0")
 thread_logger = get_logger("thread")
@@ -905,8 +908,6 @@ class MemoryManager:
         Returns:
             List of messages ready for LLM
         """
-        from config.bot import PERSONALITY
-
         system_base = PERSONALITY
 
         # Build context sections
