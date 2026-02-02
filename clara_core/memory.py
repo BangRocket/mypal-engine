@@ -731,6 +731,35 @@ class MemoryManager:
         except Exception as e:
             logger.error(f"Error adding memories: {e}", exc_info=True)
 
+    def add_to_memory(
+        self,
+        user_id: str,
+        user_message: str,
+        assistant_reply: str,
+        is_dm: bool = False,
+    ) -> None:
+        """Simplified method to add a conversation exchange to memory.
+
+        This is a convenience wrapper around add_to_mem0 for use by the
+        gateway processor where we don't have access to recent messages
+        or project context.
+
+        Args:
+            user_id: The user ID for memory storage
+            user_message: The user's message
+            assistant_reply: Clara's response
+            is_dm: Whether this is a DM conversation
+        """
+        self.add_to_mem0(
+            user_id=user_id,
+            project_id="default",
+            recent_msgs=[],
+            user_message=user_message,
+            assistant_reply=assistant_reply,
+            participants=None,
+            is_dm=is_dm,
+        )
+
     def _send_memory_added_embed(
         self,
         user_id: str,
