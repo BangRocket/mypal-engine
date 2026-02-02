@@ -347,14 +347,22 @@ poetry run python -m gateway start --adapter teams
 - Adaptive Cards for rich responses
 - Model tier selection (`!high`, `!mid`, `!low`)
 
-### Azure Permissions
+### Permissions (RSC Recommended)
 
-For full functionality, add these Graph API permissions:
-- `Chat.Read.All` - Conversation history
-- `ChannelMessage.Read.All` - Channel messages
-- `Files.ReadWrite.All` - File uploads
+Use Resource-Specific Consent for scoped access (no tenant-wide admin consent):
 
-See [[Teams-Adapter|wiki/Teams-Adapter]] for detailed setup guide.
+```json
+"authorization": {
+  "permissions": {
+    "resourceSpecific": [
+      {"name": "ChatMessage.Read.Chat", "type": "Application"},
+      {"name": "ChannelMessage.Read.Group", "type": "Application"}
+    ]
+  }
+}
+```
+
+See [Teams-Adapter](wiki/Teams-Adapter.md) for full permission options.
 
 ## Google Workspace Integration
 
