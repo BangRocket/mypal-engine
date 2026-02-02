@@ -1174,3 +1174,518 @@ class MemoryManager:
             lines.append(f"- {source} → {readable_rel} → {destination}")
 
         return "\n".join(lines) if lines else ""
+
+    # ---------- FSRS-6 Memory Dynamics ----------
+
+    def get_memory_dynamics(
+        self,
+        memory_id: str,
+        user_id: str,
+    ) -> "MemoryDynamics | None":
+        """Get FSRS dynamics for a memory.
+
+        Args:
+            memory_id: The mem0 memory ID
+            user_id: User who owns the memory
+
+        Returns:
+            MemoryDynamics object or None if not found
+        """
+        from db import SessionLocal
+        from db.models import MemoryDynamics
+
+        db = SessionLocal()
+        try:
+            return db.query(MemoryDynamics).filter_by(
+                memory_id=memory_id,
+                user_id=user_id,
+            ).first()
+        finally:
+            db.close()
+
+    def ensure_memory_dynamics(
+        self,
+        memory_id: str,
+        user_id: str,
+        is_key: bool = False,
+    ) -> "MemoryDynamics":
+        """Ensure FSRS dynamics exist for a memory, creating if needed.
+
+        Args:
+            memory_id: The mem0 memory ID
+            user_id: User who owns the memory
+            is_key: Whether this is a key memory
+
+        Returns:
+            MemoryDynamics object (existing or newly created)
+        """
+        from db import SessionLocal
+        from db.models import MemoryDynamics
+
+        db = SessionLocal()
+        try:
+            dynamics = db.query(MemoryDynamics).filter_by(
+                memory_id=memory_id,
+                user_id=user_id,
+            ).first()
+
+            if not dynamics:
+                dynamics = MemoryDynamics(
+                    memory_id=memory_id,
+                    user_id=user_id,
+                    is_key=is_key,
+                )
+                db.add(dynamics)
+                db.commit()
+                db.refresh(dynamics)
+
+            return dynamics
+        finally:
+            db.close()
+
+    def promote_memory(
+        self,
+        memory_id: str,
+        user_id: str,
+        grade: int = 3,  # Grade.GOOD
+        signal_type: str = "used_in_response",
+    ) -> None:
+        """Mark memory as successfully recalled, updating FSRS state.
+
+        This should be called when a memory is used in a response
+        to strengthen it according to the spaced repetition algorithm.
+
+        Args:
+            memory_id: The mem0 memory ID
+            user_id: User who owns the memory
+            grade: FSRS grade (1=Again, 2=Hard, 3=Good, 4=Easy)
+            signal_type: What triggered this promotion
+        """
+        from datetime import UTC, datetime
+
+        from clara_core.fsrs import (
+            FsrsParams,
+            Grade,
+            MemoryState,
+            review,
+        )
+        from db import SessionLocal
+        from db.models import MemoryAccessLog, MemoryDynamics
+
+        db = SessionLocal()
+        try:
+            # Get or create dynamics
+            dynamics = db.query(MemoryDynamics).filter_by(
+                memory_id=memory_id,
+                user_id=user_id,
+            ).first()
+
+            if not dynamics:
+                dynamics = MemoryDynamics(
+                    memory_id=memory_id,
+                    user_id=user_id,
+                )
+                db.add(dynamics)
+                db.commit()
+                db.refresh(dynamics)
+
+            # Build current state
+            current_state = MemoryState(
+                stability=dynamics.stability,
+                difficulty=dynamics.difficulty,
+                retrieval_strength=dynamics.retrieval_strength,
+                storage_strength=dynamics.storage_strength,
+                last_review=dynamics.last_accessed_at,
+                review_count=dynamics.access_count,
+            )
+
+            # Calculate current retrievability before review
+            now = datetime.now(UTC).replace(tzinfo=None)
+            from clara_core.fsrs import retrievability
+
+            if dynamics.last_accessed_at:
+                days_elapsed = (now - dynamics.last_accessed_at).total_seconds() / 86400.0
+            else:
+                days_elapsed = 0.0
+
+            current_r = retrievability(days_elapsed, dynamics.stability)
+
+            # Apply review
+            grade_enum = Grade(grade) if isinstance(grade, int) else grade
+            result = review(current_state, grade_enum, now, FsrsParams())
+
+            # Update dynamics
+            dynamics.stability = result.new_state.stability
+            dynamics.difficulty = result.new_state.difficulty
+            dynamics.retrieval_strength = result.new_state.retrieval_strength
+            dynamics.storage_strength = result.new_state.storage_strength
+            dynamics.last_accessed_at = now
+            dynamics.access_count += 1
+
+            # Log the access
+            access_log = MemoryAccessLog(
+                memory_id=memory_id,
+                user_id=user_id,
+                grade=grade,
+                signal_type=signal_type,
+                retrievability_at_access=current_r,
+            )
+            db.add(access_log)
+            db.commit()
+
+            memory_logger.debug(
+                f"Promoted memory {memory_id}: S={dynamics.stability:.2f}, "
+                f"D={dynamics.difficulty:.2f}, R={current_r:.2f}"
+            )
+
+        except Exception as e:
+            memory_logger.error(f"Error promoting memory {memory_id}: {e}")
+            db.rollback()
+        finally:
+            db.close()
+
+    def demote_memory(
+        self,
+        memory_id: str,
+        user_id: str,
+        reason: str = "user_correction",
+    ) -> None:
+        """Mark memory as incorrect/outdated, decreasing stability.
+
+        This should be called when a memory is found to be wrong
+        or when the user corrects information.
+
+        Args:
+            memory_id: The mem0 memory ID
+            user_id: User who owns the memory
+            reason: Why the memory is being demoted
+        """
+        from config.mem0 import MEM0
+
+        # Promote with grade=AGAIN (1) to decrease stability
+        self.promote_memory(
+            memory_id=memory_id,
+            user_id=user_id,
+            grade=1,  # Grade.AGAIN
+            signal_type=reason,
+        )
+
+        # Also send negative feedback to mem0
+        if MEM0 is not None:
+            try:
+                MEM0.feedback(memory_id, feedback="NEGATIVE")
+            except Exception as e:
+                memory_logger.debug(f"Could not send mem0 feedback: {e}")
+
+    def calculate_memory_score(
+        self,
+        memory_id: str,
+        user_id: str,
+        semantic_score: float,
+    ) -> float:
+        """Calculate composite score for memory ranking.
+
+        Combines semantic similarity with FSRS retrievability for
+        more intelligent memory retrieval.
+
+        Args:
+            memory_id: The mem0 memory ID
+            user_id: User who owns the memory
+            semantic_score: Semantic similarity score from mem0
+
+        Returns:
+            Composite score for ranking
+        """
+        from datetime import UTC, datetime
+
+        from clara_core.fsrs import calculate_memory_score, retrievability
+        from db import SessionLocal
+        from db.models import MemoryDynamics
+
+        db = SessionLocal()
+        try:
+            dynamics = db.query(MemoryDynamics).filter_by(
+                memory_id=memory_id,
+                user_id=user_id,
+            ).first()
+
+            if not dynamics:
+                # No FSRS data, just use semantic score
+                return semantic_score
+
+            # Calculate current retrievability
+            now = datetime.now(UTC).replace(tzinfo=None)
+            if dynamics.last_accessed_at:
+                days_elapsed = (now - dynamics.last_accessed_at).total_seconds() / 86400.0
+            else:
+                days_elapsed = 0.0
+
+            current_r = retrievability(days_elapsed, dynamics.stability)
+
+            # Combine semantic and FSRS scores
+            # Semantic similarity is primary (0.6), FSRS modulates (0.4)
+            importance = dynamics.importance_weight if dynamics.importance_weight else 1.0
+            fsrs_score = calculate_memory_score(
+                current_r,
+                dynamics.storage_strength,
+                importance,
+            )
+
+            return 0.6 * semantic_score + 0.4 * fsrs_score
+
+        finally:
+            db.close()
+
+    # ---------- Prediction Error Gating ----------
+
+    def smart_ingest(
+        self,
+        content: str,
+        user_id: str,
+        metadata: dict | None = None,
+    ) -> tuple[str, str | None]:
+        """Intelligently decide how to handle new information.
+
+        Uses prediction error gating to determine whether to:
+        - SKIP: Information is already known (PE ≈ 0)
+        - CREATE: Novel information
+        - UPDATE: Elaborates existing memory
+        - SUPERSEDE: Contradicts existing memory
+
+        Args:
+            content: The new information
+            user_id: User ID for memory lookup
+            metadata: Optional metadata for the memory
+
+        Returns:
+            Tuple of (decision, existing_memory_id)
+            - decision: "skip", "create", "update", or "supersede"
+            - existing_memory_id: ID of existing memory for update/supersede
+        """
+        from config.mem0 import MEM0
+
+        from clara_core.contradiction import (
+            calculate_similarity,
+            detect_contradiction,
+        )
+
+        if MEM0 is None:
+            return "create", None
+
+        # Search for similar existing memories
+        try:
+            existing = MEM0.search(
+                content,
+                user_id=user_id,
+                agent_id=self.agent_id,
+                limit=5,
+            )
+        except Exception as e:
+            memory_logger.warning(f"Error searching for similar memories: {e}")
+            return "create", None
+
+        results = existing.get("results", [])
+        if not results:
+            return "create", None
+
+        # Find best match
+        best_match = results[0]
+        best_score = best_match.get("score", 0)
+        best_memory_id = best_match.get("id")
+        best_memory_text = best_match.get("memory", "")
+
+        # Calculate word-overlap similarity as secondary metric
+        text_similarity = calculate_similarity(content, best_memory_text)
+
+        # Decision thresholds
+        SKIP_THRESHOLD = 0.95  # Nearly identical
+        UPDATE_THRESHOLD = 0.75  # Similar enough to be related
+        SUPERSEDE_THRESHOLD = 0.6  # Similar topic but may contradict
+
+        if best_score > SKIP_THRESHOLD or text_similarity > 0.9:
+            memory_logger.debug(f"Skipping near-duplicate memory (score={best_score:.2f})")
+            return "skip", None
+
+        if best_score > UPDATE_THRESHOLD:
+            # Check for contradiction
+            contradiction = detect_contradiction(
+                content,
+                best_memory_text,
+                use_llm=False,  # Use fast layers only
+            )
+
+            if contradiction.contradicts:
+                memory_logger.info(
+                    f"Detected contradiction ({contradiction.contradiction_type}): "
+                    f"superseding memory {best_memory_id}"
+                )
+                return "supersede", best_memory_id
+
+            # No contradiction, this updates existing
+            return "update", best_memory_id
+
+        if best_score > SUPERSEDE_THRESHOLD:
+            # Lower similarity, still check for contradiction
+            contradiction = detect_contradiction(
+                content,
+                best_memory_text,
+                use_llm=False,
+            )
+
+            if contradiction.contradicts and contradiction.confidence > 0.7:
+                memory_logger.info(
+                    f"Detected contradiction ({contradiction.contradiction_type}): "
+                    f"superseding memory {best_memory_id}"
+                )
+                return "supersede", best_memory_id
+
+        # Novel information
+        return "create", None
+
+    def supersede_memory(
+        self,
+        old_memory_id: str,
+        new_content: str,
+        user_id: str,
+        reason: str = "contradiction",
+        metadata: dict | None = None,
+    ) -> str | None:
+        """Replace an old memory with new information.
+
+        Creates a new memory and records the supersession relationship.
+
+        Args:
+            old_memory_id: ID of memory being superseded
+            new_content: New memory content
+            user_id: User ID
+            reason: Why the supersession occurred
+            metadata: Optional metadata for new memory
+
+        Returns:
+            New memory ID, or None on failure
+        """
+        from config.mem0 import MEM0
+
+        from db import SessionLocal
+        from db.models import MemorySupersession
+
+        if MEM0 is None:
+            return None
+
+        try:
+            # Add new memory
+            result = MEM0.add(
+                new_content,
+                user_id=user_id,
+                agent_id=self.agent_id,
+                metadata=metadata or {},
+            )
+
+            new_memory_id = None
+            if isinstance(result, dict) and result.get("results"):
+                new_memory_id = result["results"][0].get("id")
+
+            if not new_memory_id:
+                memory_logger.warning("Failed to create new memory for supersession")
+                return None
+
+            # Record supersession
+            db = SessionLocal()
+            try:
+                supersession = MemorySupersession(
+                    old_memory_id=old_memory_id,
+                    new_memory_id=new_memory_id,
+                    user_id=user_id,
+                    reason=reason,
+                )
+                db.add(supersession)
+                db.commit()
+            finally:
+                db.close()
+
+            # Demote old memory
+            self.demote_memory(old_memory_id, user_id, reason="superseded")
+
+            memory_logger.info(
+                f"Superseded memory {old_memory_id} with {new_memory_id}"
+            )
+            return new_memory_id
+
+        except Exception as e:
+            memory_logger.error(f"Error superseding memory: {e}")
+            return None
+
+    # ---------- Intentions ----------
+
+    def set_intention(
+        self,
+        user_id: str,
+        content: str,
+        trigger_conditions: dict,
+        expires_at: datetime | None = None,
+        source_memory_id: str | None = None,
+    ) -> str:
+        """Create a new intention/reminder for future surfacing.
+
+        Args:
+            user_id: User this intention is for
+            content: What to remind about
+            trigger_conditions: When to fire (see intentions.py)
+            expires_at: Optional expiration time
+            source_memory_id: Optional link to source memory
+
+        Returns:
+            The created intention ID
+        """
+        from clara_core.intentions import create_intention
+
+        return create_intention(
+            user_id=user_id,
+            content=content,
+            trigger_conditions=trigger_conditions,
+            agent_id=self.agent_id,
+            expires_at=expires_at,
+            source_memory_id=source_memory_id,
+        )
+
+    def check_intentions(
+        self,
+        user_id: str,
+        message: str,
+        context: dict | None = None,
+    ) -> list[dict]:
+        """Check if any intentions should fire for the given context.
+
+        Args:
+            user_id: User to check intentions for
+            message: Current user message
+            context: Additional context
+
+        Returns:
+            List of fired intention dicts
+        """
+        from clara_core.intentions import CheckStrategy, check_intentions
+
+        return check_intentions(
+            user_id=user_id,
+            message=message,
+            context=context,
+            strategy=CheckStrategy.TIERED,
+            agent_id=self.agent_id,
+        )
+
+    def format_intentions_for_prompt(
+        self,
+        fired_intentions: list[dict],
+    ) -> str:
+        """Format fired intentions for the system prompt.
+
+        Args:
+            fired_intentions: List of fired intention dicts
+
+        Returns:
+            Formatted string for the prompt
+        """
+        from clara_core.intentions import format_intentions_for_prompt
+
+        return format_intentions_for_prompt(fired_intentions)
