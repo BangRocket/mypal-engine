@@ -586,6 +586,17 @@ async def mcp_oauth_start(args: dict[str, Any], ctx: ToolContext) -> str:
         if not auth_url:
             return f"Failed to start OAuth flow for '{server_name}'. Check logs for details."
 
+        # Register the callback for automatic processing
+        if redirect_uri != "urn:ietf:wg:oauth:2.0:oob" and oauth_client._state:
+            from clara_core.mcp.oauth_callback import register_callback
+
+            register_callback(
+                state_token=oauth_client._state.state,
+                server_name=server_name,
+                user_id=ctx.user_id if hasattr(ctx, "user_id") else None,
+                redirect_uri=redirect_uri,
+            )
+
         # Return instructions
         lines = [
             f"**OAuth Authorization for {server_name}**\n",
