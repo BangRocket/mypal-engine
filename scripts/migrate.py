@@ -8,6 +8,8 @@ Usage:
     poetry run python scripts/migrate.py create "message"   # Create new migration
     poetry run python scripts/migrate.py rollback           # Rollback one migration
     poetry run python scripts/migrate.py rollback 2         # Rollback 2 migrations
+    poetry run python scripts/migrate.py stamp <revision>   # Mark revision as current (skip running)
+    poetry run python scripts/migrate.py stamp head         # Mark head as current
     poetry run python scripts/migrate.py heads              # Show current heads
     poetry run python scripts/migrate.py history            # Show migration history
     poetry run python scripts/migrate.py reset              # Reset to initial (DANGEROUS)
@@ -146,6 +148,23 @@ def rollback(steps: int = 1):
     print(f"Rolled back to: {new_current or 'base'}")
 
 
+def stamp_revision(revision: str):
+    """Stamp the database with a revision without running migrations.
+
+    Useful when tables already exist (e.g., created by create_all()).
+    """
+    cfg = get_alembic_config()
+    current = get_current_revision()
+
+    print(f"Current revision: {current or '(none)'}")
+    print(f"Stamping as: {revision}")
+
+    command.stamp(cfg, revision)
+
+    new_current = get_current_revision()
+    print(f"Database now at: {new_current}")
+
+
 def show_heads():
     """Show current head revisions."""
     cfg = get_alembic_config()
@@ -181,7 +200,7 @@ def main():
         "command",
         nargs="?",
         default="upgrade",
-        choices=["upgrade", "status", "create", "rollback", "heads", "history", "reset"],
+        choices=["upgrade", "status", "create", "rollback", "stamp", "heads", "history", "reset"],
         help="Migration command (default: upgrade)"
     )
     parser.add_argument(
@@ -206,6 +225,13 @@ def main():
         elif args.command == "rollback":
             steps = int(args.args[0]) if args.args else 1
             rollback(steps)
+        elif args.command == "stamp":
+            if not args.args:
+                print("Error: revision required")
+                print("Usage: migrate.py stamp <revision>")
+                print("       migrate.py stamp head")
+                sys.exit(1)
+            stamp_revision(args.args[0])
         elif args.command == "heads":
             show_heads()
         elif args.command == "history":
