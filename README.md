@@ -221,13 +221,20 @@ The gateway provides a central message processing hub for platform adapters.
 ### Running the Gateway
 
 ```bash
-# Foreground
+# Foreground (development)
 poetry run python -m gateway --host 127.0.0.1 --port 18789
 
-# Daemon mode
+# Daemon mode with all enabled adapters
 poetry run python -m gateway start
 poetry run python -m gateway status
 poetry run python -m gateway stop
+
+# Start with specific adapter only
+poetry run python -m gateway start --adapter discord
+
+# Manage individual adapters
+poetry run python -m gateway adapter discord status
+poetry run python -m gateway adapter discord restart
 ```
 
 ### Hooks
