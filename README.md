@@ -5,7 +5,7 @@ A personal AI assistant with persistent memory and tool capabilities. The assist
 ## Features
 
 ### Core Capabilities
-- **Multi-Platform Support** - Discord bot with Microsoft Teams adapter in development
+- **Multi-Platform Support** - Discord, Microsoft Teams, and CLI adapters
 - **Persistent Memory** - User and project memories via [mem0](https://github.com/mem0ai/mem0) with graph relationship tracking
 - **MCP Plugin System** - Install and use tools from external MCP servers (similar to Claude Code's `/plugins`)
 - **Code Execution** - Sandboxed Python/Bash via Docker, Incus containers/VMs, or remote VPS
@@ -42,13 +42,13 @@ A personal AI assistant with persistent memory and tool capabilities. The assist
          │                                         │
          │ WebSocket                               │
          ▼                                         ▼
-┌─────────────────┐                      ┌─────────────────────┐
-│ Discord Adapter │                      │   MCP Servers       │
-│  (py-cord)      │                      │  (stdio/HTTP)       │
-└─────────────────┘                      └─────────────────────┘
+┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐
+│ Discord Adapter │  │  Teams Adapter  │  │   MCP Servers       │
+│  (py-cord)      │  │  (Bot Framework)│  │  (stdio/HTTP)       │
+└─────────────────┘  └─────────────────┘  └─────────────────────┘
 ┌─────────────────┐
-│  Teams Adapter  │
-│  (Bot Framework)│
+│   CLI Adapter   │
+│  (Terminal)     │
 └─────────────────┘
 ```
 
@@ -314,6 +314,48 @@ DISCORD_MAX_IMAGE_DIMENSION=1568
 DISCORD_MAX_IMAGES_PER_REQUEST=1
 ```
 
+## Microsoft Teams Integration
+
+Clara supports Microsoft Teams via the Bot Framework SDK.
+
+### Setup
+
+1. Create an Azure Bot in [Azure Portal](https://portal.azure.com)
+2. Enable the Microsoft Teams channel
+3. Configure environment variables:
+
+```bash
+TEAMS_APP_ID=your-azure-bot-app-id
+TEAMS_APP_PASSWORD=your-azure-bot-password
+TEAMS_TENANT_ID=your-tenant-id  # Optional
+```
+
+### Running
+
+```bash
+# Standalone
+poetry run python -m adapters.teams
+
+# Via gateway
+poetry run python -m gateway start --adapter teams
+```
+
+### Features
+
+- Conversation history via Microsoft Graph API
+- File uploads to OneDrive with shareable links
+- Adaptive Cards for rich responses
+- Model tier selection (`!high`, `!mid`, `!low`)
+
+### Azure Permissions
+
+For full functionality, add these Graph API permissions:
+- `Chat.Read.All` - Conversation history
+- `ChannelMessage.Read.All` - Channel messages
+- `Files.ReadWrite.All` - File uploads
+
+See [[Teams-Adapter|wiki/Teams-Adapter]] for detailed setup guide.
+
 ## Google Workspace Integration
 
 Clara can interact with Google Sheets, Drive, Docs, and Calendar using per-user OAuth.
@@ -399,8 +441,17 @@ See [CLAUDE.md](CLAUDE.md) for detailed development documentation.
 
 ## Documentation
 
+- [Wiki](wiki/) - Full documentation
+  - [Quick Start](wiki/Quick-Start.md)
+  - [Installation](wiki/Installation.md)
+  - [Configuration](wiki/Configuration.md)
+  - [Discord Features](wiki/Discord-Features.md)
+  - [Teams Adapter](wiki/Teams-Adapter.md)
+  - [MCP Plugin System](wiki/MCP-Plugin-System.md)
+  - [Memory System](wiki/Memory-System.md)
+  - [Gateway](wiki/Gateway.md)
+  - [Deployment](wiki/Deployment.md)
 - [CLAUDE.md](CLAUDE.md) - Development guide and API reference
-- [docs/](docs/) - Additional documentation
 
 ## License
 
