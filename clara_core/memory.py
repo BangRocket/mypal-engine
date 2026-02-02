@@ -15,10 +15,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from config.logging import get_logger
-
 # Import personality at module level to ensure it loads early
-from config.bot import PERSONALITY, BOT_NAME
+from config.bot import BOT_NAME, PERSONALITY
+from config.logging import get_logger
 
 # Module loggers
 logger = get_logger("mem0")
@@ -31,7 +30,7 @@ DEFAULT_TIMEZONE = os.getenv("DEFAULT_TIMEZONE", "America/New_York")
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session as OrmSession
 
-    from db.models import Message, Session
+    from db.models import MemoryDynamics, Message, Session
 
 # Configuration constants
 CONTEXT_MESSAGE_COUNT = 15  # Reduced from 20 to save tokens
@@ -196,6 +195,8 @@ class MemoryManager:
         self.llm = llm_callable
         self.agent_id = agent_id
         self._on_memory_event = on_memory_event
+        # FSRS integration: track memory IDs from last retrieval for promotion
+        self._last_retrieved_memory_ids: dict[str, list[str]] = {}
 
     @classmethod
     def get_instance(cls) -> "MemoryManager":
@@ -531,16 +532,34 @@ class MemoryManager:
             logger.error(f"Error searching project memories: {e}", exc_info=True)
             proj_res = {"results": []}
 
+        # 3. Re-rank results using FSRS retrievability weighting
+        user_results = self._rank_results_with_fsrs(
+            user_res.get("results", []), user_id
+        )
+        proj_results = self._rank_results_with_fsrs(
+            proj_res.get("results", []), user_id
+        )
+
+        # 4. Track memory IDs for later promotion
+        retrieved_ids: list[str] = []
+        for r in user_results:
+            if r.get("id"):
+                retrieved_ids.append(r["id"])
+        for r in proj_results:
+            if r.get("id") and r["id"] not in retrieved_ids:
+                retrieved_ids.append(r["id"])
+        self._last_retrieved_memory_ids[user_id] = retrieved_ids
+
         # Build user memories: key first, then relevant (deduplicated)
         user_mems = list(key_mems)  # Start with key memories
         key_texts = {m.replace("[KEY] ", "") for m in key_mems}  # For dedup
 
-        for r in user_res.get("results", []):
+        for r in user_results:
             mem = r["memory"]
             if mem not in key_texts:  # Don't duplicate key memories
                 user_mems.append(mem)
 
-        proj_mems = [r["memory"] for r in proj_res.get("results", [])]
+        proj_mems = [r["memory"] for r in proj_results]
 
         # Also search for memories about each participant
         if participants:
@@ -556,17 +575,27 @@ class MemoryManager:
                         user_id=user_id,
                         agent_id=self.agent_id,
                     )
-                    for r in p_search.get("results", []):
+                    # Rank participant results by FSRS and track IDs
+                    p_results = self._rank_results_with_fsrs(
+                        p_search.get("results", []), user_id
+                    )
+                    for r in p_results:
                         mem = r["memory"]
                         if mem not in key_texts and mem not in user_mems:
                             labeled_mem = f"[About {p_name}]: {mem}"
                             if labeled_mem not in user_mems:
                                 user_mems.append(labeled_mem)
+                                # Track this memory ID too
+                                if r.get("id") and r["id"] not in retrieved_ids:
+                                    retrieved_ids.append(r["id"])
                 except Exception as e:
                     logger.warning(f"Error searching participant {p_id}: {e}")
 
+        # Update tracked IDs after participant search
+        self._last_retrieved_memory_ids[user_id] = retrieved_ids
+
         # Extract contact-related memories with source info
-        for r in user_res.get("results", []):
+        for r in user_results:
             metadata = r.get("metadata", {})
             if metadata.get("contact_id"):
                 contact_name = metadata.get(
@@ -705,7 +734,8 @@ class MemoryManager:
                 if result.get("error"):
                     logger.error(f"Error adding memories: {result.get('error')}")
                 else:
-                    mem_count = len(result.get("results", []))
+                    mem_results = result.get("results", [])
+                    mem_count = len(mem_results)
                     # Handle graph relations from add result
                     relations = result.get("relations", {})
                     added_entities = relations.get("added_entities", []) if isinstance(relations, dict) else []
@@ -719,12 +749,18 @@ class MemoryManager:
                         if deleted_entities:
                             logger.debug(f"Deleted {len(deleted_entities)} outdated graph entities")
 
+                        # Create MemoryDynamics records for FSRS tracking
+                        self._create_memory_dynamics_records(
+                            user_id=user_id,
+                            memory_results=mem_results,
+                        )
+
                         # Send Discord embed for memory extraction
                         self._send_memory_added_embed(
                             user_id=user_id,
                             count=mem_count,
                             source_type=source_type,
-                            results=result.get("results", []),
+                            results=mem_results,
                             graph_added=len(added_entities),
                         )
                     else:
@@ -790,6 +826,74 @@ class MemoryManager:
             "samples": samples,
             "graph_added": graph_added,
         })
+
+    def _create_memory_dynamics_records(
+        self,
+        user_id: str,
+        memory_results: list[dict],
+    ) -> None:
+        """Create MemoryDynamics records for new memories.
+
+        Initializes FSRS tracking data for newly added memories.
+
+        Args:
+            user_id: User who owns the memories
+            memory_results: Results from MEM0.add() containing memory IDs
+        """
+        from datetime import UTC, datetime
+
+        from db import SessionLocal
+        from db.models import MemoryDynamics
+
+        if not memory_results:
+            return
+
+        db = SessionLocal()
+        try:
+            now = datetime.now(UTC).replace(tzinfo=None)
+            created_count = 0
+
+            for r in memory_results:
+                memory_id = r.get("id")
+                if not memory_id:
+                    continue
+
+                # Check if dynamics record already exists
+                existing = db.query(MemoryDynamics).filter_by(
+                    memory_id=memory_id,
+                    user_id=user_id,
+                ).first()
+
+                if not existing:
+                    # Create new dynamics record with default FSRS values
+                    dynamics = MemoryDynamics(
+                        memory_id=memory_id,
+                        user_id=user_id,
+                        stability=1.0,       # Default initial stability
+                        difficulty=5.0,       # Middle difficulty
+                        retrieval_strength=1.0,
+                        storage_strength=0.5,
+                        is_key=False,
+                        importance_weight=1.0,
+                        last_accessed_at=now,
+                        access_count=1,       # Created = first access
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    db.add(dynamics)
+                    created_count += 1
+
+            if created_count > 0:
+                db.commit()
+                memory_logger.debug(
+                    f"Created {created_count} MemoryDynamics records for user {user_id}"
+                )
+
+        except Exception as e:
+            db.rollback()
+            memory_logger.warning(f"Error creating MemoryDynamics records: {e}")
+        finally:
+            db.close()
 
     # ---------- emotional context ----------
 
@@ -1436,6 +1540,61 @@ class MemoryManager:
         finally:
             db.close()
 
+    def get_last_retrieved_memory_ids(self, user_id: str) -> list[str]:
+        """Get memory IDs from the last retrieval for a user.
+
+        Use this to promote memories that were used in a response.
+
+        Args:
+            user_id: User ID to get memory IDs for
+
+        Returns:
+            List of memory IDs from the last fetch_mem0_context call
+        """
+        return self._last_retrieved_memory_ids.get(user_id, [])
+
+    def _rank_results_with_fsrs(
+        self,
+        results: list[dict],
+        user_id: str,
+    ) -> list[dict]:
+        """Re-rank search results using FSRS retrievability.
+
+        Calculates composite score (semantic * FSRS) and sorts by it.
+
+        Args:
+            results: List of search results from mem0
+            user_id: User ID for FSRS lookup
+
+        Returns:
+            Results re-ranked by composite score
+        """
+        if not results:
+            return results
+
+        # Calculate composite scores for each result
+        scored_results = []
+        for r in results:
+            memory_id = r.get("id")
+            semantic_score = r.get("score", 0.5)  # Default to 0.5 if no score
+
+            if memory_id:
+                composite_score = self.calculate_memory_score(
+                    memory_id, user_id, semantic_score
+                )
+            else:
+                composite_score = semantic_score
+
+            scored_results.append({
+                **r,
+                "_composite_score": composite_score,
+            })
+
+        # Sort by composite score (descending)
+        scored_results.sort(key=lambda x: x.get("_composite_score", 0), reverse=True)
+
+        return scored_results
+
     # ---------- Prediction Error Gating ----------
 
     def smart_ingest(
@@ -1462,12 +1621,11 @@ class MemoryManager:
             - decision: "skip", "create", "update", or "supersede"
             - existing_memory_id: ID of existing memory for update/supersede
         """
-        from config.mem0 import MEM0
-
         from clara_core.contradiction import (
             calculate_similarity,
             detect_contradiction,
         )
+        from config.mem0 import MEM0
 
         if MEM0 is None:
             return "create", None
@@ -1565,7 +1723,6 @@ class MemoryManager:
             New memory ID, or None on failure
         """
         from config.mem0 import MEM0
-
         from db import SessionLocal
         from db.models import MemorySupersession
 
