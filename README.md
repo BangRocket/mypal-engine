@@ -1,21 +1,56 @@
 # MyPalClara
 
-A personal AI assistant with persistent memory and tool capabilities, powered by Discord. The assistant's name is Clara.
+A personal AI assistant with persistent memory and tool capabilities. The assistant's name is Clara.
 
 ## Features
 
-- **Discord Interface** - Full-featured Discord bot with streaming responses and reply chains
-- **Persistent Memory** - User and project memories via [mem0](https://github.com/mem0ai/mem0)
+### Core Capabilities
+- **Multi-Platform Support** - Discord bot with Microsoft Teams adapter in development
+- **Persistent Memory** - User and project memories via [mem0](https://github.com/mem0ai/mem0) with graph relationship tracking
 - **MCP Plugin System** - Install and use tools from external MCP servers (similar to Claude Code's `/plugins`)
-- **Code Execution** - Sandboxed Python/Bash via local Docker or remote VPS
+- **Code Execution** - Sandboxed Python/Bash via Docker, Incus containers/VMs, or remote VPS
 - **Web Search** - Real-time web search via Tavily
-- **File Management** - Local file storage with S3 sync support
-- **GitHub/Azure DevOps** - Repository, issue, PR, and pipeline management
+
+### Integrations
+- **GitHub** - Repository, issue, PR, and workflow management
+- **Azure DevOps** - Repos, pipelines, work items
 - **Google Workspace** - Sheets, Drive, Docs, and Calendar via OAuth
 - **Email Monitoring** - Watch for important emails and send Discord alerts
-- **Claude Code Integration** - Delegate complex coding tasks to Claude Code agent
-- **Multiple LLM Backends** - OpenRouter, NanoGPT, Anthropic, or custom OpenAI-compatible endpoints
+- **Claude Code** - Delegate complex coding tasks to Claude Code agent
+
+### LLM Support
+- **Multiple Backends** - OpenRouter, NanoGPT, Anthropic, or custom OpenAI-compatible endpoints
 - **Model Tiers** - Dynamic model selection via message prefixes (`!high`, `!mid`, `!low`)
+- **Auto-Tier Selection** - Automatic complexity-based model selection
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         Gateway Server                           │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
+│  │   Router    │  │  Processor  │  │    LLM Orchestrator     │  │
+│  │  (queuing)  │──│  (context)  │──│  (streaming, tools)     │  │
+│  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
+│         │                                        │               │
+│         ▼                                        ▼               │
+│  ┌─────────────┐                        ┌─────────────────────┐  │
+│  │   Session   │                        │   Tool Executor     │  │
+│  │   Manager   │                        │   (MCP, built-in)   │  │
+│  └─────────────┘                        └─────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+         │                                         │
+         │ WebSocket                               │
+         ▼                                         ▼
+┌─────────────────┐                      ┌─────────────────────┐
+│ Discord Adapter │                      │   MCP Servers       │
+│  (py-cord)      │                      │  (stdio/HTTP)       │
+└─────────────────┘                      └─────────────────────┘
+┌─────────────────┐
+│  Teams Adapter  │
+│  (Bot Framework)│
+└─────────────────┘
+```
 
 ## Quick Start
 
@@ -42,10 +77,13 @@ cp .env.example .env
 ### Running
 
 ```bash
-# Run Discord bot locally
+# Run Discord bot directly
 poetry run python discord_bot.py
 
-# Or with Docker
+# Or run via gateway (recommended for multi-platform)
+poetry run python -m gateway start
+
+# With Docker
 docker-compose --profile discord up
 ```
 
@@ -105,6 +143,11 @@ ANTHROPIC_MODEL_MID=claude-sonnet-4-5
 ANTHROPIC_MODEL_LOW=claude-haiku-4-5
 ```
 
+Enable auto-tier selection:
+```bash
+AUTO_TIER_SELECTION=true
+```
+
 ### Optional Features
 
 | Variable | Description |
@@ -115,14 +158,23 @@ ANTHROPIC_MODEL_LOW=claude-haiku-4-5
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Enable Google Workspace integration |
 | `ANTHROPIC_API_KEY` | Enable Claude Code agent |
 | `ENABLE_GRAPH_MEMORY=true` | Enable relationship tracking (Neo4j/Kuzu) |
+| `SMITHERY_API_TOKEN` | Enable Smithery MCP server registry |
 
 ## MCP Plugin System
 
-Clara can extend its capabilities by installing [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) servers. This is similar to Claude Code's `/plugins` command.
+Clara can extend its capabilities by installing [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) servers.
 
 ### Installing MCP Servers
 
-MCP servers can be installed from multiple sources:
+**From Smithery registry:**
+```
+@Clara install the MCP server smithery:exa
+```
+
+**Smithery hosted (with OAuth):**
+```
+@Clara install smithery-hosted:@smithery/notion
+```
 
 **npm packages:**
 ```
@@ -134,16 +186,13 @@ MCP servers can be installed from multiple sources:
 @Clara install MCP server from github.com/modelcontextprotocol/servers
 ```
 
-**Docker images:**
-```
-@Clara install MCP server from ghcr.io/example/mcp-server:latest
-```
+### Multi-User Support
 
-### Using MCP Tools
-
-Once installed, MCP tools are automatically available. Tools use namespaced names:
-- Format: `{server_name}__{tool_name}`
-- Example: `everything__echo`, `filesystem__read_file`
+MCP servers support per-user isolation:
+- Users can only access their own installed servers
+- Global servers (installed by admins) are available to all users
+- OAuth tokens are stored per-user for hosted servers
+- Usage metrics are tracked per-user
 
 ### Management Commands
 
@@ -155,6 +204,8 @@ Once installed, MCP tools are automatically available. Tools use namespaced name
 | `mcp_uninstall` | Remove an installed server |
 | `mcp_enable` / `mcp_disable` | Toggle servers without uninstalling |
 | `mcp_restart` | Restart a running server |
+| `mcp_oauth_start` | Start OAuth for hosted servers |
+| `mcp_oauth_complete` | Complete OAuth with authorization code |
 
 ### Permissions
 
@@ -163,9 +214,63 @@ Admin operations (install, uninstall, enable, disable, restart) require one of:
 - Manage Channels permission
 - Clara-Admin role
 
+## Gateway System
+
+The gateway provides a central message processing hub for platform adapters.
+
+### Running the Gateway
+
+```bash
+# Foreground
+poetry run python -m gateway --host 127.0.0.1 --port 18789
+
+# Daemon mode
+poetry run python -m gateway start
+poetry run python -m gateway status
+poetry run python -m gateway stop
+```
+
+### Hooks
+
+Hooks are automations triggered by gateway events. Configure in `hooks/hooks.yaml`:
+
+```yaml
+hooks:
+  - name: log-startup
+    event: gateway:startup
+    command: echo "Gateway started at ${CLARA_TIMESTAMP}"
+
+  - name: notify-errors
+    event: tool:error
+    command: curl -X POST https://webhook.example.com/notify -d "${CLARA_EVENT_DATA}"
+```
+
+### Scheduler
+
+Schedule tasks with cron or interval expressions in `scheduler.yaml`:
+
+```yaml
+tasks:
+  - name: cleanup-sessions
+    type: interval
+    interval: 3600
+    command: poetry run python -m scripts.cleanup_sessions
+
+  - name: daily-backup
+    type: cron
+    cron: "0 3 * * *"
+    command: ./scripts/backup.sh
+```
+
 ## Memory System
 
 Clara uses mem0 for persistent memory with vector search (pgvector/Qdrant) and optional graph storage (Neo4j/Kuzu).
+
+### Memory Types
+- **User Memories** - Personal facts, preferences, and context
+- **Project Memories** - Topic-specific knowledge
+- **Key Memories** - Important facts always included in context
+- **Emotional Context** - Recent conversation emotional patterns
 
 ### Bootstrap Profile Data
 
@@ -183,6 +288,30 @@ poetry run python -m src.bootstrap_memory --apply
 poetry run python clear_dbs.py              # With prompt
 poetry run python clear_dbs.py --yes        # Skip prompt
 poetry run python clear_dbs.py --user <id>  # Specific user
+```
+
+## Discord Features
+
+### Channel Modes
+
+- **Active Mode** - Clara responds to all messages
+- **Mention Mode** - Clara only responds when mentioned (default)
+- **Off Mode** - Clara ignores the channel
+
+Configure with `/clara mode active|mention|off`
+
+### Stop Phrases
+
+Interrupt Clara mid-task with stop phrases:
+- "@Clara stop"
+- "@Clara nevermind"
+
+### Image Support
+
+Clara can analyze images sent in messages. Configure:
+```bash
+DISCORD_MAX_IMAGE_DIMENSION=1568
+DISCORD_MAX_IMAGES_PER_REQUEST=1
 ```
 
 ## Google Workspace Integration
@@ -233,6 +362,14 @@ DATABASE_URL=postgresql://user:pass@host:5432/clara_main
 MEM0_DATABASE_URL=postgresql://user:pass@host:5432/clara_vectors
 ```
 
+### Database Migrations
+
+```bash
+poetry run python scripts/migrate.py          # Run pending
+poetry run python scripts/migrate.py status   # Check status
+poetry run python scripts/migrate.py create "description"  # New migration
+```
+
 ### Database Backups
 
 The `backup_service/` directory contains an automated backup service for S3-compatible storage:
@@ -250,7 +387,20 @@ poetry run ruff format .   # Format
 poetry run pytest          # Test
 ```
 
+### Versioning
+
+Uses CalVer format: `YYYY.WW.N` (Year.Week.Build)
+
+```bash
+poetry run python scripts/bump_version.py --show  # Show current
+```
+
 See [CLAUDE.md](CLAUDE.md) for detailed development documentation.
+
+## Documentation
+
+- [CLAUDE.md](CLAUDE.md) - Development guide and API reference
+- [docs/](docs/) - Additional documentation
 
 ## License
 
