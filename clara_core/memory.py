@@ -962,6 +962,26 @@ class MemoryManager:
             messages.append({"role": m.role, "content": content})
 
         messages.append({"role": "user", "content": user_message})
+
+        # Log prompt composition summary
+        components = []
+        components.append(f"personality={len(system_base)} chars")
+        if user_mems:
+            components.append(f"user_mems={len(user_mems)}")
+        if proj_mems:
+            components.append(f"proj_mems={len(proj_mems)}")
+        if graph_relations:
+            components.append(f"graph={len(graph_relations)}")
+        if emotional_context:
+            components.append(f"emotional={len(emotional_context)}")
+        if recurring_topics:
+            components.append(f"topics={len(recurring_topics)}")
+        if thread_summary:
+            components.append("summary")
+        if recent_msgs:
+            components.append(f"history={len(recent_msgs)}")
+        logger.info(f"[prompt] Built with: {', '.join(components)}")
+
         return messages
 
     def _format_emotional_context(self, emotional_context: list[dict]) -> str:
