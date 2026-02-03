@@ -28,7 +28,6 @@ import sys
 import time
 from pathlib import Path
 
-
 DEFAULT_PIDFILE = "/tmp/clara-discord.pid"
 PROJECT_ROOT = Path(__file__).parent.parent
 

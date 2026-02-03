@@ -31,7 +31,7 @@ def clear_databases(user_id: str, skip_confirm: bool = False):
     if not skip_confirm:
         print(f"This will delete ALL memories for user '{user_id}':")
         print(f"  - Vector store (Qdrant): {QDRANT_DATA_DIR}")
-        print(f"  - Graph store (Neo4j/Kuzu): configured in .env")
+        print("  - Graph store (Neo4j/Kuzu): configured in .env")
         response = input("\nAre you sure? [y/N]: ").strip().lower()
         if response != "y":
             print("Aborted.")

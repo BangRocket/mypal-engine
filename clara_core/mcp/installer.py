@@ -28,8 +28,8 @@ import aiohttp
 
 from .local_server import LocalServerProcess, MCPTool
 from .models import (
-    LocalServerConfig,
     MCP_SERVERS_DIR,
+    LocalServerConfig,
     RemoteServerConfig,
     delete_local_server_config,
     delete_remote_server_config,
@@ -829,7 +829,7 @@ class MCPInstaller:
                 )
 
                 if "build" in scripts:
-                    logger.info(f"[MCP Installer] Running build script...")
+                    logger.info("[MCP Installer] Running build script...")
                     subprocess.run(
                         [pkg_manager, "run", "build"],
                         cwd=working_dir,
@@ -892,7 +892,7 @@ class MCPInstaller:
             try:
                 uv_path = shutil.which("uv")
                 if uv_path:
-                    logger.info(f"[MCP Installer] Installing Python dependencies with uv...")
+                    logger.info("[MCP Installer] Installing Python dependencies with uv...")
                     subprocess.run(
                         ["uv", "pip", "install", "."],
                         cwd=working_dir,
@@ -902,7 +902,7 @@ class MCPInstaller:
                     server.command = "uv"
                     server.args = ["run", "python", "-m", name.replace("_", "-")]
                 else:
-                    logger.info(f"[MCP Installer] Installing Python dependencies with pip...")
+                    logger.info("[MCP Installer] Installing Python dependencies with pip...")
                     subprocess.run(
                         ["pip", "install", "."],
                         cwd=working_dir,
@@ -920,7 +920,7 @@ class MCPInstaller:
         setup_py = working_dir / "setup.py"
         if setup_py.exists():
             try:
-                logger.info(f"[MCP Installer] Installing Python package with pip...")
+                logger.info("[MCP Installer] Installing Python package with pip...")
                 subprocess.run(
                     ["pip", "install", "."],
                     cwd=working_dir,

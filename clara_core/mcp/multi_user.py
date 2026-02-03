@@ -16,8 +16,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from .manager import MCPServerManager
 from .local_server import MCPTool
+from .manager import MCPServerManager
 
 logger = logging.getLogger(__name__)
 

@@ -15,8 +15,8 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from db import SessionLocal
 from clara_core.mcp.models import MCPServer
+from db import SessionLocal
 
 
 def get_clara_mcp_binary() -> str:
@@ -53,7 +53,7 @@ def init_clara_mcp_server():
         existing = session.query(MCPServer).filter(MCPServer.name == "clara-tools").first()
 
         if existing:
-            print(f"Updating existing clara-tools server entry...")
+            print("Updating existing clara-tools server entry...")
             existing.command = binary_path
             existing.source_type = "local"
             existing.transport = "stdio"

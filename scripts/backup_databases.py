@@ -117,7 +117,7 @@ def dump_database(db_url: str, db_name: str) -> bytes | None:
         return compressed
         
     except FileNotFoundError:
-        print(f"  [ERROR] pg_dump not found - install postgresql-client")
+        print("  [ERROR] pg_dump not found - install postgresql-client")
         return None
     except subprocess.TimeoutExpired:
         print(f"  [ERROR] {db_name}: pg_dump timed out")

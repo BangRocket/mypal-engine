@@ -18,10 +18,10 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from pathlib import Path
-from datetime import datetime
-from typing import Optional
 from collections import defaultdict
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
 
 try:
     from dotenv import load_dotenv
@@ -231,7 +231,7 @@ def import_to_mem0(
 
     contact_names = contact_names or {}
 
-    print(f"Fetching messages from iMessage database...")
+    print("Fetching messages from iMessage database...")
     all_messages = get_imessage_data(db_path)
     print(f"Found {len(all_messages)} total messages")
 
