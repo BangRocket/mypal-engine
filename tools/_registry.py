@@ -1,14 +1,17 @@
 """Tool registry for the Clara tool system.
 
-The ToolRegistry is a singleton that manages all registered tools and provides
-methods for tool discovery, filtering, and execution.
+This module provides a backwards-compatible singleton that wraps the
+PluginRegistry from clara_core.plugins. All tool management now goes
+through the unified plugin system.
+
+The ToolRegistry class maintains the same API as before, but delegates
+all operations to PluginRegistry for unified tool/plugin management.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import traceback
 from typing import Any, ClassVar
 
 from ._base import ToolContext, ToolDef
@@ -97,11 +100,10 @@ def validate_tool_args(
 
 
 class ToolRegistry:
-    """Central registry for all Clara tools.
+    """Backwards-compatible wrapper around PluginRegistry.
 
-    This is a singleton class that manages tool registration, discovery,
-    and execution. Tools are registered with metadata including platform
-    restrictions and capability requirements.
+    This class maintains the original ToolRegistry API while delegating
+    all operations to the unified PluginRegistry from clara_core.plugins.
 
     Usage:
         registry = ToolRegistry.get_instance()
@@ -113,11 +115,16 @@ class ToolRegistry:
     _instance: ClassVar[ToolRegistry | None] = None
 
     def __init__(self) -> None:
-        """Initialize the registry. Use get_instance() instead of direct instantiation."""
-        self._tools: dict[str, ToolDef] = {}
-        self._tool_sources: dict[str, str] = {}  # tool_name -> module_name
-        self._system_prompts: dict[str, str] = {}  # module_name -> system prompt
+        """Initialize the registry wrapper."""
+        self._plugin_registry = None
         self._initialized = False
+
+    def _get_plugin_registry(self):
+        """Lazy-load the plugin registry to avoid circular imports."""
+        if self._plugin_registry is None:
+            from clara_core.plugins import get_registry
+            self._plugin_registry = get_registry()
+        return self._plugin_registry
 
     @classmethod
     def get_instance(cls) -> ToolRegistry:
@@ -142,14 +149,14 @@ class ToolRegistry:
             ValueError: If a tool with the same name is already registered
                        by a different module
         """
-        if tool.name in self._tools:
-            existing_source = self._tool_sources.get(tool.name)
-            if existing_source != source_module:
-                raise ValueError(f"Tool '{tool.name}' already registered by '{existing_source}'")
-            # Allow re-registration from same module (hot-reload case)
+        registry = self._get_plugin_registry()
 
-        self._tools[tool.name] = tool
-        self._tool_sources[tool.name] = source_module
+        # Check for conflicts before registering
+        existing_source = registry.tool_sources.get(tool.name)
+        if existing_source and existing_source != source_module:
+            raise ValueError(f"Tool '{tool.name}' already registered by '{existing_source}'")
+
+        registry.register_tool(tool, plugin_id=source_module)
 
     def unregister(self, tool_name: str) -> bool:
         """Unregister a single tool.
@@ -160,11 +167,7 @@ class ToolRegistry:
         Returns:
             True if the tool was unregistered, False if it wasn't found
         """
-        if tool_name in self._tools:
-            del self._tools[tool_name]
-            del self._tool_sources[tool_name]
-            return True
-        return False
+        return self._get_plugin_registry().unregister_tool(tool_name)
 
     def unregister_module(self, module_name: str) -> list[str]:
         """Unregister all tools from a specific module.
@@ -178,17 +181,11 @@ class ToolRegistry:
         Returns:
             List of tool names that were unregistered
         """
-        removed = []
-        for tool_name, source in list(self._tool_sources.items()):
-            if source == module_name:
-                del self._tools[tool_name]
-                del self._tool_sources[tool_name]
-                removed.append(tool_name)
-        return removed
+        return self._get_plugin_registry().unregister_module(module_name)
 
     def get_tool(self, name: str) -> ToolDef | None:
         """Get a single tool definition by name."""
-        return self._tools.get(name)
+        return self._get_plugin_registry().get_tool(name)
 
     def get_tools(
         self,
@@ -206,44 +203,16 @@ class ToolRegistry:
         Returns:
             List of tool definitions in the requested format
         """
-        tools = []
-        for tool in self._tools.values():
-            # Platform filter
-            if platform and tool.platforms and platform not in tool.platforms:
-                continue
-
-            # Capability filter
-            if capabilities:
-                skip = False
-                for cap in tool.requires:
-                    if not capabilities.get(cap, False):
-                        skip = True
-                        break
-                if skip:
-                    continue
-
-            # Format conversion
-            if format == "mcp":
-                tools.append(tool.to_mcp_format())
-            elif format == "claude":
-                tools.append(tool.to_claude_format())
-            else:  # openai
-                tools.append(tool.to_openai_format())
-
-        return tools
+        registry = self._get_plugin_registry()
+        return registry.get_tools(platform, capabilities, format)
 
     def get_tool_names(self) -> list[str]:
         """Get list of all registered tool names."""
-        return list(self._tools.keys())
+        return self._get_plugin_registry().get_tool_names()
 
     def get_tools_by_module(self) -> dict[str, list[str]]:
         """Get a mapping of module names to their tool names."""
-        result: dict[str, list[str]] = {}
-        for tool_name, module_name in self._tool_sources.items():
-            if module_name not in result:
-                result[module_name] = []
-            result[module_name].append(tool_name)
-        return result
+        return self._get_plugin_registry().get_tools_by_module()
 
     async def execute(
         self,
@@ -261,16 +230,7 @@ class ToolRegistry:
         Returns:
             Tool execution result as a string
         """
-        tool = self._tools.get(tool_name)
-        if not tool:
-            return f"Error: Unknown tool '{tool_name}'. Available tools: {', '.join(self._tools.keys())}"
-
-        try:
-            return await tool.handler(arguments, context)
-        except Exception as e:
-            error_msg = f"Error executing {tool_name}: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            return error_msg
+        return await self._get_plugin_registry().execute(tool_name, arguments, context)
 
     def register_system_prompt(self, module_name: str, prompt: str) -> None:
         """Register a system prompt from a tool module.
@@ -279,8 +239,7 @@ class ToolRegistry:
             module_name: Name of the module providing this prompt
             prompt: The system prompt text describing the module's tools
         """
-        if prompt and prompt.strip():
-            self._system_prompts[module_name] = prompt.strip()
+        self._get_plugin_registry().register_system_prompt(module_name, prompt)
 
     def unregister_system_prompt(self, module_name: str) -> bool:
         """Unregister a system prompt.
@@ -291,10 +250,7 @@ class ToolRegistry:
         Returns:
             True if a prompt was removed, False if not found
         """
-        if module_name in self._system_prompts:
-            del self._system_prompts[module_name]
-            return True
-        return False
+        return self._get_plugin_registry().unregister_system_prompt(module_name)
 
     def get_system_prompts(
         self,
@@ -311,25 +267,28 @@ class ToolRegistry:
         Returns:
             Filtered system prompts joined with newlines
         """
-        if not self._system_prompts:
-            return ""
-
-        if allowed_modules is not None:
-            allowed_set = set(allowed_modules)
-            prompts = [
-                prompt
-                for module, prompt in self._system_prompts.items()
-                if module in allowed_set
-            ]
-        else:
-            prompts = list(self._system_prompts.values())
-
-        return "\n\n".join(prompts)
+        return self._get_plugin_registry().get_system_prompts(platform, allowed_modules)
 
     def __len__(self) -> int:
         """Return the number of registered tools."""
-        return len(self._tools)
+        return len(self._get_plugin_registry())
 
     def __contains__(self, tool_name: str) -> bool:
         """Check if a tool is registered."""
-        return tool_name in self._tools
+        return tool_name in self._get_plugin_registry()
+
+    # Legacy properties for backwards compatibility
+    @property
+    def _tools(self) -> dict[str, ToolDef]:
+        """Direct access to tools dict (deprecated, use get_tool instead)."""
+        return self._get_plugin_registry().tools
+
+    @property
+    def _tool_sources(self) -> dict[str, str]:
+        """Direct access to tool sources (deprecated)."""
+        return self._get_plugin_registry().tool_sources
+
+    @property
+    def _system_prompts(self) -> dict[str, str]:
+        """Direct access to system prompts (deprecated)."""
+        return self._get_plugin_registry().system_prompts

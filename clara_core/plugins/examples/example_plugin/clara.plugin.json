@@ -1,0 +1,31 @@
+{
+  "id": "example",
+  "name": "Example Plugin",
+  "version": "1.0.0",
+  "description": "A simple example plugin demonstrating the new plugin system",
+  "kind": "tools",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Whether the example plugin is enabled"
+      },
+      "prefix": {
+        "type": "string",
+        "default": "Echo:",
+        "description": "Prefix for echoed messages"
+      }
+    }
+  },
+  "uiHints": {
+    "prefix": {
+      "label": "Echo Prefix",
+      "help": "Text to prepend to echoed messages",
+      "advanced": false
+    }
+  },
+  "tools": ["example_echo"],
+  "hooks": ["tool_end"]
+}

@@ -923,6 +923,144 @@ def anthropic_to_openai_response(msg: anthropic.types.Message) -> dict:
     return result
 
 
+# ============== XML-based Tool Calling (OpenClaw-style) ==============
+
+
+def make_llm_with_xml_tools(
+    tools: list[dict] | None = None,
+    tier: ModelTier | None = None,
+) -> Callable[[list[dict]], dict]:
+    """Return a function that injects tools into system prompt (OpenClaw-style).
+
+    Instead of using native API tool calling, this approach:
+    1. Serializes tools to XML and injects them into the system prompt
+    2. Returns the full response text (which may contain function_calls blocks)
+    3. Caller is responsible for parsing function calls from the response
+
+    This works with any LLM provider, regardless of native tool support.
+
+    Args:
+        tools: List of tool definitions in OpenAI format
+        tier: Optional model tier
+
+    Returns:
+        Function that calls LLM with tools in system prompt.
+        Returns dict with:
+        - content: Full response text
+        - role: "assistant"
+        - tool_calls: Parsed tool calls in OpenAI format (if any)
+    """
+    from clara_core.plugins.xml_tools import (
+        convert_to_openai_tool_calls,
+        parse_function_calls,
+        tools_to_xml_from_dicts,
+    )
+
+    # Generate XML tools block
+    tools_xml = tools_to_xml_from_dicts(tools) if tools else ""
+
+    # Get the base LLM function (no native tools)
+    base_llm = make_llm(tier=tier)
+
+    def llm(messages: list[dict]) -> dict:
+        # Inject tools XML into system prompt
+        augmented_messages = _inject_tools_into_messages(messages, tools_xml)
+
+        # Call LLM
+        response_text = base_llm(augmented_messages)
+
+        # Parse function calls from response
+        parsed_calls = parse_function_calls(response_text)
+
+        result = {
+            "content": response_text,
+            "role": "assistant",
+        }
+
+        if parsed_calls:
+            result["tool_calls"] = convert_to_openai_tool_calls(parsed_calls)
+
+        return result
+
+    return llm
+
+
+def make_llm_with_xml_tools_streaming(
+    tools: list[dict] | None = None,
+    tier: ModelTier | None = None,
+) -> Callable[[list[dict]], Generator[str, None, None]]:
+    """Return a streaming function with tools injected into system prompt.
+
+    Unlike non-streaming, this yields chunks as they arrive.
+    Caller must accumulate the full response to parse function calls.
+
+    Args:
+        tools: List of tool definitions in OpenAI format
+        tier: Optional model tier
+
+    Returns:
+        Function that yields response chunks
+    """
+    from clara_core.plugins.xml_tools import tools_to_xml_from_dicts
+
+    # Generate XML tools block
+    tools_xml = tools_to_xml_from_dicts(tools) if tools else ""
+
+    # Get the base streaming LLM function
+    base_llm = make_llm_streaming(tier=tier)
+
+    def llm(messages: list[dict]) -> Generator[str, None, None]:
+        # Inject tools XML into system prompt
+        augmented_messages = _inject_tools_into_messages(messages, tools_xml)
+
+        # Stream response
+        yield from base_llm(augmented_messages)
+
+    return llm
+
+
+def _inject_tools_into_messages(
+    messages: list[dict],
+    tools_xml: str,
+) -> list[dict]:
+    """Inject tools XML into the system prompt of messages.
+
+    Args:
+        messages: Original messages
+        tools_xml: XML tools block to inject
+
+    Returns:
+        New messages list with tools injected
+    """
+    if not tools_xml:
+        return messages
+
+    # Find or create system message
+    result = []
+    system_found = False
+
+    for msg in messages:
+        if msg.get("role") == "system" and not system_found:
+            # Append tools XML to the first system message
+            content = msg.get("content", "")
+            result.append({
+                **msg,
+                "content": f"{content}\n\n{tools_xml}",
+            })
+            system_found = True
+        else:
+            result.append(msg)
+
+    # If no system message found, prepend one
+    if not system_found:
+        result.insert(0, {
+            "role": "system",
+            "content": tools_xml,
+        })
+
+    return result
+
+
 # ============== Tool Description Generator ==============
 
 # Tool description settings from environment

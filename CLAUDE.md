@@ -457,6 +457,17 @@ Example output with high tier:
 
 **For Claude proxies (like clewdr)**: Use `LLM_PROVIDER=anthropic` with `ANTHROPIC_BASE_URL` for native Anthropic SDK support. This uses native Claude tool calling without format conversion.
 
+**Tool Communication Mode (OpenClaw-style):**
+- `TOOL_CALL_MODE` - How tools are communicated to the LLM:
+  - `xml` (default): OpenClaw-style system prompt injection
+  - `native`: Uses API-native tool calling (OpenAI/Anthropic format)
+
+When using `TOOL_CALL_MODE=xml`:
+- Tools are serialized to XML and injected into the system prompt
+- Works with any LLM provider (doesn't require native tool support)
+- Function calls are parsed from the LLM response text using XML tags
+- Format: `<function_calls><invoke name="tool_name"><parameter name="arg">value</parameter></invoke></function_calls>`
+
 To enable Docker sandbox + web search:
 ```bash
 # Install Docker and start the daemon
