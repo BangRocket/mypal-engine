@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import os
-import warnings
 from collections.abc import Callable, Generator
 from typing import TYPE_CHECKING, Literal
 
@@ -34,21 +33,6 @@ ModelTier = Literal["high", "mid", "low"]
 
 # Default tier
 DEFAULT_TIER: ModelTier = "mid"
-
-# Tool calling configuration
-TOOL_FORMAT = os.getenv("TOOL_FORMAT", "openai").lower()
-# DEPRECATED: TOOL_FORMAT is no longer needed when using LLM_PROVIDER=anthropic
-# Native Anthropic SDK handles tool calling directly without format conversion
-if os.getenv("TOOL_FORMAT"):
-    warnings.warn(
-        "TOOL_FORMAT is deprecated. Use LLM_PROVIDER=anthropic instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-# DEPRECATED: TOOL_MODEL env var is no longer used.
-# Tools now always use tier-based model selection to respect !high, !mid, !low prefixes.
-# This constant is kept for backwards compatibility but has no effect.
-TOOL_MODEL = os.getenv("TOOL_MODEL", "")
 
 # Default models per provider per tier
 DEFAULT_MODELS = {
@@ -671,86 +655,6 @@ def _convert_tools_to_claude_format(tools: list[dict]) -> list[dict]:
     return claude_tools
 
 
-def _convert_messages_to_claude_format(messages: list[dict]) -> list[dict]:
-    """Convert OpenAI-format messages with tool calls/results to Claude format.
-
-    Handles:
-    - Assistant messages with tool_calls -> assistant with tool_use content blocks
-    - Tool role messages -> user messages with tool_result content blocks
-    """
-    claude_messages = []
-    pending_tool_results = []
-
-    for msg in messages:
-        role = msg.get("role")
-
-        if role == "tool":
-            # Collect tool results to batch into a user message
-            pending_tool_results.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": msg.get("tool_call_id"),
-                    "content": msg.get("content", ""),
-                }
-            )
-            continue
-
-        # If we have pending tool results, add them as a user message first
-        if pending_tool_results:
-            claude_messages.append(
-                {
-                    "role": "user",
-                    "content": pending_tool_results,
-                }
-            )
-            pending_tool_results = []
-
-        if role == "assistant" and msg.get("tool_calls"):
-            # Convert assistant message with tool_calls to Claude format
-            content_blocks = []
-
-            # Add text content if present
-            if msg.get("content"):
-                content_blocks.append(
-                    {
-                        "type": "text",
-                        "text": msg["content"],
-                    }
-                )
-
-            # Add tool_use blocks
-            for tc in msg["tool_calls"]:
-                content_blocks.append(
-                    {
-                        "type": "tool_use",
-                        "id": tc.get("id"),
-                        "name": tc.get("function", {}).get("name"),
-                        "input": json.loads(tc.get("function", {}).get("arguments", "{}")),
-                    }
-                )
-
-            claude_messages.append(
-                {
-                    "role": "assistant",
-                    "content": content_blocks,
-                }
-            )
-        else:
-            # Regular message, pass through
-            claude_messages.append(msg)
-
-    # Handle any remaining tool results
-    if pending_tool_results:
-        claude_messages.append(
-            {
-                "role": "user",
-                "content": pending_tool_results,
-            }
-        )
-
-    return claude_messages
-
-
 def get_base_model(provider: str | None = None) -> str:
     """Get the base model for a provider (without tier suffix).
 
@@ -811,7 +715,8 @@ def make_llm_with_tools(
     """Return a function(messages) -> ChatCompletion that supports tool calling.
 
     Uses the same endpoint as your main chat LLM by default.
-    Set TOOL_FORMAT=claude if using a Claude proxy (like clewdr).
+    For Claude proxies like clewdr, use LLM_PROVIDER=anthropic with
+    make_llm_with_tools_anthropic() instead.
 
     The returned function takes messages and returns the full ChatCompletion
     object so the caller can handle tool_calls if present.
@@ -826,19 +731,11 @@ def make_llm_with_tools(
     """
     client = _get_openai_tool_client()
     tool_model = _get_tool_model(tier)
-    tool_format = os.getenv("TOOL_FORMAT", "openai").lower()
 
     def llm(messages: list[dict]) -> ChatCompletion:
-        if tool_format == "claude":
-            # Convert messages and tools to Claude format for proxies like clewdr
-            converted_messages = _convert_messages_to_claude_format(messages)
-            kwargs = {"model": tool_model, "messages": converted_messages}
-            if tools:
-                kwargs["tools"] = _convert_tools_to_claude_format(tools)
-        else:
-            kwargs = {"model": tool_model, "messages": messages}
-            if tools:
-                kwargs["tools"] = tools
+        kwargs = {"model": tool_model, "messages": messages}
+        if tools:
+            kwargs["tools"] = tools
         return client.chat.completions.create(**kwargs)
 
     return llm

@@ -655,7 +655,7 @@ async def mcp_oauth_complete(args: dict[str, Any], ctx: ToolContext) -> str:
         success = await oauth_client.exchange_code(code, redirect_uri)
 
         if not success:
-            return f"Failed to exchange authorization code. The code may be invalid or expired. Try starting the flow again with mcp_oauth_start."
+            return "Failed to exchange authorization code. The code may be invalid or expired. Try starting the flow again with mcp_oauth_start."
 
         # Update server status and try to connect
         config.status = "stopped"  # Clear pending_auth status
@@ -706,7 +706,7 @@ async def mcp_oauth_status(args: dict[str, Any], ctx: ToolContext) -> str:
         lines.append(f"- Server Status: {config.status}")
 
         if oauth_state and oauth_state.tokens:
-            lines.append(f"- OAuth: ✅ Authorized")
+            lines.append("- OAuth: ✅ Authorized")
             if oauth_state.tokens.expires_at:
                 lines.append(f"- Token Expires: {oauth_state.tokens.expires_at}")
             if oauth_state.tokens.is_expired():

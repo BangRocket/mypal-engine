@@ -125,7 +125,6 @@ poetry run python scripts/migrate.py reset
 - `clara_core/mcp/client.py` - MCPClient wrapper for connecting to MCP servers (stdio & HTTP transports)
 - `clara_core/mcp/manager.py` - MCPServerManager singleton for managing all server connections
 - `clara_core/mcp/installer.py` - Installation from Smithery, npm, GitHub, Docker, or local paths
-- `clara_core/mcp/registry_adapter.py` - Bridge between MCP tools and Clara's ToolRegistry
 - `clara_core/mcp/models.py` - MCPServer SQLAlchemy model for configuration storage
 - `tools/mcp_management.py` - User-facing management tools (mcp_install, mcp_list, etc.)
 
@@ -457,10 +456,6 @@ Example output with high tier:
 ```
 
 **For Claude proxies (like clewdr)**: Use `LLM_PROVIDER=anthropic` with `ANTHROPIC_BASE_URL` for native Anthropic SDK support. This uses native Claude tool calling without format conversion.
-
-### Deprecated
-- `TOOL_FORMAT` - No longer needed. Use `LLM_PROVIDER=anthropic` for native Claude tool calling.
-- `TOOL_MODEL` - No longer used. Tool calls use tier-based model selection, with "low" tier bumped to base model.
 
 To enable Docker sandbox + web search:
 ```bash

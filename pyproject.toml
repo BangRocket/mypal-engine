@@ -86,6 +86,7 @@ aiohttp = "^3.9.0"  # Required for Teams bot HTTP server
 clara-gateway = "gateway.__main__:main"
 clara-discord = "adapters.discord.main:run"
 clara-teams = "adapters.teams.main:run"
+clara-cli = "adapters.cli.main:run"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"

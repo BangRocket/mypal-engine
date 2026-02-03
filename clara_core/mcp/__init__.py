@@ -48,10 +48,10 @@ from .installer import InstallResult, MCPInstaller, SmitheryClient, SmitherySear
 from .local_server import LocalServerManager, LocalServerProcess, MCPTool
 from .manager import MCPServerManager
 from .models import (
+    MCP_SERVERS_DIR,
     LocalServerConfig,
     MCPServer,
     MCPServerConfig,
-    MCP_SERVERS_DIR,
     RemoteServerConfig,
     ServerConfig,
     ServerStatus,
@@ -86,9 +86,6 @@ from .remote_server import (
     add_remote_server,
     add_remote_server_from_standard_config,
 )
-
-# Keep deprecated imports for backwards compatibility
-from .registry_adapter import MCPRegistryAdapter, get_mcp_adapter, init_mcp_adapter
 
 logger = logging.getLogger(__name__)
 
@@ -150,10 +147,6 @@ __all__ = [
     "save_server_config",
     "delete_server_config",
     "list_server_configs",
-    # Deprecated registry adapter (kept for backwards compatibility)
-    "MCPRegistryAdapter",
-    "get_mcp_adapter",
-    "init_mcp_adapter",
 ]
 
 
