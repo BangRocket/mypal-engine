@@ -398,8 +398,12 @@ class MCPServerManager:
             total = len(self._local) + len(self._remote)
             logger.info(f"[MCP] Shutting down {total} servers...")
 
-            # Suppress noisy asyncio errors during async generator cleanup
-            # These occur when stdio_client generators are closed from a different task
+            # Suppress noisy asyncio errors during async generator cleanup.
+            # These occur when stdio_client generators are closed from a different task.
+            # We intentionally do NOT restore the original handler because the async
+            # generators from stdio_client may not be cleaned up until the event loop
+            # fully terminates (after this method returns). Keeping this handler active
+            # ensures those late cleanup errors are also suppressed.
             loop = asyncio.get_running_loop()
             original_handler = loop.get_exception_handler()
 
@@ -419,12 +423,8 @@ class MCPServerManager:
 
             loop.set_exception_handler(_shutdown_exception_handler)
 
-            try:
-                await self._local.shutdown()
-                await self._remote.shutdown()
-            finally:
-                # Restore original handler
-                loop.set_exception_handler(original_handler)
+            await self._local.shutdown()
+            await self._remote.shutdown()
 
             self._initialized = False
             logger.info("[MCP] Shutdown complete")
