@@ -41,6 +41,8 @@ from clara_core.llm import (
     make_llm_streaming,
     make_llm_with_tools,
     make_llm_with_tools_anthropic,
+    make_llm_with_xml_tools,
+    make_llm_with_xml_tools_streaming,
 )
 from clara_core.memory import MemoryManager, load_initial_profile
 from clara_core.platform import PlatformAdapter, PlatformContext, PlatformMessage
@@ -65,6 +67,8 @@ __all__ = [
     "make_llm_streaming",
     "make_llm_with_tools",
     "make_llm_with_tools_anthropic",
+    "make_llm_with_xml_tools",
+    "make_llm_with_xml_tools_streaming",
     "anthropic_to_openai_response",
     "generate_tool_description",
     # Model tiers
