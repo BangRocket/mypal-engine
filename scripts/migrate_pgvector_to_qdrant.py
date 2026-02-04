@@ -91,6 +91,35 @@ def count_pgvector_records(engine) -> int:
         return result.scalar()
 
 
+def parse_pgvector(vector_data) -> list[float] | None:
+    """Parse pgvector vector data into a list of floats.
+
+    pgvector returns vectors as strings like '[0.1,0.2,0.3]' when the
+    pgvector Python extension isn't registered with psycopg2.
+    """
+    if vector_data is None:
+        return None
+
+    # If it's already a list, return it
+    if isinstance(vector_data, (list, tuple)):
+        return [float(x) for x in vector_data]
+
+    # If it's a string representation like '[0.1,0.2,...]', parse it
+    if isinstance(vector_data, str):
+        # Remove brackets and split by comma
+        cleaned = vector_data.strip('[]')
+        if not cleaned:
+            return None
+        return [float(x.strip()) for x in cleaned.split(',')]
+
+    # Try to convert numpy array or similar
+    try:
+        return [float(x) for x in vector_data]
+    except (TypeError, ValueError):
+        logger.warning(f"Could not parse vector data of type {type(vector_data)}")
+        return None
+
+
 def fetch_pgvector_batch(
     engine,
     offset: int,
@@ -104,8 +133,9 @@ def fetch_pgvector_batch(
     - payload (JSONB)
     No created_at/updated_at columns.
     """
+    # Cast vector to text to ensure we get a parseable string
     query = text(f"""
-        SELECT id, vector, payload
+        SELECT id, vector::text as vector, payload
         FROM {COLLECTION_NAME}
         ORDER BY id
         OFFSET :offset
@@ -119,7 +149,7 @@ def fetch_pgvector_batch(
             records.append(
                 {
                     "id": str(row.id),
-                    "embedding": list(row.vector) if row.vector else None,
+                    "embedding": parse_pgvector(row.vector),
                     "payload": row.payload if isinstance(row.payload, dict) else json.loads(row.payload or "{}"),
                     "created_at": None,
                     "updated_at": None,
