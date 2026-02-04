@@ -223,9 +223,9 @@ def import_to_mem0(
         dry_run: If True, only show what would be imported without actually importing
         user_id: User ID for mem0 storage
     """
-    from clara_core.memory import MEM0
+    from clara_core.memory import ROOK
 
-    if MEM0 is None:
+    if ROOK is None:
         print("Error: mem0 is not initialized. Check your configuration.")
         sys.exit(1)
 
@@ -297,7 +297,7 @@ def import_to_mem0(
 
                 # Add to mem0 with contact metadata
                 try:
-                    result = MEM0.add(
+                    result = ROOK.add(
                         context_intro + mem0_messages,
                         user_id=user_id,
                         metadata={

@@ -22,9 +22,9 @@ USER_ID = os.getenv("USER_ID", "demo-user")
 
 def clear_databases(user_id: str, skip_confirm: bool = False):
     """Clear all mem0 data for a user."""
-    from clara_core.memory.config import MEM0, QDRANT_DATA_DIR
+    from clara_core.memory.config import ROOK, QDRANT_DATA_DIR
 
-    if MEM0 is None:
+    if ROOK is None:
         print("Error: mem0 is not initialized")
         return False
 
@@ -41,7 +41,7 @@ def clear_databases(user_id: str, skip_confirm: bool = False):
 
     # Clear via mem0 API (handles both vector and graph)
     try:
-        MEM0.delete_all(user_id=user_id)
+        ROOK.delete_all(user_id=user_id)
         print("  - mem0.delete_all() completed")
     except Exception as e:
         print(f"  - Error during delete_all: {e}")
@@ -68,7 +68,7 @@ def clear_databases(user_id: str, skip_confirm: bool = False):
 
     # Verify
     print("\nVerifying...")
-    result = MEM0.get_all(user_id=user_id)
+    result = ROOK.get_all(user_id=user_id)
     memories = len(result.get("results", []))
     relations = len(result.get("relations", []))
     print(f"  - Remaining memories: {memories}")

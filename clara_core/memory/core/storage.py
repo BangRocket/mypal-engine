@@ -236,8 +236,9 @@ class SQLiteManager:
 
     def close(self) -> None:
         """Close the database connection."""
-        if self.connection:
-            self.connection.close()
+        conn = getattr(self, "connection", None)
+        if conn:
+            conn.close()
             self.connection = None
 
     def __del__(self):

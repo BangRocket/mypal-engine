@@ -407,9 +407,9 @@ def link_user_to_person(user_id: str):
 
 def apply_to_mem0(memories: dict, user_id: str, dry_run: bool = False):
     """Upsert memories to mem0 with relationship-rich grouping for graph extraction."""
-    from clara_core.memory import MEM0
+    from clara_core.memory import ROOK
 
-    if MEM0 is None:
+    if ROOK is None:
         print("[bootstrap] Error: mem0 is not initialized")
         return
 
@@ -450,7 +450,7 @@ def apply_to_mem0(memories: dict, user_id: str, dry_run: bool = False):
                 {"role": "assistant", "content": f"I've noted this information about {category.replace('_', ' ')}."}
             ]
 
-            result = MEM0.add(
+            result = ROOK.add(
                 messages,
                 user_id=user_id,
                 metadata=metadata,

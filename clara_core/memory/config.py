@@ -1,7 +1,9 @@
-"""Clara Memory System configuration.
+"""Clara Memory System configuration (Rook).
 
-This module provides configuration and initialization for Clara's memory system,
-replacing the vendored mem0 configuration.
+This module provides configuration and initialization for Clara's memory system.
+The memory system is called "Rook" internally.
+
+Environment variables use ROOK_* prefix with MEM0_* fallback for compatibility.
 """
 
 from __future__ import annotations
@@ -17,15 +19,28 @@ from clara_core.memory.core.memory import ClaraMemory
 
 load_dotenv()
 
-logger = logging.getLogger("clara.memory.config")
+logger = logging.getLogger("clara.rook.config")
 
-# Mem0 has its own independent provider config (separate from chat LLM)
-MEM0_PROVIDER = os.getenv("MEM0_PROVIDER", "openrouter").lower()
-MEM0_MODEL = os.getenv("MEM0_MODEL", "openai/gpt-4o-mini")
+
+def _get_env(rook_key: str, mem0_key: str, default: str | None = None) -> str | None:
+    """Get env var with ROOK_* preferred, MEM0_* as fallback."""
+    return os.getenv(rook_key) or os.getenv(mem0_key, default)
+
+
+# Rook has its own independent provider config (separate from chat LLM)
+# ROOK_* preferred, MEM0_* fallback for backward compatibility
+ROOK_PROVIDER = _get_env("ROOK_PROVIDER", "MEM0_PROVIDER", "openrouter").lower()
+ROOK_MODEL = _get_env("ROOK_MODEL", "MEM0_MODEL", "openai/gpt-4o-mini")
 
 # Optional overrides - if not set, uses the provider's default key/url
-MEM0_API_KEY = os.getenv("MEM0_API_KEY")
-MEM0_BASE_URL = os.getenv("MEM0_BASE_URL")
+ROOK_API_KEY = _get_env("ROOK_API_KEY", "MEM0_API_KEY")
+ROOK_BASE_URL = _get_env("ROOK_BASE_URL", "MEM0_BASE_URL")
+
+# Backward compatibility aliases
+MEM0_PROVIDER = ROOK_PROVIDER
+MEM0_MODEL = ROOK_MODEL
+MEM0_API_KEY = ROOK_API_KEY
+MEM0_BASE_URL = ROOK_BASE_URL
 
 # OpenAI API for embeddings (always required)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -54,18 +69,19 @@ PROVIDER_DEFAULTS = {
     },
 }
 
-# IMPORTANT: mem0 auto-detects these env vars and overrides our config!
+# IMPORTANT: The vendored mem0 auto-detects these env vars and overrides our config!
 # We must save and clear them before initialization, then restore after.
 _saved_env_vars = {}
 _env_vars_to_clear = [
     "OPENROUTER_API_KEY",
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
-    "MEM0_API_KEY",
+    "ROOK_API_KEY",
+    "MEM0_API_KEY",  # Legacy fallback
 ]
 
 
-def _clear_mem0_env_vars():
+def _clear_rook_env_vars():
     """Clear env vars that might cause auto-detection issues."""
     for var in _env_vars_to_clear:
         if var in os.environ:
@@ -85,7 +101,9 @@ BASE_DATA_DIR = Path(os.getenv("DATA_DIR", str(Path(__file__).parent.parent.pare
 QDRANT_DATA_DIR = BASE_DATA_DIR / "qdrant_data"
 
 # PostgreSQL with pgvector for production (optional)
-MEM0_DATABASE_URL = os.getenv("MEM0_DATABASE_URL")
+# ROOK_DATABASE_URL preferred, MEM0_DATABASE_URL as fallback
+ROOK_DATABASE_URL = _get_env("ROOK_DATABASE_URL", "MEM0_DATABASE_URL")
+MEM0_DATABASE_URL = ROOK_DATABASE_URL  # Backward compatibility alias
 
 # Self-hosted Qdrant (takes priority over pgvector and local Qdrant)
 QDRANT_URL = os.getenv("QDRANT_URL")
@@ -96,7 +114,7 @@ QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 VECTOR_STORE_MODE = os.getenv("VECTOR_STORE_MODE", "primary_only")
 
 # Only create Qdrant directory if we're using local Qdrant
-if not MEM0_DATABASE_URL and not QDRANT_URL:
+if not ROOK_DATABASE_URL and not QDRANT_URL:
     QDRANT_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # Graph memory configuration (optional - for relationship tracking)
@@ -149,33 +167,33 @@ def _get_graph_store_config() -> dict | None:
 
 
 def _get_llm_config() -> dict | None:
-    """Build LLM config based on MEM0_PROVIDER."""
-    if MEM0_PROVIDER not in PROVIDER_DEFAULTS:
-        logger.warning(f"Unknown MEM0_PROVIDER={MEM0_PROVIDER} - LLM disabled")
+    """Build LLM config based on ROOK_PROVIDER."""
+    if ROOK_PROVIDER not in PROVIDER_DEFAULTS:
+        logger.warning(f"Unknown ROOK_PROVIDER={ROOK_PROVIDER} - LLM disabled")
         return None
 
-    provider_config = PROVIDER_DEFAULTS[MEM0_PROVIDER]
+    provider_config = PROVIDER_DEFAULTS[ROOK_PROVIDER]
 
-    # Get API key: explicit MEM0_API_KEY > provider's default key
-    api_key = MEM0_API_KEY or os.getenv(provider_config["api_key_env"])
+    # Get API key: explicit ROOK_API_KEY > provider's default key
+    api_key = ROOK_API_KEY or os.getenv(provider_config["api_key_env"])
     if not api_key:
-        logger.info(f"No API key found for MEM0_PROVIDER={MEM0_PROVIDER} - LLM disabled")
+        logger.info(f"No API key found for ROOK_PROVIDER={ROOK_PROVIDER} - LLM disabled")
         return None
 
-    # Get base URL: explicit MEM0_BASE_URL > provider's default URL
-    base_url = MEM0_BASE_URL or provider_config["base_url"]
+    # Get base URL: explicit ROOK_BASE_URL > provider's default URL
+    base_url = ROOK_BASE_URL or provider_config["base_url"]
 
-    logger.info(f"Memory LLM Provider: {MEM0_PROVIDER}")
-    logger.info(f"Memory LLM Model: {MEM0_MODEL}")
+    logger.info(f"Rook LLM Provider: {ROOK_PROVIDER}")
+    logger.info(f"Rook LLM Model: {ROOK_MODEL}")
     if base_url:
-        logger.info(f"Memory LLM Base URL: {base_url}")
+        logger.info(f"Rook LLM Base URL: {base_url}")
 
     # Anthropic uses native SDK with anthropic_base_url
-    if MEM0_PROVIDER == "anthropic":
+    if ROOK_PROVIDER == "anthropic":
         return {
             "provider": "anthropic",
             "config": {
-                "model": MEM0_MODEL,
+                "model": ROOK_MODEL,
                 "api_key": api_key,
                 "anthropic_base_url": base_url,  # CRITICAL: Proxy support for clewdr
                 "temperature": 0,
@@ -187,7 +205,7 @@ def _get_llm_config() -> dict | None:
     return {
         "provider": "openai",
         "config": {
-            "model": MEM0_MODEL,
+            "model": ROOK_MODEL,
             "api_key": api_key,
             "openai_base_url": base_url,
             "temperature": 0,
@@ -203,7 +221,8 @@ llm_config = _get_llm_config()
 graph_store_config = _get_graph_store_config()
 
 # Collection name
-MEM0_COLLECTION_NAME = os.getenv("MEM0_COLLECTION_NAME", "clara_memories")
+ROOK_COLLECTION_NAME = _get_env("ROOK_COLLECTION_NAME", "MEM0_COLLECTION_NAME", "clara_memories")
+MEM0_COLLECTION_NAME = ROOK_COLLECTION_NAME  # Backward compatibility alias
 
 
 def _build_vector_store_config() -> dict:
@@ -211,7 +230,7 @@ def _build_vector_store_config() -> dict:
 
     Priority order:
     1. QDRANT_URL (self-hosted Qdrant) - NEW, recommended for production
-    2. MEM0_DATABASE_URL (pgvector) - legacy production option
+    2. ROOK_DATABASE_URL (pgvector) - legacy production option
     3. Local Qdrant (development)
     """
     # 1. Self-hosted Qdrant (preferred for production)
@@ -219,7 +238,7 @@ def _build_vector_store_config() -> dict:
         config = {
             "provider": "qdrant",
             "config": {
-                "collection_name": MEM0_COLLECTION_NAME,
+                "collection_name": ROOK_COLLECTION_NAME,
                 "url": QDRANT_URL,
                 "on_disk": True,  # Persist to disk
             },
@@ -227,22 +246,22 @@ def _build_vector_store_config() -> dict:
         if QDRANT_API_KEY:
             config["config"]["api_key"] = QDRANT_API_KEY
         logger.info(f"Vector store: Qdrant (self-hosted) at {QDRANT_URL}")
-        logger.info(f"Collection: {MEM0_COLLECTION_NAME}")
+        logger.info(f"Collection: {ROOK_COLLECTION_NAME}")
         return config
 
     # 2. PostgreSQL with pgvector (legacy production)
-    if MEM0_DATABASE_URL:
-        pgvector_url = MEM0_DATABASE_URL
+    if ROOK_DATABASE_URL:
+        pgvector_url = ROOK_DATABASE_URL
         if pgvector_url.startswith("postgres://"):
             pgvector_url = pgvector_url.replace("postgres://", "postgresql://", 1)
 
         logger.info("Vector store: pgvector")
-        logger.info(f"Collection: {MEM0_COLLECTION_NAME}")
+        logger.info(f"Collection: {ROOK_COLLECTION_NAME}")
         return {
             "provider": "pgvector",
             "config": {
                 "connection_string": pgvector_url,
-                "collection_name": MEM0_COLLECTION_NAME,
+                "collection_name": ROOK_COLLECTION_NAME,
             },
         }
 
@@ -302,23 +321,23 @@ if graph_store_config:
 else:
     logger.info("Graph memory: DISABLED (set ENABLE_GRAPH_MEMORY=true to enable)")
 
-# Initialize Clara Memory (singleton)
-MEM0: ClaraMemory | None = None
+# Initialize Rook (Clara's memory system singleton)
+ROOK: ClaraMemory | None = None
 
 
-def _init_mem0() -> ClaraMemory | None:
-    """Initialize Clara Memory synchronously."""
+def _init_rook() -> ClaraMemory | None:
+    """Initialize Rook (Clara's memory system) synchronously."""
     if not OPENAI_API_KEY:
-        logger.warning("OPENAI_API_KEY not set - memory disabled (no embeddings)")
+        logger.warning("OPENAI_API_KEY not set - Rook disabled (no embeddings)")
         return None
 
     try:
-        _clear_mem0_env_vars()
+        _clear_rook_env_vars()
         memory = ClaraMemory.from_config(config)
-        logger.info("Clara Memory initialized successfully")
+        logger.info("Rook initialized successfully")
         return memory
     except Exception as e:
-        logger.error(f"Failed to initialize Clara Memory: {e}")
+        logger.error(f"Failed to initialize Rook: {e}")
         logger.warning("App will run without memory features")
         return None
     finally:
@@ -326,8 +345,9 @@ def _init_mem0() -> ClaraMemory | None:
 
 
 # Initialize at module load
-MEM0 = _init_mem0()
+ROOK = _init_rook()
 
 
 # Backward compatibility aliases
+MEM0 = ROOK  # Legacy name
 Memory = ClaraMemory

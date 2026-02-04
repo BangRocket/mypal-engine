@@ -162,7 +162,7 @@ def finalize_conversation_emotional_context(
     Returns:
         EmotionalSummary if successful, None if no data to finalize
     """
-    from clara_core.memory import MEM0
+    from clara_core.memory import ROOK
 
     sentiments = get_conversation_sentiments(user_id, channel_id)
 
@@ -188,7 +188,7 @@ def finalize_conversation_emotional_context(
     )
 
     # Store to mem0 as emotional context memory
-    if MEM0:
+    if ROOK:
         memory_text = _format_emotional_memory(emotional_summary)
         metadata = {
             "memory_type": "emotional_context",
@@ -203,7 +203,7 @@ def finalize_conversation_emotional_context(
         }
 
         try:
-            MEM0.add(
+            ROOK.add(
                 [{"role": "system", "content": memory_text}],
                 user_id=user_id,
                 agent_id=agent_id,

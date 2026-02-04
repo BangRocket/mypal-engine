@@ -94,9 +94,9 @@ class MCPMemoryIntegration:
             True if stored successfully, False otherwise
         """
         try:
-            from clara_core.memory import MEM0
+            from clara_core.memory import ROOK
 
-            if MEM0 is None:
+            if ROOK is None:
                 logger.debug("[MCPMemory] mem0 not available, skipping storage")
                 return False
 
@@ -133,7 +133,7 @@ class MCPMemoryIntegration:
                 {"role": "user", "content": content},
             ]
 
-            result = MEM0.add(
+            result = ROOK.add(
                 messages,
                 user_id=user_id,
                 agent_id=self.agent_id,
@@ -247,9 +247,9 @@ class MCPMemoryIntegration:
             True if stored successfully
         """
         try:
-            from clara_core.memory import MEM0
+            from clara_core.memory import ROOK
 
-            if MEM0 is None:
+            if ROOK is None:
                 return False
 
             content = (
@@ -265,7 +265,7 @@ class MCPMemoryIntegration:
                 {"role": "user", "content": content},
             ]
 
-            result = MEM0.add(
+            result = ROOK.add(
                 messages,
                 user_id=user_id,
                 agent_id=self.agent_id,
@@ -310,9 +310,9 @@ class MCPMemoryIntegration:
             - relevance_score: mem0's similarity score
         """
         try:
-            from clara_core.memory import MEM0
+            from clara_core.memory import ROOK
 
-            if MEM0 is None:
+            if ROOK is None:
                 return []
 
             # Build search query
@@ -325,7 +325,7 @@ class MCPMemoryIntegration:
             if server_name:
                 filters["server_name"] = server_name
 
-            result = MEM0.search(
+            result = ROOK.search(
                 query,
                 user_id=user_id,
                 agent_id=self.agent_id,
@@ -369,9 +369,9 @@ class MCPMemoryIntegration:
             - preference_type: Type of preference
         """
         try:
-            from clara_core.memory import MEM0
+            from clara_core.memory import ROOK
 
-            if MEM0 is None:
+            if ROOK is None:
                 return []
 
             # Get all MCP preference memories
@@ -379,7 +379,7 @@ class MCPMemoryIntegration:
             if server_name:
                 filters["server_name"] = server_name
 
-            result = MEM0.get_all(
+            result = ROOK.get_all(
                 user_id=user_id,
                 agent_id=self.agent_id,
                 limit=20,

@@ -114,14 +114,14 @@ def load_initial_profile(user_id: str) -> None:
     2. If not, generate from inputs/user_profile.txt first
     3. Apply structured memories to mem0 with graph-friendly grouping
     """
-    from clara_core.memory import MEM0
+    from clara_core.memory import ROOK
 
     skip_profile = os.getenv("SKIP_PROFILE_LOAD", "true").lower() == "true"
     if skip_profile:
         logger.debug("Profile loading disabled (SKIP_PROFILE_LOAD=true)")
         return
 
-    if MEM0 is None:
+    if ROOK is None:
         logger.warning("Skipping profile load - mem0 not available")
         return
 
@@ -489,9 +489,9 @@ class MemoryManager:
             Tuple of (user_memories, project_memories, graph_relations)
             graph_relations is a list of dicts with keys: source, relationship, destination
         """
-        from clara_core.memory import MEM0
+        from clara_core.memory import ROOK
 
-        if MEM0 is None:
+        if ROOK is None:
             return [], [], []
 
         # Truncate search query if too long
@@ -513,7 +513,7 @@ class MemoryManager:
                     logger.debug("Key memories cache hit")
                     return {"results": cached, "_cached": True}
 
-            result = MEM0.get_all(
+            result = ROOK.get_all(
                 user_id=user_id,
                 agent_id=self.agent_id,
                 filters={"is_key": "true"},
@@ -535,7 +535,7 @@ class MemoryManager:
                     logger.debug("User search cache hit")
                     return {"results": cached, "_cached": True}
 
-            result = MEM0.search(
+            result = ROOK.search(
                 search_query,
                 user_id=user_id,
                 agent_id=self.agent_id,
@@ -558,7 +558,7 @@ class MemoryManager:
                     logger.debug("Project search cache hit")
                     return {"results": cached, "_cached": True}
 
-            result = MEM0.search(
+            result = ROOK.search(
                 search_query,
                 user_id=user_id,
                 agent_id=self.agent_id,
@@ -653,7 +653,7 @@ class MemoryManager:
                         continue
 
                     def fetch_participant(name=p_name, query=search_query):
-                        return MEM0.search(
+                        return ROOK.search(
                             f"{name} {query[:500]}",
                             user_id=user_id,
                             agent_id=self.agent_id,
@@ -774,9 +774,9 @@ class MemoryManager:
             participants: List of {"id": str, "name": str} for people mentioned
             is_dm: Whether this is a DM conversation (stores as "personal" vs "project")
         """
-        from clara_core.memory import MEM0
+        from clara_core.memory import ROOK
 
-        if MEM0 is None:
+        if ROOK is None:
             return
 
         # Build context with participant names for better extraction
@@ -802,7 +802,7 @@ class MemoryManager:
             metadata["participant_names"] = [p.get("name") for p in participants if p.get("name")]
 
         try:
-            result = MEM0.add(
+            result = ROOK.add(
                 history_slice,
                 user_id=user_id,
                 agent_id=self.agent_id,
@@ -920,7 +920,7 @@ class MemoryManager:
 
         Args:
             user_id: User who owns the memories
-            memory_results: Results from MEM0.add() containing memory IDs
+            memory_results: Results from ROOK.add() containing memory IDs
         """
         from datetime import UTC, datetime
 
@@ -1009,14 +1009,14 @@ class MemoryManager:
         """
         from datetime import timedelta
 
-        from clara_core.memory import MEM0
+        from clara_core.memory import ROOK
 
-        if MEM0 is None:
+        if ROOK is None:
             return []
 
         try:
             # Search for emotional_context memories
-            results = MEM0.get_all(
+            results = ROOK.get_all(
                 user_id=user_id,
                 agent_id=self.agent_id,
                 limit=limit * 2,  # Fetch extra to filter by age
@@ -1560,7 +1560,7 @@ class MemoryManager:
             user_id: User who owns the memory
             reason: Why the memory is being demoted
         """
-        from clara_core.memory import MEM0
+        from clara_core.memory import ROOK
 
         # Promote with grade=AGAIN (1) to decrease stability
         self.promote_memory(
@@ -1571,9 +1571,9 @@ class MemoryManager:
         )
 
         # Also send negative feedback to mem0
-        if MEM0 is not None:
+        if ROOK is not None:
             try:
-                MEM0.feedback(memory_id, feedback="NEGATIVE")
+                ROOK.feedback(memory_id, feedback="NEGATIVE")
             except Exception as e:
                 memory_logger.debug(f"Could not send mem0 feedback: {e}")
 
@@ -1817,14 +1817,14 @@ class MemoryManager:
             calculate_similarity,
             detect_contradiction,
         )
-        from clara_core.memory import MEM0
+        from clara_core.memory import ROOK
 
-        if MEM0 is None:
+        if ROOK is None:
             return "create", None
 
         # Search for similar existing memories
         try:
-            existing = MEM0.search(
+            existing = ROOK.search(
                 content,
                 user_id=user_id,
                 agent_id=self.agent_id,
@@ -1914,16 +1914,16 @@ class MemoryManager:
         Returns:
             New memory ID, or None on failure
         """
-        from clara_core.memory import MEM0
+        from clara_core.memory import ROOK
         from db import SessionLocal
         from db.models import MemorySupersession
 
-        if MEM0 is None:
+        if ROOK is None:
             return None
 
         try:
             # Add new memory
-            result = MEM0.add(
+            result = ROOK.add(
                 new_content,
                 user_id=user_id,
                 agent_id=self.agent_id,

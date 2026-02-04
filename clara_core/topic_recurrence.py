@@ -159,9 +159,9 @@ def store_topic_mention(
     Returns:
         True if stored successfully, False otherwise
     """
-    from clara_core.memory import MEM0
+    from clara_core.memory import ROOK
 
-    if MEM0 is None:
+    if ROOK is None:
         return False
 
     now = datetime.now(UTC)
@@ -182,7 +182,7 @@ def store_topic_mention(
     }
 
     try:
-        MEM0.add(
+        ROOK.add(
             [{"role": "system", "content": memory_text}],
             user_id=user_id,
             agent_id=agent_id,
@@ -297,13 +297,13 @@ def fetch_topic_mentions(
     Returns:
         List of topic mention dicts from mem0
     """
-    from clara_core.memory import MEM0
+    from clara_core.memory import ROOK
 
-    if MEM0 is None:
+    if ROOK is None:
         return []
 
     try:
-        results = MEM0.get_all(
+        results = ROOK.get_all(
             user_id=user_id,
             agent_id=agent_id,
             limit=100,  # Get more to filter

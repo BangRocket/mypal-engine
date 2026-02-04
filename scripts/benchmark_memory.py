@@ -126,17 +126,17 @@ def benchmark_embedding_cache_hit(iterations: int) -> BenchmarkResult:
 
 def benchmark_key_memories(iterations: int, user_id: str = "benchmark-user") -> BenchmarkResult:
     """Benchmark key memories retrieval."""
-    from clara_core.memory import MEM0
+    from clara_core.memory import ROOK
 
     result = BenchmarkResult(operation="key_memories")
 
-    if MEM0 is None:
-        logger.warning("MEM0 not available, skipping key_memories benchmark")
+    if ROOK is None:
+        logger.warning("ROOK not available, skipping key_memories benchmark")
         return result
 
     for _ in range(iterations):
         elapsed_ms, _ = time_operation(
-            MEM0.get_all,
+            ROOK.get_all,
             user_id=user_id,
             agent_id="clara",
             filters={"is_key": "true"},
@@ -149,12 +149,12 @@ def benchmark_key_memories(iterations: int, user_id: str = "benchmark-user") -> 
 
 def benchmark_user_search(iterations: int, user_id: str = "benchmark-user") -> BenchmarkResult:
     """Benchmark user memory search."""
-    from clara_core.memory import MEM0
+    from clara_core.memory import ROOK
 
     result = BenchmarkResult(operation="user_search")
 
-    if MEM0 is None:
-        logger.warning("MEM0 not available, skipping user_search benchmark")
+    if ROOK is None:
+        logger.warning("ROOK not available, skipping user_search benchmark")
         return result
 
     queries = [
@@ -168,7 +168,7 @@ def benchmark_user_search(iterations: int, user_id: str = "benchmark-user") -> B
     for i in range(iterations):
         query = queries[i % len(queries)]
         elapsed_ms, _ = time_operation(
-            MEM0.search,
+            ROOK.search,
             query,
             user_id=user_id,
             agent_id="clara",
@@ -184,12 +184,12 @@ def benchmark_project_search(
     project_id: str = "benchmark-project",
 ) -> BenchmarkResult:
     """Benchmark project memory search."""
-    from clara_core.memory import MEM0
+    from clara_core.memory import ROOK
 
     result = BenchmarkResult(operation="project_search")
 
-    if MEM0 is None:
-        logger.warning("MEM0 not available, skipping project_search benchmark")
+    if ROOK is None:
+        logger.warning("ROOK not available, skipping project_search benchmark")
         return result
 
     queries = [
@@ -203,7 +203,7 @@ def benchmark_project_search(
     for i in range(iterations):
         query = queries[i % len(queries)]
         elapsed_ms, _ = time_operation(
-            MEM0.search,
+            ROOK.search,
             query,
             user_id=user_id,
             agent_id="clara",

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MyPalClara is a personal AI assistant with session management and persistent memory (via mem0). The assistant's name is Clara. It uses a Discord bot interface with SQLite/PostgreSQL storage.
+MyPalClara is a personal AI assistant with session management and persistent memory (via Rook, Clara's memory system). The assistant's name is Clara. It uses a Discord bot interface with SQLite/PostgreSQL storage.
 
 ## Versioning
 
@@ -64,7 +64,7 @@ docker-compose --profile discord --profile postgres up # Discord bot + databases
 ```bash
 # Bootstrap profile data from inputs/user_profile.txt
 poetry run python -m src.bootstrap_memory          # Dry run (generates JSON)
-poetry run python -m src.bootstrap_memory --apply  # Apply to mem0
+poetry run python -m src.bootstrap_memory --apply  # Apply to Rook
 
 # Clear all memory data
 poetry run python clear_dbs.py             # With confirmation prompt
@@ -106,9 +106,9 @@ poetry run python scripts/migrate.py reset
 ### Core Structure
 - `discord_bot.py` - Discord bot with multi-user support, reply chains, and streaming responses
 - `discord_monitor.py` - Web dashboard for monitoring Discord bot status and activity
-- `memory_manager.py` - Core orchestrator: session handling, mem0 integration, prompt building with Clara's persona
+- `memory_manager.py` - Core orchestrator: session handling, Rook integration, prompt building with Clara's persona
 - `llm_backends.py` - LLM provider abstraction (OpenRouter, NanoGPT, custom OpenAI, native Anthropic) - both streaming and non-streaming
-- `mem0_config.py` - mem0 memory system configuration (Qdrant/pgvector for vectors, OpenAI embeddings)
+- `clara_core/memory/` - Rook memory system (Qdrant/pgvector for vectors, OpenAI embeddings)
 - `models.py` - SQLAlchemy models: Project, Session, Message, ChannelSummary
 - `db.py` - Database setup (SQLite for dev, PostgreSQL for production)
 - `email_monitor.py` - Email monitoring and auto-response system
@@ -143,9 +143,9 @@ WebSocket-based gateway for platform adapters (in development):
 poetry run python -m gateway --host 127.0.0.1 --port 18789
 ```
 
-### Memory System
-- **User memories**: Persistent facts/preferences per user (stored in mem0, searched via `_fetch_mem0_context`)
-- **Project memories**: Topic-specific context per project (filtered by project_id in mem0)
+### Memory System (Rook)
+- **User memories**: Persistent facts/preferences per user (stored in Rook, searched via `_fetch_rook_context`)
+- **Project memories**: Topic-specific context per project (filtered by project_id in Rook)
 - **Graph memories**: Optional relationship tracking via Neo4j or Kuzu (disabled by default, enable with `ENABLE_GRAPH_MEMORY=true`)
 - **Session context**: Recent 20 messages + snapshot of last 10 messages from previous session
 - **Session summary**: LLM-generated summary stored when session times out
@@ -154,7 +154,7 @@ poetry run python -m gateway --host 127.0.0.1 --port 18789
 ## Environment Variables
 
 ### Required
-- `OPENAI_API_KEY` - Always required for mem0 embeddings (text-embedding-3-small)
+- `OPENAI_API_KEY` - Always required for Rook embeddings (text-embedding-3-small)
 - `LLM_PROVIDER` - Chat LLM provider: "openrouter" (default), "nanogpt", "openai", or "anthropic"
 
 ### Chat LLM Providers (based on LLM_PROVIDER)
@@ -209,18 +209,20 @@ For custom OpenAI endpoints behind Cloudflare Access (like cloudflared tunnels):
 - `CF_ACCESS_CLIENT_ID` - Cloudflare Access Service Token client ID
 - `CF_ACCESS_CLIENT_SECRET` - Cloudflare Access Service Token client secret
 
-### Mem0 Provider (independent from chat LLM)
-- `MEM0_PROVIDER` - Provider for memory extraction: "openrouter" (default), "nanogpt", "openai", or "anthropic"
-- `MEM0_MODEL` - Model for memory extraction (default: openai/gpt-4o-mini)
-- `MEM0_API_KEY` - Optional: override the provider's default API key
-- `MEM0_BASE_URL` - Optional: override the provider's default base URL
+### Rook Provider (independent from chat LLM)
+Environment variables use `ROOK_*` prefix with `MEM0_*` fallback for backward compatibility.
 
-Note: For `MEM0_PROVIDER=anthropic`, uses native Anthropic SDK with `anthropic_base_url` support for proxies.
+- `ROOK_PROVIDER` - Provider for memory extraction: "openrouter" (default), "nanogpt", "openai", or "anthropic"
+- `ROOK_MODEL` - Model for memory extraction (default: openai/gpt-4o-mini)
+- `ROOK_API_KEY` - Optional: override the provider's default API key
+- `ROOK_BASE_URL` - Optional: override the provider's default base URL
+
+Note: For `ROOK_PROVIDER=anthropic`, uses native Anthropic SDK with `anthropic_base_url` support for proxies.
 
 ### Optional
 - `USER_ID` - Single-user identifier (default: "demo-user")
 - `DEFAULT_PROJECT` - Default project name (default: "Default Project")
-- `SKIP_PROFILE_LOAD` - Skip initial mem0 profile loading (default: true)
+- `SKIP_PROFILE_LOAD` - Skip initial Rook profile loading (default: true)
 - `ENABLE_GRAPH_MEMORY` - Enable graph memory for relationship tracking (default: false)
 - `GRAPH_STORE_PROVIDER` - Graph store provider: "neo4j" (default) or "kuzu" (embedded)
 - `NEO4J_URL`, `NEO4J_USERNAME`, `NEO4J_PASSWORD` - Neo4j connection (when using neo4j provider)
@@ -228,12 +230,12 @@ Note: For `MEM0_PROVIDER=anthropic`, uses native Anthropic SDK with `anthropic_b
 ### PostgreSQL (Production)
 For production, use managed PostgreSQL instead of SQLite/Qdrant:
 - `DATABASE_URL` - PostgreSQL connection for SQLAlchemy (default: uses SQLite)
-- `MEM0_DATABASE_URL` - PostgreSQL+pgvector connection for mem0 vectors (default: uses Qdrant)
+- `ROOK_DATABASE_URL` - PostgreSQL+pgvector connection for Rook vectors (default: uses Qdrant)
 
 Example (Railway):
 ```bash
 DATABASE_URL=postgresql://user:pass@host:5432/clara_main
-MEM0_DATABASE_URL=postgresql://user:pass@host:5432/clara_vectors
+ROOK_DATABASE_URL=postgresql://user:pass@host:5432/clara_vectors
 ```
 
 To migrate existing data:
@@ -782,18 +784,18 @@ Admin operations require one of:
 - LLM backends support OpenAI-compatible API (via OpenAI SDK) and native Anthropic SDK
 - `LLM_PROVIDER=anthropic` uses native Anthropic SDK with native tool calling (recommended for clewdr)
 - Sandbox system auto-selects between local Docker and remote VPS based on configuration
-- mem0 is vendored locally (in `vendor/mem0/`) with fix for `anthropic_base_url` support
+- Rook (Clara's memory system) is in `clara_core/memory/` with vendored mem0 in `vendor/mem0/` for compatibility
 
 ## Production Deployment
 
 ### With PostgreSQL (recommended)
 
-Set `DATABASE_URL` and `MEM0_DATABASE_URL` to use PostgreSQL instead of SQLite/Qdrant:
+Set `DATABASE_URL` and `ROOK_DATABASE_URL` to use PostgreSQL instead of SQLite/Qdrant:
 
 ```bash
 # .env
 DATABASE_URL=postgresql://user:pass@localhost:5432/clara_main
-MEM0_DATABASE_URL=postgresql://user:pass@localhost:5432/clara_vectors
+ROOK_DATABASE_URL=postgresql://user:pass@localhost:5432/clara_vectors
 ```
 
 Enable pgvector on the vectors database:
@@ -816,13 +818,13 @@ poetry run python scripts/migrate_to_postgres.py --all
 
 ### Database Backup Service
 
-Automated backup service for Clara and Mem0 PostgreSQL databases to S3-compatible storage (Wasabi).
+Automated backup service for Clara and Rook PostgreSQL databases to S3-compatible storage (Wasabi).
 
 **Location:** `backup_service/`
 
 **Environment Variables:**
 - `DATABASE_URL` - Clara PostgreSQL connection string
-- `MEM0_DATABASE_URL` - Mem0 PostgreSQL connection string
+- `ROOK_DATABASE_URL` - Rook PostgreSQL connection string (MEM0_DATABASE_URL also accepted)
 - `S3_BUCKET` - S3 bucket name (default: clara-backups)
 - `S3_ENDPOINT_URL` - S3 endpoint (default: https://s3.wasabisys.com)
 - `S3_ACCESS_KEY` - S3 access key

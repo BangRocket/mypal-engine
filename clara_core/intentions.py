@@ -251,9 +251,9 @@ def _check_topic_trigger(
         return False, {}
 
     try:
-        from clara_core.memory import MEM0
+        from clara_core.memory import ROOK
 
-        if MEM0 is None:
+        if ROOK is None:
             return False, {}
 
         # Use embeddings to check similarity

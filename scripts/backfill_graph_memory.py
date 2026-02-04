@@ -490,13 +490,13 @@ def main():
 
     # Check if graph memory is enabled
     logger.info("Initializing mem0...")
-    from clara_core.memory import ENABLE_GRAPH_MEMORY, MEM0
+    from clara_core.memory import ENABLE_GRAPH_MEMORY, ROOK
 
     if not ENABLE_GRAPH_MEMORY:
         logger.error("✗ Graph memory is not enabled. Set ENABLE_GRAPH_MEMORY=true")
         sys.exit(1)
 
-    if MEM0 is None:
+    if ROOK is None:
         logger.error("✗ mem0 failed to initialize. Check your configuration.")
         sys.exit(1)
 
@@ -563,7 +563,7 @@ def main():
         if args.parallel > 1:
             total_stats = asyncio.run(
                 run_parallel(
-                    sessions, db, MEM0, dry_run, args.verbose,
+                    sessions, db, ROOK, dry_run, args.verbose,
                     args.parallel, processed_ids, progress
                 )
             )
@@ -601,7 +601,7 @@ def main():
                     user_display = user_display[:22] + "..."
 
                 stats = process_session(
-                    session, messages, MEM0,
+                    session, messages, ROOK,
                     dry_run=dry_run,
                     verbose=args.verbose
                 )
