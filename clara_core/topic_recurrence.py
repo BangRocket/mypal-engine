@@ -159,7 +159,7 @@ def store_topic_mention(
     Returns:
         True if stored successfully, False otherwise
     """
-    from config.mem0 import MEM0
+    from clara_core.memory import MEM0
 
     if MEM0 is None:
         return False
@@ -297,7 +297,7 @@ def fetch_topic_mentions(
     Returns:
         List of topic mention dicts from mem0
     """
-    from config.mem0 import MEM0
+    from clara_core.memory import MEM0
 
     if MEM0 is None:
         return []

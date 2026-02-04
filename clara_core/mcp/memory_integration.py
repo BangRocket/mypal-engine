@@ -94,7 +94,7 @@ class MCPMemoryIntegration:
             True if stored successfully, False otherwise
         """
         try:
-            from config.mem0 import MEM0
+            from clara_core.memory import MEM0
 
             if MEM0 is None:
                 logger.debug("[MCPMemory] mem0 not available, skipping storage")
@@ -247,7 +247,7 @@ class MCPMemoryIntegration:
             True if stored successfully
         """
         try:
-            from config.mem0 import MEM0
+            from clara_core.memory import MEM0
 
             if MEM0 is None:
                 return False
@@ -310,7 +310,7 @@ class MCPMemoryIntegration:
             - relevance_score: mem0's similarity score
         """
         try:
-            from config.mem0 import MEM0
+            from clara_core.memory import MEM0
 
             if MEM0 is None:
                 return []
@@ -369,7 +369,7 @@ class MCPMemoryIntegration:
             - preference_type: Type of preference
         """
         try:
-            from config.mem0 import MEM0
+            from clara_core.memory import MEM0
 
             if MEM0 is None:
                 return []

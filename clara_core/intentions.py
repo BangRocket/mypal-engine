@@ -251,7 +251,7 @@ def _check_topic_trigger(
         return False, {}
 
     try:
-        from config.mem0 import MEM0
+        from clara_core.memory import MEM0
 
         if MEM0 is None:
             return False, {}

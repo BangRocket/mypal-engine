@@ -44,7 +44,7 @@ from clara_core.llm import (
     make_llm_with_xml_tools,
     make_llm_with_xml_tools_streaming,
 )
-from clara_core.memory import MemoryManager, load_initial_profile
+from clara_core.memory_manager import MemoryManager, load_initial_profile
 from clara_core.platform import PlatformAdapter, PlatformContext, PlatformMessage
 from clara_core.tools import ToolRegistry
 
