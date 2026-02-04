@@ -225,6 +225,10 @@ ROOK_COLLECTION_NAME = _get_env("ROOK_COLLECTION_NAME", "MEM0_COLLECTION_NAME", 
 MEM0_COLLECTION_NAME = ROOK_COLLECTION_NAME  # Backward compatibility alias
 
 
+# Embedding dimensions for text-embedding-3-small
+EMBEDDING_MODEL_DIMS = 1536
+
+
 def _build_vector_store_config() -> dict:
     """Build vector store configuration.
 
@@ -239,6 +243,7 @@ def _build_vector_store_config() -> dict:
             "provider": "qdrant",
             "config": {
                 "collection_name": ROOK_COLLECTION_NAME,
+                "embedding_model_dims": EMBEDDING_MODEL_DIMS,
                 "url": QDRANT_URL,
                 "on_disk": True,  # Persist to disk
             },
@@ -262,6 +267,7 @@ def _build_vector_store_config() -> dict:
             "config": {
                 "connection_string": pgvector_url,
                 "collection_name": ROOK_COLLECTION_NAME,
+                "embedding_model_dims": EMBEDDING_MODEL_DIMS,
             },
         }
 
@@ -271,6 +277,7 @@ def _build_vector_store_config() -> dict:
         "provider": "qdrant",
         "config": {
             "collection_name": "clara_memories",
+            "embedding_model_dims": EMBEDDING_MODEL_DIMS,
             "path": str(QDRANT_DATA_DIR),
         },
     }
