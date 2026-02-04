@@ -423,6 +423,21 @@ class MCPServerManager:
 
             loop.set_exception_handler(_shutdown_exception_handler)
 
+            # Also suppress the asyncio logger which logs these errors directly
+            # before the exception handler can intercept them
+            class _AsyncgenShutdownFilter(logging.Filter):
+                def filter(self, record):
+                    msg = record.getMessage()
+                    if "closing of asynchronous generator" in msg:
+                        return False
+                    if "cancel scope" in msg.lower() and "different task" in msg.lower():
+                        return False
+                    return True
+
+            asyncio_logger = logging.getLogger("asyncio")
+            shutdown_filter = _AsyncgenShutdownFilter()
+            asyncio_logger.addFilter(shutdown_filter)
+
             await self._local.shutdown()
             await self._remote.shutdown()
 
