@@ -107,12 +107,11 @@ def _generate_memories_from_profile() -> dict | None:
 
 
 def load_initial_profile(user_id: str) -> None:
-    """Load initial user profile into mem0 once on first run.
+    """Load initial user profile into Rook once on first run.
 
     Uses the bootstrap pipeline:
     1. If generated/*.json files exist, load from them
-    2. If not, generate from inputs/user_profile.txt first
-    3. Apply structured memories to mem0 with graph-friendly grouping
+    2. Apply structured memories to Rook with graph-friendly grouping
     """
     from clara_core.memory import ROOK
 

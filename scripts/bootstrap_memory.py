@@ -2,12 +2,12 @@
 """
 Bootstrap memory extraction and ingestion pipeline.
 
-Extracts atomic memories from user_profile.txt into namespaced JSON files,
-then optionally upserts them into mem0.
+Extracts atomic memories from a profile text file into namespaced JSON files,
+then optionally upserts them into Rook (Clara's memory system).
 
 Usage:
-    python -m src.bootstrap_memory --input inputs/user_profile.txt --out generated/
-    python -m src.bootstrap_memory --input inputs/user_profile.txt --out generated/ --apply
+    python scripts/bootstrap_memory.py --input profile.txt --out generated/
+    python scripts/bootstrap_memory.py --input profile.txt --out generated/ --apply
 """
 
 from __future__ import annotations
@@ -524,7 +524,7 @@ def main():
     parser.add_argument(
         "--input", "-i",
         type=str,
-        default="inputs/user_profile.txt",
+        required=True,
         help="Input profile text file"
     )
     parser.add_argument(

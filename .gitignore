@@ -34,9 +34,7 @@ kuzu_data/
 .mcp_servers/
 mcp_servers/
 
-# User profile (personal data)
-user_profile.txt
-inputs/user_profile.txt
+# Generated files
 generated/
 
 # IDE

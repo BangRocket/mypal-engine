@@ -62,10 +62,6 @@ docker-compose --profile discord --profile postgres up # Discord bot + databases
 
 ### Memory Management
 ```bash
-# Bootstrap profile data from inputs/user_profile.txt
-poetry run python -m src.bootstrap_memory          # Dry run (generates JSON)
-poetry run python -m src.bootstrap_memory --apply  # Apply to Rook
-
 # Clear all memory data
 poetry run python clear_dbs.py             # With confirmation prompt
 poetry run python clear_dbs.py --yes       # Skip confirmation
