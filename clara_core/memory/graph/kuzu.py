@@ -246,6 +246,10 @@ class MemoryGraph:
 
         entity_type_map = {}
 
+        if not search_results:
+            logger.debug("LLM returned no results for entity extraction")
+            return entity_type_map
+
         try:
             for tool_call in search_results.get("tool_calls", []):
                 if tool_call["name"] != "extract_entities":
@@ -283,7 +287,7 @@ class MemoryGraph:
         extracted_entities = self.llm.generate_response(messages=messages, tools=[RELATIONS_TOOL])
 
         entities = []
-        if extracted_entities.get("tool_calls"):
+        if extracted_entities and extracted_entities.get("tool_calls"):
             entities = extracted_entities["tool_calls"][0].get("arguments", {}).get("entities", [])
 
         entities = self._remove_spaces_from_entities(entities)
@@ -364,6 +368,8 @@ class MemoryGraph:
         )
 
         to_be_deleted = []
+        if not memory_updates:
+            return to_be_deleted
         for item in memory_updates.get("tool_calls", []):
             if item.get("name") == "delete_graph_memory":
                 to_be_deleted.append(item.get("arguments"))
