@@ -182,8 +182,12 @@ class ClaraMemory(MemoryBase):
         # Initialize LLM
         self.llm = LlmFactory.create(self.config.llm.provider, self.config.llm.config)
 
-        # Initialize history database
-        self.db = SQLiteManager(self.config.history_db_path)
+        # Initialize history database (optional - for memory change tracking)
+        try:
+            self.db = SQLiteManager(self.config.history_db_path)
+        except Exception as e:
+            logger.warning(f"SQLite history disabled: {e}")
+            self.db = None
         self.collection_name = self.config.vector_store.config.collection_name
         self.api_version = getattr(config, "version", "v1.1")
 
@@ -823,6 +827,8 @@ class ClaraMemory(MemoryBase):
         Returns:
             list: History records
         """
+        if not self.db:
+            return []
         return self.db.get_history(memory_id)
 
     def feedback(self, memory_id, feedback: str):
@@ -866,15 +872,16 @@ class ClaraMemory(MemoryBase):
             payloads=[metadata],
         )
 
-        self.db.add_history(
-            memory_id,
-            None,
-            data,
-            "ADD",
-            created_at=metadata.get("created_at"),
-            actor_id=metadata.get("actor_id"),
-            role=metadata.get("role"),
-        )
+        if self.db:
+            self.db.add_history(
+                memory_id,
+                None,
+                data,
+                "ADD",
+                created_at=metadata.get("created_at"),
+                actor_id=metadata.get("actor_id"),
+                role=metadata.get("role"),
+            )
 
         return memory_id
 
@@ -940,16 +947,17 @@ class ClaraMemory(MemoryBase):
             payload=new_metadata,
         )
 
-        self.db.add_history(
-            memory_id,
-            prev_value,
-            data,
-            "UPDATE",
-            created_at=new_metadata["created_at"],
-            updated_at=new_metadata["updated_at"],
-            actor_id=new_metadata.get("actor_id"),
-            role=new_metadata.get("role"),
-        )
+        if self.db:
+            self.db.add_history(
+                memory_id,
+                prev_value,
+                data,
+                "UPDATE",
+                created_at=new_metadata["created_at"],
+                updated_at=new_metadata["updated_at"],
+                actor_id=new_metadata.get("actor_id"),
+                role=new_metadata.get("role"),
+            )
 
         return memory_id
 
@@ -964,15 +972,16 @@ class ClaraMemory(MemoryBase):
         prev_value = existing_memory.payload.get("data", "")
         self.vector_store.delete(vector_id=memory_id)
 
-        self.db.add_history(
-            memory_id,
-            prev_value,
-            None,
-            "DELETE",
-            actor_id=existing_memory.payload.get("actor_id"),
-            role=existing_memory.payload.get("role"),
-            is_deleted=1,
-        )
+        if self.db:
+            self.db.add_history(
+                memory_id,
+                prev_value,
+                None,
+                "DELETE",
+                actor_id=existing_memory.payload.get("actor_id"),
+                role=existing_memory.payload.get("role"),
+                is_deleted=1,
+            )
 
         return memory_id
 
@@ -980,11 +989,15 @@ class ClaraMemory(MemoryBase):
         """Reset the memory store."""
         logger.warning("Resetting all memories")
 
-        if hasattr(self.db, "connection") and self.db.connection:
+        if self.db and hasattr(self.db, "connection") and self.db.connection:
             self.db.connection.execute("DROP TABLE IF EXISTS history")
             self.db.connection.close()
 
-        self.db = SQLiteManager(self.config.history_db_path)
+        try:
+            self.db = SQLiteManager(self.config.history_db_path)
+        except Exception as e:
+            logger.warning(f"SQLite history disabled after reset: {e}")
+            self.db = None
 
         if hasattr(self.vector_store, "reset"):
             self.vector_store = VectorStoreFactory.reset(self.vector_store)
