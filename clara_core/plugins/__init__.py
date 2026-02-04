@@ -12,6 +12,13 @@ Key concepts:
 - Normalization: Consistent tool naming with aliases
 """
 
+from .audit import (
+    AuditEntry,
+    AuditLogger,
+    get_audit_logger,
+    init_audit_logger,
+    reset_audit_logger,
+)
 from .hooks import (
     HOOK_EVENT_TYPES,
     HookEvent,
@@ -53,9 +60,13 @@ from .normalization import (
 )
 from .policies import (
     BUILTIN_GROUPS,
+    EnhancedPolicyConfig,
     PolicyAction,
     PolicyContext,
     PolicyEngine,
+    RateLimitConfig,
+    RiskLevel,
+    ToolIntent,
     ToolPolicy,
     get_policy_engine,
     reset_policy_engine,
@@ -125,6 +136,17 @@ __all__ = [
     "BUILTIN_GROUPS",
     "get_policy_engine",
     "reset_policy_engine",
+    # Enhanced policy features
+    "RiskLevel",
+    "ToolIntent",
+    "RateLimitConfig",
+    "EnhancedPolicyConfig",
+    # Audit logging
+    "AuditEntry",
+    "AuditLogger",
+    "get_audit_logger",
+    "init_audit_logger",
+    "reset_audit_logger",
     # Normalization
     "ToolNameNormalizer",
     "DEFAULT_ALIASES",

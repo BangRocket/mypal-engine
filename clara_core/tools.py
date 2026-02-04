@@ -349,7 +349,7 @@ def register_local_file_tools(registry: ToolRegistry) -> None:
     These tools allow saving and reading files that persist across sessions.
     """
     try:
-        from storage.local_files import LOCAL_FILE_TOOLS, get_file_manager
+        from clara_core.core_tools.files_tool import LOCAL_FILE_TOOLS, get_file_manager
     except ImportError:
         logger.debug("Local file tools not available")
         return

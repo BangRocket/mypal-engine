@@ -9,7 +9,9 @@ Inspired by OpenClaw's policy system.
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -25,6 +27,50 @@ class PolicyAction(Enum):
     ALLOW = "allow"
     DENY = "deny"
     ASK = "ask"
+
+
+class RiskLevel(Enum):
+    """Tool risk level for policy evaluation."""
+
+    SAFE = "safe"
+    MODERATE = "moderate"
+    DANGEROUS = "dangerous"
+
+
+class ToolIntent(Enum):
+    """Tool intent classification."""
+
+    READ = "read"
+    WRITE = "write"
+    EXECUTE = "execute"
+    NETWORK = "network"
+
+
+@dataclass
+class RateLimitConfig:
+    """Configuration for rate limiting a tool or group of tools."""
+
+    max_calls: int = 100
+    window_seconds: int = 3600  # 1 hour
+
+
+@dataclass
+class EnhancedPolicyConfig:
+    """Enhanced policy configuration with risk levels and rate limits.
+
+    Attributes:
+        max_risk_level: Maximum allowed risk level (default: DANGEROUS = all allowed)
+        allowed_intents: List of allowed tool intents (default: all)
+        rate_limits: Per-tool rate limit configurations
+        require_admin_for_dangerous: Whether dangerous tools require admin
+        audit_enabled: Whether to emit audit events
+    """
+
+    max_risk_level: RiskLevel = RiskLevel.DANGEROUS
+    allowed_intents: list[ToolIntent] = field(default_factory=lambda: list(ToolIntent))
+    rate_limits: dict[str, RateLimitConfig] = field(default_factory=dict)
+    require_admin_for_dangerous: bool = True
+    audit_enabled: bool = True
 
 
 # Built-in tool groups mapping group names to tool names
@@ -200,6 +246,11 @@ class PolicyContext:
     is_admin: bool = False
     extra: dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def has_admin(self) -> bool:
+        """Alias for is_admin for compatibility."""
+        return self.is_admin
+
     @classmethod
     def from_plugin_context(cls, ctx: "PluginContext") -> "PolicyContext":
         """Create PolicyContext from PluginContext.
@@ -225,14 +276,31 @@ class PolicyEngine:
     """Engine for evaluating tool access policies.
 
     Manages a collection of policies and evaluates them
-    against tool requests.
+    against tool requests. Supports enhanced features:
+    - Risk level evaluation
+    - Intent classification
+    - Rate limiting
+    - Audit logging hooks
     """
 
-    def __init__(self) -> None:
-        """Initialize the policy engine."""
+    def __init__(self, config: EnhancedPolicyConfig | None = None) -> None:
+        """Initialize the policy engine.
+
+        Args:
+            config: Optional enhanced policy configuration
+        """
         self._policies: list[ToolPolicy] = []
         self._groups: dict[str, list[str]] = dict(BUILTIN_GROUPS)
         self._default_action = PolicyAction.ALLOW
+        self._config = config or EnhancedPolicyConfig()
+
+        # Rate limiting state: tool_name -> user_id -> list of call timestamps
+        self._call_counts: dict[str, dict[str, list[datetime]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
+
+        # Audit callbacks
+        self._audit_callbacks: list[callable] = []
 
     def add_policy(self, policy: ToolPolicy) -> None:
         """Add a policy to the engine.
@@ -417,6 +485,254 @@ class PolicyEngine:
             for tool in all_tools
             if self.evaluate(tool, context) == PolicyAction.ALLOW
         ]
+
+    # ==================== Enhanced Policy Methods ====================
+
+    def set_config(self, config: EnhancedPolicyConfig) -> None:
+        """Set the enhanced policy configuration.
+
+        Args:
+            config: New configuration to use
+        """
+        self._config = config
+        logger.info(
+            f"Policy config updated: max_risk={config.max_risk_level.value}, "
+            f"require_admin_for_dangerous={config.require_admin_for_dangerous}"
+        )
+
+    def get_config(self) -> EnhancedPolicyConfig:
+        """Get the current enhanced policy configuration."""
+        return self._config
+
+    def check_risk_level(
+        self,
+        tool_risk_level: str,
+        context: PolicyContext,
+    ) -> tuple[bool, str]:
+        """Check if a tool's risk level is allowed.
+
+        Args:
+            tool_risk_level: Tool's risk level ("safe", "moderate", "dangerous")
+            context: Policy context with user info
+
+        Returns:
+            (allowed, reason) - Whether allowed and explanation if not
+        """
+        try:
+            tool_risk = RiskLevel(tool_risk_level)
+        except ValueError:
+            # Unknown risk level, treat as dangerous
+            tool_risk = RiskLevel.DANGEROUS
+
+        max_risk = self._config.max_risk_level
+        risk_order = [RiskLevel.SAFE, RiskLevel.MODERATE, RiskLevel.DANGEROUS]
+
+        if risk_order.index(tool_risk) > risk_order.index(max_risk):
+            return False, f"Tool risk level '{tool_risk_level}' exceeds maximum allowed '{max_risk.value}'"
+
+        # Require admin for dangerous tools if configured
+        if (
+            tool_risk == RiskLevel.DANGEROUS
+            and self._config.require_admin_for_dangerous
+            and not context.has_admin
+        ):
+            return False, "Dangerous tools require admin privileges"
+
+        return True, ""
+
+    def check_intent(
+        self,
+        tool_intent: str,
+        context: PolicyContext,
+    ) -> tuple[bool, str]:
+        """Check if a tool's intent is allowed.
+
+        Args:
+            tool_intent: Tool's intent ("read", "write", "execute", "network")
+            context: Policy context
+
+        Returns:
+            (allowed, reason)
+        """
+        try:
+            intent = ToolIntent(tool_intent)
+        except ValueError:
+            # Unknown intent, allow by default
+            return True, ""
+
+        if intent not in self._config.allowed_intents:
+            return False, f"Tool intent '{tool_intent}' not allowed by policy"
+
+        return True, ""
+
+    def check_rate_limit(
+        self,
+        tool_name: str,
+        user_id: str | None,
+    ) -> tuple[bool, str]:
+        """Check if rate limit allows execution.
+
+        Args:
+            tool_name: Name of the tool
+            user_id: User ID for per-user limits
+
+        Returns:
+            (allowed, reason)
+        """
+        if user_id is None:
+            return True, ""
+
+        limit_config = self._config.rate_limits.get(tool_name)
+        if not limit_config:
+            return True, ""
+
+        now = datetime.now()
+        calls = self._call_counts[tool_name][user_id]
+
+        # Remove old calls outside window
+        cutoff = now - timedelta(seconds=limit_config.window_seconds)
+        calls[:] = [t for t in calls if t > cutoff]
+
+        if len(calls) >= limit_config.max_calls:
+            return False, (
+                f"Rate limit exceeded: {limit_config.max_calls} calls per "
+                f"{limit_config.window_seconds}s for tool '{tool_name}'"
+            )
+
+        return True, ""
+
+    def record_call(self, tool_name: str, user_id: str | None) -> None:
+        """Record a tool call for rate limiting.
+
+        Args:
+            tool_name: Name of the tool called
+            user_id: User ID who called it
+        """
+        if user_id is None:
+            return
+        self._call_counts[tool_name][user_id].append(datetime.now())
+
+    def set_rate_limit(
+        self,
+        tool_name: str,
+        max_calls: int,
+        window_seconds: int = 3600,
+    ) -> None:
+        """Set rate limit for a specific tool.
+
+        Args:
+            tool_name: Name of the tool
+            max_calls: Maximum calls allowed in the window
+            window_seconds: Time window in seconds
+        """
+        self._config.rate_limits[tool_name] = RateLimitConfig(
+            max_calls=max_calls,
+            window_seconds=window_seconds,
+        )
+        logger.debug(f"Rate limit set for {tool_name}: {max_calls}/{window_seconds}s")
+
+    def clear_rate_limits(self) -> None:
+        """Clear all rate limit state."""
+        self._call_counts.clear()
+
+    def register_audit_callback(self, callback: callable) -> None:
+        """Register a callback to be called for audit events.
+
+        Args:
+            callback: Function(tool_name, user_id, action, context, result_status, error_message)
+        """
+        self._audit_callbacks.append(callback)
+
+    async def emit_audit_event(
+        self,
+        tool_name: str,
+        context: PolicyContext,
+        action: PolicyAction,
+        result_status: str = "allowed",
+        error_message: str | None = None,
+        tool_risk_level: str = "safe",
+        tool_intent: str = "read",
+        execution_time_ms: int | None = None,
+        parameters: dict[str, Any] | None = None,
+    ) -> None:
+        """Emit an audit event to all registered callbacks.
+
+        Args:
+            tool_name: Name of the tool
+            context: Policy context
+            action: Policy action taken
+            result_status: Result status ("allowed", "denied", "success", "error")
+            error_message: Error message if applicable
+            tool_risk_level: Tool's risk level
+            tool_intent: Tool's intent
+            execution_time_ms: Execution time in milliseconds
+            parameters: Tool parameters (for logging)
+        """
+        if not self._config.audit_enabled:
+            return
+
+        import asyncio
+
+        for callback in self._audit_callbacks:
+            try:
+                result = callback(
+                    tool_name=tool_name,
+                    user_id=context.user_id,
+                    platform=context.platform,
+                    action=action.value,
+                    result_status=result_status,
+                    error_message=error_message,
+                    risk_level=tool_risk_level,
+                    intent=tool_intent,
+                    execution_time_ms=execution_time_ms,
+                    parameters=parameters,
+                )
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception as e:
+                logger.error(f"Audit callback error: {e}")
+
+    def evaluate_enhanced(
+        self,
+        tool_name: str,
+        tool_risk_level: str,
+        tool_intent: str,
+        context: PolicyContext | None = None,
+    ) -> tuple[PolicyAction, str]:
+        """Evaluate policies with enhanced checks including risk and intent.
+
+        Args:
+            tool_name: Name of the tool being requested
+            tool_risk_level: Tool's risk level
+            tool_intent: Tool's intent
+            context: Context for condition evaluation
+
+        Returns:
+            (PolicyAction, reason) tuple
+        """
+        context = context or PolicyContext()
+
+        # First check basic policy rules
+        action = self.evaluate(tool_name, context)
+        if action != PolicyAction.ALLOW:
+            return action, "Denied by policy rule"
+
+        # Check risk level
+        allowed, reason = self.check_risk_level(tool_risk_level, context)
+        if not allowed:
+            return PolicyAction.DENY, reason
+
+        # Check intent
+        allowed, reason = self.check_intent(tool_intent, context)
+        if not allowed:
+            return PolicyAction.DENY, reason
+
+        # Check rate limit
+        allowed, reason = self.check_rate_limit(tool_name, context.user_id)
+        if not allowed:
+            return PolicyAction.DENY, reason
+
+        return PolicyAction.ALLOW, ""
 
 
 # Global policy engine singleton

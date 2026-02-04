@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
 import logging
 import os
 import sys
@@ -63,6 +64,46 @@ class ToolLoader:
         self._observer: Any = None
         self._watching = False
         self._reload_callbacks: list[callable] = []
+        self._display_config: dict[str, dict[str, Any]] = self._load_display_config()
+
+    def _load_display_config(self) -> dict[str, dict[str, Any]]:
+        """Load tool display configuration from tool_display.json.
+
+        Returns:
+            Dict mapping tool names to display metadata
+        """
+        display_path = self.tools_dir / "tool_display.json"
+        if display_path.exists():
+            try:
+                with display_path.open() as f:
+                    config = json.load(f)
+                    # Remove comments/meta keys
+                    return {k: v for k, v in config.items() if not k.startswith("_")}
+            except Exception as e:
+                logger.warning(f"Failed to load tool_display.json: {e}")
+        return {}
+
+    def _apply_display_metadata(self, tool: Any) -> None:
+        """Apply display metadata from config to a tool.
+
+        Args:
+            tool: ToolDef to update with display metadata
+        """
+        config = self._display_config.get(tool.name, {})
+        if not config:
+            return
+
+        # Apply display fields if present in config
+        if "emoji" in config:
+            tool.emoji = config["emoji"]
+        if "label" in config:
+            tool.label = config["label"]
+        if "detail_keys" in config:
+            tool.detail_keys = config["detail_keys"]
+        if "risk_level" in config:
+            tool.risk_level = config["risk_level"]
+        if "intent" in config:
+            tool.intent = config["intent"]
 
     def discover_modules(self) -> list[str]:
         """Find all tool module files.
@@ -140,9 +181,11 @@ class ToolLoader:
                 else:
                     init_fn()
 
-            # Register tools
+            # Register tools with display metadata
             tools = module.TOOLS
             for tool_def in tools:
+                # Apply display metadata from config
+                self._apply_display_metadata(tool_def)
                 self.registry.register(tool_def, source_module=mod_name)
 
             # Register system prompt only if module has active tools
@@ -343,6 +386,22 @@ class ToolLoader:
     def get_loaded_modules(self) -> dict[str, str]:
         """Get dict of loaded module names to versions."""
         return {name: self._module_versions.get(name, "unknown") for name in self._modules.keys()}
+
+    def reload_display_config(self) -> None:
+        """Reload the tool display configuration and reapply to all loaded tools."""
+        self._display_config = self._load_display_config()
+        logger.info(f"Reloaded display config with {len(self._display_config)} tool configs")
+
+    def get_display_config(self, tool_name: str) -> dict[str, Any]:
+        """Get display configuration for a tool.
+
+        Args:
+            tool_name: Name of the tool
+
+        Returns:
+            Display config dict, or empty dict if not found
+        """
+        return self._display_config.get(tool_name, {})
 
     async def shutdown(self) -> None:
         """Shutdown the loader, cleaning up all modules."""

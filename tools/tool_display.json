@@ -1,0 +1,711 @@
+{
+  "_comment": "Tool display metadata for Clara status messages. Keys are tool names, values configure display and policy.",
+
+  "python_execute": {
+    "emoji": "🐍",
+    "label": "Python",
+    "detail_keys": ["code_summary"],
+    "risk_level": "moderate",
+    "intent": "execute"
+  },
+  "execute_python": {
+    "emoji": "🐍",
+    "label": "Python",
+    "detail_keys": [],
+    "risk_level": "moderate",
+    "intent": "execute"
+  },
+  "run_code": {
+    "emoji": "🐍",
+    "label": "Run Code",
+    "detail_keys": ["language"],
+    "risk_level": "moderate",
+    "intent": "execute"
+  },
+  "run_shell": {
+    "emoji": "💻",
+    "label": "Shell",
+    "detail_keys": ["command"],
+    "risk_level": "dangerous",
+    "intent": "execute"
+  },
+  "execute_shell": {
+    "emoji": "💻",
+    "label": "Shell",
+    "detail_keys": ["command"],
+    "risk_level": "dangerous",
+    "intent": "execute"
+  },
+
+  "web_search": {
+    "emoji": "🔍",
+    "label": "Search",
+    "detail_keys": ["query"],
+    "risk_level": "safe",
+    "intent": "network"
+  },
+  "tavily_search": {
+    "emoji": "🔍",
+    "label": "Web Search",
+    "detail_keys": ["query"],
+    "risk_level": "safe",
+    "intent": "network"
+  },
+  "fetch_url": {
+    "emoji": "🌐",
+    "label": "Fetch URL",
+    "detail_keys": ["url"],
+    "risk_level": "safe",
+    "intent": "network"
+  },
+
+  "save_to_local": {
+    "emoji": "💾",
+    "label": "Save File",
+    "detail_keys": ["filename"],
+    "risk_level": "safe",
+    "intent": "write"
+  },
+  "list_local_files": {
+    "emoji": "📂",
+    "label": "List Files",
+    "detail_keys": [],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "read_local_file": {
+    "emoji": "📖",
+    "label": "Read File",
+    "detail_keys": ["filename"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "delete_local_file": {
+    "emoji": "🗑️",
+    "label": "Delete File",
+    "detail_keys": ["filename"],
+    "risk_level": "moderate",
+    "intent": "write"
+  },
+  "read_file": {
+    "emoji": "📖",
+    "label": "Read File",
+    "detail_keys": ["path"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "write_file": {
+    "emoji": "📝",
+    "label": "Write File",
+    "detail_keys": ["path"],
+    "risk_level": "moderate",
+    "intent": "write"
+  },
+  "list_files": {
+    "emoji": "📂",
+    "label": "List Files",
+    "detail_keys": ["path"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "download_from_sandbox": {
+    "emoji": "📥",
+    "label": "Download",
+    "detail_keys": ["sandbox_path"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "upload_to_sandbox": {
+    "emoji": "📤",
+    "label": "Upload",
+    "detail_keys": ["local_filename"],
+    "risk_level": "safe",
+    "intent": "write"
+  },
+  "send_local_file": {
+    "emoji": "📤",
+    "label": "Send File",
+    "detail_keys": ["filename"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+
+  "s3_save": {
+    "emoji": "☁️",
+    "label": "S3 Save",
+    "detail_keys": ["filename"],
+    "risk_level": "safe",
+    "intent": "write"
+  },
+  "s3_list": {
+    "emoji": "☁️",
+    "label": "S3 List",
+    "detail_keys": [],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "s3_read": {
+    "emoji": "☁️",
+    "label": "S3 Read",
+    "detail_keys": ["filename"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "s3_delete": {
+    "emoji": "☁️",
+    "label": "S3 Delete",
+    "detail_keys": ["filename"],
+    "risk_level": "moderate",
+    "intent": "write"
+  },
+
+  "execute_command": {
+    "emoji": "💻",
+    "label": "Execute",
+    "detail_keys": ["command"],
+    "risk_level": "dangerous",
+    "intent": "execute"
+  },
+  "get_command_history": {
+    "emoji": "📜",
+    "label": "History",
+    "detail_keys": [],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "get_current_directory": {
+    "emoji": "📍",
+    "label": "Get CWD",
+    "detail_keys": [],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "change_directory": {
+    "emoji": "📂",
+    "label": "Change Dir",
+    "detail_keys": ["path"],
+    "risk_level": "safe",
+    "intent": "execute"
+  },
+  "list_directory": {
+    "emoji": "📁",
+    "label": "List Dir",
+    "detail_keys": ["path"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "insert_file_content": {
+    "emoji": "➕",
+    "label": "Insert",
+    "detail_keys": ["path"],
+    "risk_level": "moderate",
+    "intent": "write"
+  },
+  "delete_file_content": {
+    "emoji": "➖",
+    "label": "Delete Content",
+    "detail_keys": ["path"],
+    "risk_level": "moderate",
+    "intent": "write"
+  },
+  "update_file_content": {
+    "emoji": "✏️",
+    "label": "Update Content",
+    "detail_keys": ["path"],
+    "risk_level": "moderate",
+    "intent": "write"
+  },
+
+  "github_get_me": {
+    "emoji": "🐙",
+    "label": "GitHub Profile",
+    "detail_keys": [],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "github_search_repositories": {
+    "emoji": "🐙",
+    "label": "GitHub Search",
+    "detail_keys": ["query"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "github_get_repository": {
+    "emoji": "🐙",
+    "label": "GitHub Repo",
+    "detail_keys": ["owner", "repo"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "github_list_issues": {
+    "emoji": "🐙",
+    "label": "GitHub Issues",
+    "detail_keys": ["repo"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "github_get_issue": {
+    "emoji": "🐙",
+    "label": "GitHub Issue",
+    "detail_keys": ["repo", "issue_number"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "github_create_issue": {
+    "emoji": "🐙",
+    "label": "Create Issue",
+    "detail_keys": ["repo", "title"],
+    "risk_level": "moderate",
+    "intent": "write"
+  },
+  "github_list_pull_requests": {
+    "emoji": "🐙",
+    "label": "GitHub PRs",
+    "detail_keys": ["repo"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "github_get_pull_request": {
+    "emoji": "🐙",
+    "label": "GitHub PR",
+    "detail_keys": ["repo", "pull_number"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "github_create_pull_request": {
+    "emoji": "🐙",
+    "label": "Create PR",
+    "detail_keys": ["repo", "title"],
+    "risk_level": "moderate",
+    "intent": "write"
+  },
+  "github_list_commits": {
+    "emoji": "🐙",
+    "label": "GitHub Commits",
+    "detail_keys": ["repo"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "github_get_commit": {
+    "emoji": "🐙",
+    "label": "GitHub Commit",
+    "detail_keys": ["repo", "sha"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "github_get_file_contents": {
+    "emoji": "🐙",
+    "label": "GitHub File",
+    "detail_keys": ["repo", "path"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "github_create_or_update_file": {
+    "emoji": "🐙",
+    "label": "GitHub Update",
+    "detail_keys": ["repo", "path"],
+    "risk_level": "moderate",
+    "intent": "write"
+  },
+  "github_run_workflow": {
+    "emoji": "🐙",
+    "label": "Run Workflow",
+    "detail_keys": ["repo", "workflow_id"],
+    "risk_level": "moderate",
+    "intent": "execute"
+  },
+  "github_create_gist": {
+    "emoji": "🐙",
+    "label": "Create Gist",
+    "detail_keys": ["description"],
+    "risk_level": "moderate",
+    "intent": "write"
+  },
+
+  "google_connect": {
+    "emoji": "🔗",
+    "label": "Google Connect",
+    "detail_keys": [],
+    "risk_level": "safe",
+    "intent": "network"
+  },
+  "google_status": {
+    "emoji": "📊",
+    "label": "Google Status",
+    "detail_keys": [],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "google_disconnect": {
+    "emoji": "🔗",
+    "label": "Google Disconnect",
+    "detail_keys": [],
+    "risk_level": "moderate",
+    "intent": "write"
+  },
+  "google_sheets_create": {
+    "emoji": "📊",
+    "label": "Create Sheet",
+    "detail_keys": ["title"],
+    "risk_level": "moderate",
+    "intent": "write"
+  },
+  "google_sheets_read": {
+    "emoji": "📊",
+    "label": "Read Sheet",
+    "detail_keys": ["spreadsheet_id", "range"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "google_sheets_write": {
+    "emoji": "📊",
+    "label": "Write Sheet",
+    "detail_keys": ["spreadsheet_id"],
+    "risk_level": "moderate",
+    "intent": "write"
+  },
+  "google_sheets_append": {
+    "emoji": "📊",
+    "label": "Append Sheet",
+    "detail_keys": ["spreadsheet_id"],
+    "risk_level": "moderate",
+    "intent": "write"
+  },
+  "google_drive_list": {
+    "emoji": "📁",
+    "label": "Drive List",
+    "detail_keys": ["query"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "google_drive_upload": {
+    "emoji": "📁",
+    "label": "Drive Upload",
+    "detail_keys": ["filename"],
+    "risk_level": "moderate",
+    "intent": "write"
+  },
+  "google_drive_download": {
+    "emoji": "📁",
+    "label": "Drive Download",
+    "detail_keys": ["file_id"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "google_docs_create": {
+    "emoji": "📄",
+    "label": "Create Doc",
+    "detail_keys": ["title"],
+    "risk_level": "moderate",
+    "intent": "write"
+  },
+  "google_docs_read": {
+    "emoji": "📄",
+    "label": "Read Doc",
+    "detail_keys": ["document_id"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "google_calendar_list_events": {
+    "emoji": "📅",
+    "label": "Calendar Events",
+    "detail_keys": [],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "google_calendar_create_event": {
+    "emoji": "📅",
+    "label": "Create Event",
+    "detail_keys": ["summary"],
+    "risk_level": "moderate",
+    "intent": "write"
+  },
+
+  "mcp_install": {
+    "emoji": "🔌",
+    "label": "MCP Install",
+    "detail_keys": ["source"],
+    "risk_level": "dangerous",
+    "intent": "execute"
+  },
+  "mcp_uninstall": {
+    "emoji": "🔌",
+    "label": "MCP Uninstall",
+    "detail_keys": ["server_name"],
+    "risk_level": "moderate",
+    "intent": "execute"
+  },
+  "mcp_list": {
+    "emoji": "🔌",
+    "label": "MCP List",
+    "detail_keys": [],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "mcp_enable": {
+    "emoji": "🔌",
+    "label": "MCP Enable",
+    "detail_keys": ["server_name"],
+    "risk_level": "moderate",
+    "intent": "execute"
+  },
+  "mcp_disable": {
+    "emoji": "🔌",
+    "label": "MCP Disable",
+    "detail_keys": ["server_name"],
+    "risk_level": "moderate",
+    "intent": "execute"
+  },
+  "mcp_restart": {
+    "emoji": "🔌",
+    "label": "MCP Restart",
+    "detail_keys": ["server_name"],
+    "risk_level": "moderate",
+    "intent": "execute"
+  },
+  "mcp_status": {
+    "emoji": "🔌",
+    "label": "MCP Status",
+    "detail_keys": ["server_name"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "smithery_search": {
+    "emoji": "🔍",
+    "label": "Smithery Search",
+    "detail_keys": ["query"],
+    "risk_level": "safe",
+    "intent": "network"
+  },
+
+  "claude_code": {
+    "emoji": "🤖",
+    "label": "Claude Code",
+    "detail_keys": ["task"],
+    "risk_level": "dangerous",
+    "intent": "execute"
+  },
+  "claude_code_status": {
+    "emoji": "🤖",
+    "label": "Claude Status",
+    "detail_keys": [],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "claude_code_set_workdir": {
+    "emoji": "🤖",
+    "label": "Set Workdir",
+    "detail_keys": ["path"],
+    "risk_level": "moderate",
+    "intent": "write"
+  },
+
+  "search_logs": {
+    "emoji": "📋",
+    "label": "Search Logs",
+    "detail_keys": ["query", "level"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "get_recent_logs": {
+    "emoji": "📋",
+    "label": "Recent Logs",
+    "detail_keys": ["limit"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "get_error_logs": {
+    "emoji": "📋",
+    "label": "Error Logs",
+    "detail_keys": ["hours"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+
+  "search_memories": {
+    "emoji": "🧠",
+    "label": "Search Memories",
+    "detail_keys": ["query"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "add_memory": {
+    "emoji": "🧠",
+    "label": "Add Memory",
+    "detail_keys": [],
+    "risk_level": "safe",
+    "intent": "write"
+  },
+  "user_memory_search": {
+    "emoji": "🧠",
+    "label": "Memory Search",
+    "detail_keys": ["query"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "chat_history_search": {
+    "emoji": "💬",
+    "label": "Chat Search",
+    "detail_keys": ["query"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+
+  "email_connect_gmail": {
+    "emoji": "📧",
+    "label": "Connect Gmail",
+    "detail_keys": [],
+    "risk_level": "moderate",
+    "intent": "network"
+  },
+  "email_connect_imap": {
+    "emoji": "📧",
+    "label": "Connect IMAP",
+    "detail_keys": ["email_address"],
+    "risk_level": "moderate",
+    "intent": "network"
+  },
+  "email_list_accounts": {
+    "emoji": "📧",
+    "label": "Email Accounts",
+    "detail_keys": [],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "email_status": {
+    "emoji": "📧",
+    "label": "Email Status",
+    "detail_keys": [],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "check_email": {
+    "emoji": "📧",
+    "label": "Check Email",
+    "detail_keys": ["limit"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+
+  "browser_start": {
+    "emoji": "🌐",
+    "label": "Start Browser",
+    "detail_keys": ["name"],
+    "risk_level": "moderate",
+    "intent": "execute"
+  },
+  "browser_navigate": {
+    "emoji": "🔗",
+    "label": "Navigate",
+    "detail_keys": ["url"],
+    "risk_level": "moderate",
+    "intent": "network"
+  },
+  "browser_screenshot": {
+    "emoji": "📸",
+    "label": "Screenshot",
+    "detail_keys": ["session"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "browser_click": {
+    "emoji": "👆",
+    "label": "Click",
+    "detail_keys": ["selector"],
+    "risk_level": "moderate",
+    "intent": "execute"
+  },
+  "browser_type": {
+    "emoji": "⌨️",
+    "label": "Type",
+    "detail_keys": ["selector"],
+    "risk_level": "moderate",
+    "intent": "execute"
+  },
+  "browser_extract": {
+    "emoji": "📝",
+    "label": "Extract",
+    "detail_keys": ["selector"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "browser_pdf": {
+    "emoji": "📄",
+    "label": "PDF",
+    "detail_keys": ["session"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "browser_evaluate": {
+    "emoji": "⚡",
+    "label": "JS Eval",
+    "detail_keys": [],
+    "risk_level": "dangerous",
+    "intent": "execute"
+  },
+  "browser_stop": {
+    "emoji": "🛑",
+    "label": "Stop Browser",
+    "detail_keys": ["session"],
+    "risk_level": "safe",
+    "intent": "execute"
+  },
+  "browser_list": {
+    "emoji": "📋",
+    "label": "List Sessions",
+    "detail_keys": [],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+
+  "process_start": {
+    "emoji": "▶️",
+    "label": "Start Process",
+    "detail_keys": ["command"],
+    "risk_level": "dangerous",
+    "intent": "execute"
+  },
+  "process_status": {
+    "emoji": "📊",
+    "label": "Process Status",
+    "detail_keys": ["name"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "process_output": {
+    "emoji": "📜",
+    "label": "Process Output",
+    "detail_keys": ["name"],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+  "process_stop": {
+    "emoji": "⏹️",
+    "label": "Stop Process",
+    "detail_keys": ["name"],
+    "risk_level": "moderate",
+    "intent": "execute"
+  },
+  "process_list": {
+    "emoji": "📋",
+    "label": "List Processes",
+    "detail_keys": [],
+    "risk_level": "safe",
+    "intent": "read"
+  },
+
+  "install_package": {
+    "emoji": "📦",
+    "label": "Install Package",
+    "detail_keys": ["package"],
+    "risk_level": "moderate",
+    "intent": "execute"
+  },
+  "unzip_file": {
+    "emoji": "📦",
+    "label": "Unzip",
+    "detail_keys": ["path"],
+    "risk_level": "safe",
+    "intent": "write"
+  }
+}
