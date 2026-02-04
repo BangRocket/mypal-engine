@@ -96,9 +96,16 @@ def fetch_pgvector_batch(
     offset: int,
     batch_size: int,
 ) -> list[dict[str, Any]]:
-    """Fetch a batch of records from pgvector."""
+    """Fetch a batch of records from pgvector.
+
+    Note: The vendored mem0 pgvector schema uses:
+    - id (UUID)
+    - vector (vector type, not 'embedding')
+    - payload (JSONB)
+    No created_at/updated_at columns.
+    """
     query = text(f"""
-        SELECT id, embedding, payload, created_at, updated_at
+        SELECT id, vector, payload
         FROM {COLLECTION_NAME}
         ORDER BY id
         OFFSET :offset
@@ -112,10 +119,10 @@ def fetch_pgvector_batch(
             records.append(
                 {
                     "id": str(row.id),
-                    "embedding": row.embedding,
+                    "embedding": list(row.vector) if row.vector else None,
                     "payload": row.payload if isinstance(row.payload, dict) else json.loads(row.payload or "{}"),
-                    "created_at": row.created_at.isoformat() if row.created_at else None,
-                    "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+                    "created_at": None,
+                    "updated_at": None,
                 }
             )
         return records
