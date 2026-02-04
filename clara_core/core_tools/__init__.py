@@ -7,6 +7,8 @@ Core tools:
 - chat_history: Search and retrieve Discord chat history
 - system_logs: Access system logs for debugging
 - mcp_management: Manage MCP servers (list, install, enable, etc.)
+- process_tool: Start and manage background processes
+- browser_tool: Browser automation using Playwright
 
 Also defines official MCP server configurations that replace
 custom tool implementations with standardized MCP servers.
@@ -100,7 +102,15 @@ async def register_core_tools(registry: "ToolRegistry") -> int:
     Returns:
         Number of tools registered
     """
-    from . import chat_history, mcp_management, system_logs
+    from . import (
+        browser_tool,
+        chat_history,
+        files_tool,
+        mcp_management,
+        process_tool,
+        system_logs,
+        terminal_tool,
+    )
 
     count = 0
 
@@ -139,6 +149,54 @@ async def register_core_tools(registry: "ToolRegistry") -> int:
         logger.info(f"[core_tools] Registered {len(mcp_management.TOOLS)} mcp_management tools")
     except Exception as e:
         logger.warning(f"[core_tools] Failed to register mcp_management: {e}")
+
+    # Initialize and register process_tool
+    try:
+        await process_tool.initialize()
+        for tool_def in process_tool.TOOLS:
+            registry.register(tool_def)
+            count += 1
+        if process_tool.SYSTEM_PROMPT:
+            registry.register_system_prompt("process", process_tool.SYSTEM_PROMPT)
+        logger.info(f"[core_tools] Registered {len(process_tool.TOOLS)} process tools")
+    except Exception as e:
+        logger.warning(f"[core_tools] Failed to register process_tool: {e}")
+
+    # Initialize and register browser_tool
+    try:
+        await browser_tool.initialize()
+        for tool_def in browser_tool.TOOLS:
+            registry.register(tool_def)
+            count += 1
+        if browser_tool.SYSTEM_PROMPT:
+            registry.register_system_prompt("browser", browser_tool.SYSTEM_PROMPT)
+        logger.info(f"[core_tools] Registered {len(browser_tool.TOOLS)} browser tools")
+    except Exception as e:
+        logger.warning(f"[core_tools] Failed to register browser_tool: {e}")
+
+    # Initialize and register files_tool
+    try:
+        await files_tool.initialize()
+        for tool_def in files_tool.TOOLS:
+            registry.register(tool_def)
+            count += 1
+        if files_tool.SYSTEM_PROMPT:
+            registry.register_system_prompt("files", files_tool.SYSTEM_PROMPT)
+        logger.info(f"[core_tools] Registered {len(files_tool.TOOLS)} files tools")
+    except Exception as e:
+        logger.warning(f"[core_tools] Failed to register files_tool: {e}")
+
+    # Initialize and register terminal_tool
+    try:
+        await terminal_tool.initialize()
+        for tool_def in terminal_tool.TOOLS:
+            registry.register(tool_def)
+            count += 1
+        if terminal_tool.SYSTEM_PROMPT:
+            registry.register_system_prompt("terminal", terminal_tool.SYSTEM_PROMPT)
+        logger.info(f"[core_tools] Registered {len(terminal_tool.TOOLS)} terminal tools")
+    except Exception as e:
+        logger.warning(f"[core_tools] Failed to register terminal_tool: {e}")
 
     return count
 
