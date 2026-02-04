@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from clara_core.memory.core.base import MemoryBase
 from clara_core.memory.core.prompts import get_update_memory_messages
-from clara_core.memory.core.storage import SQLiteManager
+from clara_core.memory.core.storage import get_history_manager
 from clara_core.memory.core.utils import (
     extract_json,
     get_fact_retrieval_messages,
@@ -183,12 +183,13 @@ class ClaraMemory(MemoryBase):
         self.llm = LlmFactory.create(self.config.llm.provider, self.config.llm.config)
 
         # Initialize history database (optional - for memory change tracking)
+        # Uses PostgreSQL if DATABASE_URL is set, otherwise SQLite
         try:
-            self.db = SQLiteManager(self.config.history_db_path)
+            self.db = get_history_manager(self.config.history_db_path)
         except Exception as e:
-            logger.warning(f"SQLite history disabled: {e}")
+            logger.warning(f"Memory history disabled: {e}")
             self.db = None
-        self.collection_name = self.config.vector_store.config.collection_name
+        self.collection_name = self.config.vector_store.config.get("collection_name", "clara_memories")
         self.api_version = getattr(config, "version", "v1.1")
 
         # Reranker (not used by default)
@@ -196,7 +197,7 @@ class ClaraMemory(MemoryBase):
 
         # Graph memory (optional)
         self.enable_graph = False
-        if hasattr(self.config, "graph_store") and self.config.graph_store.config:
+        if hasattr(self.config, "graph_store") and self.config.graph_store and self.config.graph_store.config:
             try:
                 from clara_core.memory.graph.factory import GraphStoreFactory
                 provider = self.config.graph_store.provider
@@ -989,15 +990,18 @@ class ClaraMemory(MemoryBase):
         """Reset the memory store."""
         logger.warning("Resetting all memories")
 
-        if self.db and hasattr(self.db, "connection") and self.db.connection:
-            self.db.connection.execute("DROP TABLE IF EXISTS history")
-            self.db.connection.close()
-
-        try:
-            self.db = SQLiteManager(self.config.history_db_path)
-        except Exception as e:
-            logger.warning(f"SQLite history disabled after reset: {e}")
-            self.db = None
+        # Reset history using the manager's reset method
+        if self.db:
+            try:
+                self.db.reset()
+            except Exception as e:
+                logger.warning(f"Failed to reset history: {e}")
+                # Re-initialize history manager
+                try:
+                    self.db = get_history_manager(self.config.history_db_path)
+                except Exception as e2:
+                    logger.warning(f"Memory history disabled after reset: {e2}")
+                    self.db = None
 
         if hasattr(self.vector_store, "reset"):
             self.vector_store = VectorStoreFactory.reset(self.vector_store)

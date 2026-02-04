@@ -1,15 +1,180 @@
-"""SQLite history storage for Clara Memory System."""
+"""History storage backends for Clara Memory System.
+
+Provides both SQLite (local/development) and PostgreSQL (production) backends
+for tracking memory history events (ADD, UPDATE, DELETE).
+"""
 
 import logging
+import os
 import sqlite3
 import threading
 import uuid
+from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("clara.memory.storage")
 
 
-class SQLiteManager:
+class HistoryManager(ABC):
+    """Abstract base class for memory history storage."""
+
+    @abstractmethod
+    def add_history(
+        self,
+        memory_id: str,
+        old_memory: Optional[str],
+        new_memory: Optional[str],
+        event: str,
+        *,
+        created_at: Optional[str] = None,
+        updated_at: Optional[str] = None,
+        is_deleted: int = 0,
+        actor_id: Optional[str] = None,
+        role: Optional[str] = None,
+    ) -> None:
+        """Add a history record."""
+        pass
+
+    @abstractmethod
+    def get_history(self, memory_id: str) -> List[Dict[str, Any]]:
+        """Get history for a memory."""
+        pass
+
+    @abstractmethod
+    def reset(self) -> None:
+        """Reset all history."""
+        pass
+
+    @abstractmethod
+    def close(self) -> None:
+        """Close connections."""
+        pass
+
+
+class PostgresHistoryManager(HistoryManager):
+    """PostgreSQL-based storage manager for memory history.
+
+    Uses the main DATABASE_URL connection via SQLAlchemy.
+    """
+
+    def __init__(self):
+        """Initialize PostgreSQL history manager."""
+        # Import here to avoid circular imports and allow lazy loading
+        from db import SessionLocal
+
+        self._session_factory = SessionLocal
+        logger.info("Memory history: PostgreSQL (DATABASE_URL)")
+
+    def add_history(
+        self,
+        memory_id: str,
+        old_memory: Optional[str],
+        new_memory: Optional[str],
+        event: str,
+        *,
+        created_at: Optional[str] = None,
+        updated_at: Optional[str] = None,
+        is_deleted: int = 0,
+        actor_id: Optional[str] = None,
+        role: Optional[str] = None,
+    ) -> None:
+        """Add a history record to PostgreSQL."""
+        from db.models import MemoryHistory, utcnow
+        from datetime import datetime
+
+        session = self._session_factory()
+        try:
+            # Parse datetime strings if provided
+            created_dt = None
+            if created_at:
+                try:
+                    created_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                except (ValueError, AttributeError):
+                    created_dt = utcnow()
+            else:
+                created_dt = utcnow()
+
+            updated_dt = None
+            if updated_at:
+                try:
+                    updated_dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+                except (ValueError, AttributeError):
+                    pass
+
+            history = MemoryHistory(
+                id=str(uuid.uuid4()),
+                memory_id=memory_id,
+                old_memory=old_memory,
+                new_memory=new_memory,
+                event=event,
+                created_at=created_dt,
+                updated_at=updated_dt,
+                is_deleted=bool(is_deleted),
+                actor_id=actor_id,
+                role=role,
+            )
+            session.add(history)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to add history record: {e}")
+            raise
+        finally:
+            session.close()
+
+    def get_history(self, memory_id: str) -> List[Dict[str, Any]]:
+        """Get history for a memory from PostgreSQL."""
+        from db.models import MemoryHistory
+
+        session = self._session_factory()
+        try:
+            records = (
+                session.query(MemoryHistory)
+                .filter(MemoryHistory.memory_id == memory_id)
+                .order_by(MemoryHistory.created_at.asc(), MemoryHistory.updated_at.asc())
+                .all()
+            )
+
+            return [
+                {
+                    "id": r.id,
+                    "memory_id": r.memory_id,
+                    "old_memory": r.old_memory,
+                    "new_memory": r.new_memory,
+                    "event": r.event,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                    "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+                    "is_deleted": r.is_deleted,
+                    "actor_id": r.actor_id,
+                    "role": r.role,
+                }
+                for r in records
+            ]
+        finally:
+            session.close()
+
+    def reset(self) -> None:
+        """Delete all history records."""
+        from db.models import MemoryHistory
+
+        session = self._session_factory()
+        try:
+            session.query(MemoryHistory).delete()
+            session.commit()
+            logger.info("Memory history reset (PostgreSQL)")
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to reset history: {e}")
+            raise
+        finally:
+            session.close()
+
+    def close(self) -> None:
+        """No-op for PostgreSQL (uses connection pool)."""
+        pass
+
+
+class SQLiteManager(HistoryManager):
     """SQLite-based storage manager for memory history."""
 
     def __init__(self, db_path: str = ":memory:"):
@@ -23,6 +188,7 @@ class SQLiteManager:
         self._lock = threading.Lock()
         self._migrate_history_table()
         self._create_history_table()
+        logger.info(f"Memory history: SQLite ({db_path})")
 
     def _migrate_history_table(self) -> None:
         """Migrate history table if schema has changed."""
@@ -244,3 +410,33 @@ class SQLiteManager:
     def __del__(self):
         """Cleanup on deletion."""
         self.close()
+
+
+def get_history_manager(sqlite_path: Optional[str] = None) -> HistoryManager:
+    """Factory function to get the appropriate history manager.
+
+    Uses PostgreSQL if DATABASE_URL is set, otherwise falls back to SQLite.
+
+    Args:
+        sqlite_path: Path for SQLite database (used if DATABASE_URL not set)
+
+    Returns:
+        HistoryManager instance (PostgreSQL or SQLite)
+    """
+    database_url = os.getenv("DATABASE_URL")
+
+    if database_url:
+        try:
+            return PostgresHistoryManager()
+        except Exception as e:
+            logger.warning(f"PostgreSQL history unavailable: {e}, falling back to SQLite")
+
+    # Fall back to SQLite
+    if sqlite_path:
+        return SQLiteManager(sqlite_path)
+
+    # Default SQLite path
+    home_dir = os.path.expanduser("~")
+    clara_memory_dir = os.environ.get("CLARA_MEMORY_DIR") or os.path.join(home_dir, ".clara_memory")
+    os.makedirs(clara_memory_dir, exist_ok=True)
+    return SQLiteManager(os.path.join(clara_memory_dir, "history.db"))
