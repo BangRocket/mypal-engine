@@ -43,6 +43,9 @@ logger = logging.getLogger("clara.memory")
 home_dir = os.path.expanduser("~")
 clara_memory_dir = os.environ.get("CLARA_MEMORY_DIR") or os.path.join(home_dir, ".clara_memory")
 
+# Ensure the directory exists
+os.makedirs(clara_memory_dir, exist_ok=True)
+
 
 class MemoryType(str, Enum):
     """Types of memory that can be stored."""
