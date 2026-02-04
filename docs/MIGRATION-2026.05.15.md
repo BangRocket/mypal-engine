@@ -169,8 +169,7 @@ INCUS_REMOTE=local
 | `docker` | Local Docker containers |
 | `incus` | Incus containers (faster startup) |
 | `incus-vm` | Incus VMs (stronger isolation) |
-| `remote` | Remote sandbox API |
-| `auto` | Auto-select (remote → incus → docker) |
+| `auto` | Auto-select (incus → docker) |
 
 **Prerequisites:** Incus must be installed and configured on the host.
 

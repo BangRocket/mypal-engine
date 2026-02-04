@@ -110,9 +110,9 @@ poetry run python scripts/migrate.py reset
 - `clara_core/email/` - Email monitoring and auto-response system
 
 ### Sandbox System
-- `sandbox/docker.py` - Local Docker sandbox for code execution
-- `sandbox/remote_client.py` - Remote VPS sandbox client
-- `sandbox/manager.py` - Unified sandbox manager (auto-selects local or remote)
+- `sandbox/docker.py` - Docker sandbox for code execution
+- `sandbox/incus.py` - Incus container/VM sandbox
+- `sandbox/manager.py` - Unified sandbox manager (auto-selects Docker or Incus)
 
 ### Storage
 - `storage/local_files.py` - Local file storage system for persistent user files
@@ -305,15 +305,14 @@ Note: Vision capabilities depend on the model being used. Images are resized to 
 
 ### Sandbox Code Execution
 
-Clara supports code execution via Docker, Incus containers/VMs, or a remote sandbox service.
+Clara supports code execution via Docker or Incus containers/VMs.
 
 **Mode Selection:**
 - `SANDBOX_MODE` - Backend selection (default: auto)
   - `docker` or `local`: Use local Docker containers
   - `incus`: Use Incus containers (lighter, faster)
   - `incus-vm`: Use Incus VMs (stronger isolation for untrusted code)
-  - `remote`: Use remote sandbox API only
-  - `auto`: Use remote if configured, fall back to Incus/Docker
+  - `auto`: Use Incus if available, fall back to Docker
 
 **Docker** (`SANDBOX_MODE=docker`):
 - `DOCKER_SANDBOX_IMAGE` - Docker image for sandbox (default: python:3.12-slim)
@@ -339,18 +338,6 @@ Incus provides system containers and VMs via the [Linux Containers project](http
 | Untrusted code | Moderate | Moderate | High |
 
 Use `incus-vm` when running untrusted code that requires stronger isolation boundaries.
-
-**Remote Sandbox** (`SANDBOX_MODE=remote`):
-- `SANDBOX_API_URL` - Remote sandbox service URL (e.g., https://sandbox.example.com)
-- `SANDBOX_API_KEY` - API key for authentication
-- `SANDBOX_TIMEOUT` - Request timeout in seconds (default: 60)
-
-The self-hosted sandbox service is in `sandbox_service/`. Deploy to a VPS with Docker:
-```bash
-cd sandbox_service
-docker-compose build sandbox-image  # Build sandbox container image
-docker-compose up -d                # Start API service
-```
 
 **Web Search:**
 - `TAVILY_API_KEY` - Tavily API key for web search (Docker sandbox only)
@@ -779,8 +766,8 @@ Admin operations require one of:
 - Discord bot uses global `MemoryManager` instance initialized at startup with LLM callable
 - LLM backends support OpenAI-compatible API (via OpenAI SDK) and native Anthropic SDK
 - `LLM_PROVIDER=anthropic` uses native Anthropic SDK with native tool calling (recommended for clewdr)
-- Sandbox system auto-selects between local Docker and remote VPS based on configuration
-- Rook (Clara's memory system) is in `clara_core/memory/` with vendored mem0 in `vendor/mem0/` for compatibility
+- Sandbox system auto-selects between Docker and Incus based on availability
+- Rook (Clara's memory system) is in `clara_core/memory/`
 
 ## Production Deployment
 

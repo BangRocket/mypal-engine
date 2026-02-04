@@ -1189,7 +1189,7 @@ class ClaraCommands(commands.Cog):
             await ctx.respond(embed=create_error_embed("Error", str(e)))
 
     @sandbox.command(name="mode", description="Set sandbox mode (admin only)")
-    @option("mode", description="Sandbox mode", choices=["local", "remote", "auto"])
+    @option("mode", description="Sandbox mode", choices=["docker", "incus", "incus-vm", "auto"])
     @commands.has_permissions(administrator=True)
     async def sandbox_mode(self, ctx: discord.ApplicationContext, mode: str):
         """Set sandbox mode."""

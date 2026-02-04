@@ -8,7 +8,7 @@ A personal AI assistant with persistent memory and tool capabilities. The assist
 - **Multi-Platform Support** - Discord, Microsoft Teams, and CLI adapters
 - **Persistent Memory** - User and project memories via [mem0](https://github.com/mem0ai/mem0) with graph relationship tracking
 - **MCP Plugin System** - Install and use tools from external MCP servers (similar to Claude Code's `/plugins`)
-- **Code Execution** - Sandboxed Python/Bash via Docker, Incus containers/VMs, or remote VPS
+- **Code Execution** - Sandboxed Python/Bash via Docker or Incus containers/VMs
 - **Web Search** - Real-time web search via Tavily
 
 ### Integrations
