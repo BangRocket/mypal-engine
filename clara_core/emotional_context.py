@@ -162,7 +162,7 @@ def finalize_conversation_emotional_context(
     Returns:
         EmotionalSummary if successful, None if no data to finalize
     """
-    from config.mem0 import MEM0
+    from clara_core.memory import MEM0
 
     sentiments = get_conversation_sentiments(user_id, channel_id)
 

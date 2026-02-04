@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -113,7 +114,7 @@ def load_initial_profile(user_id: str) -> None:
     2. If not, generate from inputs/user_profile.txt first
     3. Apply structured memories to mem0 with graph-friendly grouping
     """
-    from config.mem0 import MEM0
+    from clara_core.memory import MEM0
 
     skip_profile = os.getenv("SKIP_PROFILE_LOAD", "true").lower() == "true"
     if skip_profile:
@@ -145,9 +146,7 @@ def load_initial_profile(user_id: str) -> None:
 
     logger.debug("Creating flag file to prevent duplicate loads...")
     try:
-        PROFILE_LOADED_FLAG.write_text(
-            f"loading started at {datetime.now().isoformat()}"
-        )
+        PROFILE_LOADED_FLAG.write_text(f"loading started at {datetime.now().isoformat()}")
     except Exception as e:
         logger.error(f"Could not create flag file: {e}")
 
@@ -206,9 +205,7 @@ class MemoryManager:
             RuntimeError: If not initialized
         """
         if cls._instance is None:
-            raise RuntimeError(
-                "MemoryManager not initialized. Call MemoryManager.initialize() first."
-            )
+            raise RuntimeError("MemoryManager not initialized. Call MemoryManager.initialize() first.")
         return cls._instance
 
     @classmethod
@@ -315,6 +312,7 @@ class MemoryManager:
             project = db.query(Project).filter_by(owner_id=user_id).first()
             if not project:
                 import os
+
                 project_name = os.getenv("DEFAULT_PROJECT", "Default Project")
                 project = Project(owner_id=user_id, name=project_name)
                 db.add(project)
@@ -411,19 +409,12 @@ class MemoryManager:
         """Generate/update summary for a thread."""
         from db.models import Message
 
-        all_msgs = (
-            db.query(Message)
-            .filter_by(session_id=thread.id)
-            .order_by(Message.created_at.asc())
-            .all()
-        )
+        all_msgs = db.query(Message).filter_by(session_id=thread.id).order_by(Message.created_at.asc()).all()
 
         if not all_msgs:
             return ""
 
-        conversation = "\n".join(
-            f"{m.role.upper()}: {m.content[:500]}" for m in all_msgs[-30:]
-        )
+        conversation = "\n".join(f"{m.role.upper()}: {m.content[:500]}" for m in all_msgs[-30:])
 
         summary_prompt = [
             {
@@ -442,6 +433,29 @@ class MemoryManager:
 
     # ---------- mem0 integration ----------
 
+    def _get_cache(self):
+        """Get Redis cache instance (lazy-loaded)."""
+        try:
+            from clara_core.memory.cache.redis_cache import RedisCache
+
+            return RedisCache.get_instance()
+        except Exception:
+            return None
+
+    def _invalidate_memory_cache(self, user_id: str) -> None:
+        """Invalidate memory cache for a user after memories change.
+
+        Invalidates search results cache but NOT embeddings (those rarely change).
+
+        Args:
+            user_id: User whose cache to invalidate
+        """
+        cache = self._get_cache()
+        if cache and cache.available:
+            count = cache.invalidate_search_cache(user_id)
+            if count:
+                memory_logger.debug(f"Invalidated {count} cached searches for {user_id}")
+
     def fetch_mem0_context(
         self,
         user_id: str,
@@ -450,14 +464,18 @@ class MemoryManager:
         participants: list[dict] | None = None,
         is_dm: bool = False,
     ) -> tuple[list[str], list[str], list[dict]]:
-        """Fetch relevant memories from mem0.
+        """Fetch relevant memories from mem0 using parallel fetches.
 
         Uses entity-scoped memory with user_id + agent_id for proper isolation.
+        Performance optimized with:
+        - Parallel fetches via ThreadPoolExecutor
+        - Redis caching for key memories and search results
+        - Batched FSRS lookups
 
         Memory retrieval:
-        1. First fetch "key" memories (is_key=true) - always included
-        2. Then fetch relevant memories via semantic search
-        3. Fetch graph relations (entity relationships)
+        1. Parallel fetch: key memories, user search, project search
+        2. Fetch graph relations (entity relationships)
+        3. Re-rank with batched FSRS
         4. Combine with key memories first, then relevant (deduplicated)
 
         Args:
@@ -471,24 +489,10 @@ class MemoryManager:
             Tuple of (user_memories, project_memories, graph_relations)
             graph_relations is a list of dicts with keys: source, relationship, destination
         """
-        from config.mem0 import MEM0
+        from clara_core.memory import MEM0
 
         if MEM0 is None:
             return [], [], []
-
-        # 1. Fetch key memories first (always included)
-        key_mems: list[str] = []
-        try:
-            key_res = MEM0.get_all(
-                user_id=user_id,
-                agent_id=self.agent_id,
-                filters={"is_key": "true"},  # String "true" to match JSON boolean
-                limit=MAX_KEY_MEMORIES,
-            )
-            for r in key_res.get("results", []):
-                key_mems.append(f"[KEY] {r['memory']}")
-        except Exception as e:
-            logger.error(f"Error fetching key memories: {e}")
 
         # Truncate search query if too long
         search_query = user_message
@@ -496,51 +500,128 @@ class MemoryManager:
             search_query = search_query[-MAX_SEARCH_QUERY_CHARS:]
             logger.debug(f"Truncated search query to {MAX_SEARCH_QUERY_CHARS} chars")
 
-        # 2. Entity-scoped search: user_id + agent_id
-        # Also collect graph relations from search results
+        # Get cache for potential cache hits
+        cache = self._get_cache()
+
+        # Define fetch functions for parallel execution
+        def fetch_key_memories():
+            """Fetch key memories (with caching)."""
+            # Try cache first
+            if cache and cache.available:
+                cached = cache.get_key_memories(user_id, self.agent_id)
+                if cached is not None:
+                    logger.debug("Key memories cache hit")
+                    return {"results": cached, "_cached": True}
+
+            result = MEM0.get_all(
+                user_id=user_id,
+                agent_id=self.agent_id,
+                filters={"is_key": "true"},
+                limit=MAX_KEY_MEMORIES,
+            )
+
+            # Cache the results
+            if cache and cache.available and result.get("results"):
+                cache.set_key_memories(user_id, self.agent_id, result["results"])
+
+            return result
+
+        def fetch_user_memories():
+            """Fetch user memories via semantic search (with caching)."""
+            # Try cache first
+            if cache and cache.available:
+                cached = cache.get_search_results(user_id, search_query, "user")
+                if cached is not None:
+                    logger.debug("User search cache hit")
+                    return {"results": cached, "_cached": True}
+
+            result = MEM0.search(
+                search_query,
+                user_id=user_id,
+                agent_id=self.agent_id,
+            )
+
+            # Cache the results
+            if cache and cache.available and result.get("results"):
+                cache.set_search_results(user_id, search_query, result["results"], "user")
+
+            return result
+
+        def fetch_project_memories():
+            """Fetch project memories via semantic search (with caching)."""
+            filters = {"project_id": project_id}
+
+            # Try cache first
+            if cache and cache.available:
+                cached = cache.get_search_results(user_id, search_query, "project", filters)
+                if cached is not None:
+                    logger.debug("Project search cache hit")
+                    return {"results": cached, "_cached": True}
+
+            result = MEM0.search(
+                search_query,
+                user_id=user_id,
+                agent_id=self.agent_id,
+                filters=filters,
+            )
+
+            # Cache the results
+            if cache and cache.available and result.get("results"):
+                cache.set_search_results(user_id, search_query, result["results"], "project", filters)
+
+            return result
+
+        # Execute parallel fetches
+        key_res = {"results": []}
+        user_res = {"results": []}
+        proj_res = {"results": []}
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {
+                executor.submit(fetch_key_memories): "key",
+                executor.submit(fetch_user_memories): "user",
+                executor.submit(fetch_project_memories): "project",
+            }
+
+            for future in as_completed(futures):
+                fetch_type = futures[future]
+                try:
+                    result = future.result()
+                    if fetch_type == "key":
+                        key_res = result
+                    elif fetch_type == "user":
+                        user_res = result
+                    elif fetch_type == "project":
+                        proj_res = result
+                except Exception as e:
+                    logger.error(f"Error in {fetch_type} memory fetch: {e}", exc_info=True)
+
+        # Build key memories list
+        key_mems: list[str] = []
+        for r in key_res.get("results", []):
+            key_mems.append(f"[KEY] {r['memory']}")
+
+        # Collect graph relations from search results
         graph_relations: list[dict] = []
+        if user_res.get("relations"):
+            graph_relations.extend(user_res["relations"])
+        if proj_res.get("relations"):
+            existing = {(r.get("source"), r.get("relationship"), r.get("destination")) for r in graph_relations}
+            for rel in proj_res["relations"]:
+                key = (rel.get("source"), rel.get("relationship"), rel.get("destination"))
+                if key not in existing:
+                    graph_relations.append(rel)
+                    existing.add(key)
 
-        try:
-            user_res = MEM0.search(
-                search_query,
-                user_id=user_id,
-                agent_id=self.agent_id,
-            )
-            # Collect graph relations if present
-            if user_res.get("relations"):
-                graph_relations.extend(user_res["relations"])
-        except Exception as e:
-            logger.error(f"Error searching user memories: {e}", exc_info=True)
-            user_res = {"results": []}
+        # Combine all results for batched FSRS ranking
+        all_user_results = user_res.get("results", [])
+        all_proj_results = proj_res.get("results", [])
 
-        try:
-            proj_res = MEM0.search(
-                search_query,
-                user_id=user_id,
-                agent_id=self.agent_id,
-                filters={"project_id": project_id},
-            )
-            # Collect graph relations if present (deduplicate)
-            if proj_res.get("relations"):
-                existing = {(r.get("source"), r.get("relationship"), r.get("destination")) for r in graph_relations}
-                for rel in proj_res["relations"]:
-                    key = (rel.get("source"), rel.get("relationship"), rel.get("destination"))
-                    if key not in existing:
-                        graph_relations.append(rel)
-                        existing.add(key)
-        except Exception as e:
-            logger.error(f"Error searching project memories: {e}", exc_info=True)
-            proj_res = {"results": []}
+        # Re-rank results using batched FSRS retrievability weighting
+        user_results = self._rank_results_with_fsrs_batch(all_user_results, user_id)
+        proj_results = self._rank_results_with_fsrs_batch(all_proj_results, user_id)
 
-        # 3. Re-rank results using FSRS retrievability weighting
-        user_results = self._rank_results_with_fsrs(
-            user_res.get("results", []), user_id
-        )
-        proj_results = self._rank_results_with_fsrs(
-            proj_res.get("results", []), user_id
-        )
-
-        # 4. Track memory IDs for later promotion
+        # Track memory IDs for later promotion
         retrieved_ids: list[str] = []
         for r in user_results:
             if r.get("id"):
@@ -551,45 +632,50 @@ class MemoryManager:
         self._last_retrieved_memory_ids[user_id] = retrieved_ids
 
         # Build user memories: key first, then relevant (deduplicated)
-        user_mems = list(key_mems)  # Start with key memories
-        key_texts = {m.replace("[KEY] ", "") for m in key_mems}  # For dedup
+        user_mems = list(key_mems)
+        key_texts = {m.replace("[KEY] ", "") for m in key_mems}
 
         for r in user_results:
             mem = r["memory"]
-            if mem not in key_texts:  # Don't duplicate key memories
+            if mem not in key_texts:
                 user_mems.append(mem)
 
         proj_mems = [r["memory"] for r in proj_results]
 
-        # Also search for memories about each participant
+        # Fetch participant memories in parallel if we have participants
         if participants:
-            for p in participants:
-                p_id = p.get("id")
-                p_name = p.get("name", p_id)
-                if not p_id or p_id == user_id:
-                    continue
+            participant_futures = {}
+            with ThreadPoolExecutor(max_workers=min(len(participants), 3)) as executor:
+                for p in participants:
+                    p_id = p.get("id")
+                    p_name = p.get("name", p_id)
+                    if not p_id or p_id == user_id:
+                        continue
 
-                try:
-                    p_search = MEM0.search(
-                        f"{p_name} {search_query[:500]}",
-                        user_id=user_id,
-                        agent_id=self.agent_id,
-                    )
-                    # Rank participant results by FSRS and track IDs
-                    p_results = self._rank_results_with_fsrs(
-                        p_search.get("results", []), user_id
-                    )
-                    for r in p_results:
-                        mem = r["memory"]
-                        if mem not in key_texts and mem not in user_mems:
-                            labeled_mem = f"[About {p_name}]: {mem}"
-                            if labeled_mem not in user_mems:
-                                user_mems.append(labeled_mem)
-                                # Track this memory ID too
-                                if r.get("id") and r["id"] not in retrieved_ids:
-                                    retrieved_ids.append(r["id"])
-                except Exception as e:
-                    logger.warning(f"Error searching participant {p_id}: {e}")
+                    def fetch_participant(name=p_name, query=search_query):
+                        return MEM0.search(
+                            f"{name} {query[:500]}",
+                            user_id=user_id,
+                            agent_id=self.agent_id,
+                        )
+
+                    participant_futures[executor.submit(fetch_participant)] = p_name
+
+                for future in as_completed(participant_futures):
+                    p_name = participant_futures[future]
+                    try:
+                        p_search = future.result()
+                        p_results = self._rank_results_with_fsrs_batch(p_search.get("results", []), user_id)
+                        for r in p_results:
+                            mem = r["memory"]
+                            if mem not in key_texts and mem not in user_mems:
+                                labeled_mem = f"[About {p_name}]: {mem}"
+                                if labeled_mem not in user_mems:
+                                    user_mems.append(labeled_mem)
+                                    if r.get("id") and r["id"] not in retrieved_ids:
+                                        retrieved_ids.append(r["id"])
+                    except Exception as e:
+                        logger.warning(f"Error searching participant {p_name}: {e}")
 
         # Update tracked IDs after participant search
         self._last_retrieved_memory_ids[user_id] = retrieved_ids
@@ -598,18 +684,15 @@ class MemoryManager:
         for r in user_results:
             metadata = r.get("metadata", {})
             if metadata.get("contact_id"):
-                contact_name = metadata.get(
-                    "contact_name", metadata.get("contact_id")
-                )
+                contact_name = metadata.get("contact_name", metadata.get("contact_id"))
                 mem_text = f"[About {contact_name}]: {r['memory']}"
                 if mem_text not in user_mems:
                     user_mems.append(mem_text)
 
         # Limit non-key memories to reduce token usage
-        # Key memories (at start) are always kept, limit the rest
         num_key = len(key_mems)
         if len(user_mems) > num_key + MAX_MEMORIES_PER_TYPE:
-            user_mems = user_mems[:num_key + MAX_MEMORIES_PER_TYPE]
+            user_mems = user_mems[: num_key + MAX_MEMORIES_PER_TYPE]
         if len(proj_mems) > MAX_MEMORIES_PER_TYPE:
             proj_mems = proj_mems[:MAX_MEMORIES_PER_TYPE]
         if len(graph_relations) > MAX_GRAPH_RELATIONS:
@@ -622,7 +705,6 @@ class MemoryManager:
                 f"{len(proj_mems)} project memories, "
                 f"{len(graph_relations)} graph relations"
             )
-            # Send Discord embed with memory summary
             self._send_memory_embed(
                 user_id=user_id,
                 key_count=len(key_mems),
@@ -658,15 +740,18 @@ class MemoryManager:
                 clean_mem = clean_mem[:57] + "..."
             samples.append(clean_mem)
 
-        self._on_memory_event("memory_retrieved", {
-            "user_id": user_id,
-            "key_count": key_count,
-            "user_count": user_count,
-            "proj_count": proj_count,
-            "graph_count": graph_count,
-            "total": total,
-            "samples": samples,
-        })
+        self._on_memory_event(
+            "memory_retrieved",
+            {
+                "user_id": user_id,
+                "key_count": key_count,
+                "user_count": user_count,
+                "proj_count": proj_count,
+                "graph_count": graph_count,
+                "total": total,
+                "samples": samples,
+            },
+        )
 
     def add_to_mem0(
         self,
@@ -689,7 +774,7 @@ class MemoryManager:
             participants: List of {"id": str, "name": str} for people mentioned
             is_dm: Whether this is a DM conversation (stores as "personal" vs "project")
         """
-        from config.mem0 import MEM0
+        from clara_core.memory import MEM0
 
         if MEM0 is None:
             return
@@ -700,9 +785,7 @@ class MemoryManager:
             names = [p.get("name", p.get("id", "Unknown")) for p in participants]
             context_prefix = f"[Participants: {', '.join(names)}]\n"
 
-        history_slice = [
-            {"role": m.role, "content": m.content} for m in recent_msgs[-4:]
-        ] + [
+        history_slice = [{"role": m.role, "content": m.content} for m in recent_msgs[-4:]] + [
             {"role": "user", "content": context_prefix + user_message},
             {"role": "assistant", "content": assistant_reply},
         ]
@@ -715,12 +798,8 @@ class MemoryManager:
             "source_type": source_type,
         }
         if participants:
-            metadata["participant_ids"] = [
-                p.get("id") for p in participants if p.get("id")
-            ]
-            metadata["participant_names"] = [
-                p.get("name") for p in participants if p.get("name")
-            ]
+            metadata["participant_ids"] = [p.get("id") for p in participants if p.get("id")]
+            metadata["participant_names"] = [p.get("name") for p in participants if p.get("name")]
 
         try:
             result = MEM0.add(
@@ -742,12 +821,12 @@ class MemoryManager:
                     deleted_entities = relations.get("deleted_entities", []) if isinstance(relations, dict) else []
 
                     if mem_count or added_entities:
-                        logger.info(
-                            f"Added {mem_count} memories, "
-                            f"{len(added_entities)} graph entities"
-                        )
+                        logger.info(f"Added {mem_count} memories, " f"{len(added_entities)} graph entities")
                         if deleted_entities:
                             logger.debug(f"Deleted {len(deleted_entities)} outdated graph entities")
+
+                        # Invalidate search cache (not embeddings) since memories changed
+                        self._invalidate_memory_cache(user_id)
 
                         # Create MemoryDynamics records for FSRS tracking
                         self._create_memory_dynamics_records(
@@ -819,13 +898,16 @@ class MemoryManager:
                 mem = mem[:57] + "..."
             samples.append(mem)
 
-        self._on_memory_event("memory_extracted", {
-            "user_id": user_id,
-            "count": count,
-            "source_type": source_type,
-            "samples": samples,
-            "graph_added": graph_added,
-        })
+        self._on_memory_event(
+            "memory_extracted",
+            {
+                "user_id": user_id,
+                "count": count,
+                "source_type": source_type,
+                "samples": samples,
+                "graph_added": graph_added,
+            },
+        )
 
     def _create_memory_dynamics_records(
         self,
@@ -859,24 +941,28 @@ class MemoryManager:
                     continue
 
                 # Check if dynamics record already exists
-                existing = db.query(MemoryDynamics).filter_by(
-                    memory_id=memory_id,
-                    user_id=user_id,
-                ).first()
+                existing = (
+                    db.query(MemoryDynamics)
+                    .filter_by(
+                        memory_id=memory_id,
+                        user_id=user_id,
+                    )
+                    .first()
+                )
 
                 if not existing:
                     # Create new dynamics record with default FSRS values
                     dynamics = MemoryDynamics(
                         memory_id=memory_id,
                         user_id=user_id,
-                        stability=1.0,       # Default initial stability
-                        difficulty=5.0,       # Middle difficulty
+                        stability=1.0,  # Default initial stability
+                        difficulty=5.0,  # Middle difficulty
                         retrieval_strength=1.0,
                         storage_strength=0.5,
                         is_key=False,
                         importance_weight=1.0,
                         last_accessed_at=now,
-                        access_count=1,       # Created = first access
+                        access_count=1,  # Created = first access
                         created_at=now,
                         updated_at=now,
                     )
@@ -885,9 +971,7 @@ class MemoryManager:
 
             if created_count > 0:
                 db.commit()
-                memory_logger.debug(
-                    f"Created {created_count} MemoryDynamics records for user {user_id}"
-                )
+                memory_logger.debug(f"Created {created_count} MemoryDynamics records for user {user_id}")
 
         except Exception as e:
             db.rollback()
@@ -925,7 +1009,7 @@ class MemoryManager:
         """
         from datetime import timedelta
 
-        from config.mem0 import MEM0
+        from clara_core.memory import MEM0
 
         if MEM0 is None:
             return []
@@ -952,9 +1036,7 @@ class MemoryManager:
                 timestamp_str = metadata.get("timestamp")
                 if timestamp_str:
                     try:
-                        timestamp = datetime.fromisoformat(
-                            timestamp_str.replace("Z", "+00:00")
-                        )
+                        timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
                         if timestamp < cutoff:
                             continue
                     except (ValueError, TypeError):
@@ -962,15 +1044,17 @@ class MemoryManager:
                 else:
                     timestamp = None
 
-                emotional_contexts.append({
-                    "memory": r.get("memory", ""),
-                    "timestamp": timestamp_str,
-                    "arc": metadata.get("emotional_arc", "stable"),
-                    "energy": metadata.get("energy_level", "neutral"),
-                    "channel_name": metadata.get("channel_name", "unknown"),
-                    "is_dm": metadata.get("is_dm", False),
-                    "ending_sentiment": metadata.get("ending_sentiment", 0.0),
-                })
+                emotional_contexts.append(
+                    {
+                        "memory": r.get("memory", ""),
+                        "timestamp": timestamp_str,
+                        "arc": metadata.get("emotional_arc", "stable"),
+                        "energy": metadata.get("energy_level", "neutral"),
+                        "channel_name": metadata.get("channel_name", "unknown"),
+                        "is_dm": metadata.get("is_dm", False),
+                        "ending_sentiment": metadata.get("ending_sentiment", 0.0),
+                    }
+                )
 
             # Sort by timestamp descending (most recent first)
             emotional_contexts.sort(
@@ -1300,10 +1384,14 @@ class MemoryManager:
 
         db = SessionLocal()
         try:
-            return db.query(MemoryDynamics).filter_by(
-                memory_id=memory_id,
-                user_id=user_id,
-            ).first()
+            return (
+                db.query(MemoryDynamics)
+                .filter_by(
+                    memory_id=memory_id,
+                    user_id=user_id,
+                )
+                .first()
+            )
         finally:
             db.close()
 
@@ -1328,10 +1416,14 @@ class MemoryManager:
 
         db = SessionLocal()
         try:
-            dynamics = db.query(MemoryDynamics).filter_by(
-                memory_id=memory_id,
-                user_id=user_id,
-            ).first()
+            dynamics = (
+                db.query(MemoryDynamics)
+                .filter_by(
+                    memory_id=memory_id,
+                    user_id=user_id,
+                )
+                .first()
+            )
 
             if not dynamics:
                 dynamics = MemoryDynamics(
@@ -1379,10 +1471,14 @@ class MemoryManager:
         db = SessionLocal()
         try:
             # Get or create dynamics
-            dynamics = db.query(MemoryDynamics).filter_by(
-                memory_id=memory_id,
-                user_id=user_id,
-            ).first()
+            dynamics = (
+                db.query(MemoryDynamics)
+                .filter_by(
+                    memory_id=memory_id,
+                    user_id=user_id,
+                )
+                .first()
+            )
 
             if not dynamics:
                 dynamics = MemoryDynamics(
@@ -1464,7 +1560,7 @@ class MemoryManager:
             user_id: User who owns the memory
             reason: Why the memory is being demoted
         """
-        from config.mem0 import MEM0
+        from clara_core.memory import MEM0
 
         # Promote with grade=AGAIN (1) to decrease stability
         self.promote_memory(
@@ -1508,10 +1604,14 @@ class MemoryManager:
 
         db = SessionLocal()
         try:
-            dynamics = db.query(MemoryDynamics).filter_by(
-                memory_id=memory_id,
-                user_id=user_id,
-            ).first()
+            dynamics = (
+                db.query(MemoryDynamics)
+                .filter_by(
+                    memory_id=memory_id,
+                    user_id=user_id,
+                )
+                .first()
+            )
 
             if not dynamics:
                 # No FSRS data, just use semantic score
@@ -1579,16 +1679,108 @@ class MemoryManager:
             semantic_score = r.get("score", 0.5)  # Default to 0.5 if no score
 
             if memory_id:
-                composite_score = self.calculate_memory_score(
-                    memory_id, user_id, semantic_score
-                )
+                composite_score = self.calculate_memory_score(memory_id, user_id, semantic_score)
             else:
                 composite_score = semantic_score
 
-            scored_results.append({
-                **r,
-                "_composite_score": composite_score,
-            })
+            scored_results.append(
+                {
+                    **r,
+                    "_composite_score": composite_score,
+                }
+            )
+
+        # Sort by composite score (descending)
+        scored_results.sort(key=lambda x: x.get("_composite_score", 0), reverse=True)
+
+        return scored_results
+
+    def _rank_results_with_fsrs_batch(
+        self,
+        results: list[dict],
+        user_id: str,
+    ) -> list[dict]:
+        """Re-rank search results using batched FSRS lookups.
+
+        Performance optimized: single DB query instead of N queries.
+        Calculates composite score (semantic * FSRS) and sorts by it.
+
+        Args:
+            results: List of search results from mem0
+            user_id: User ID for FSRS lookup
+
+        Returns:
+            Results re-ranked by composite score
+        """
+        if not results:
+            return results
+
+        from datetime import UTC, datetime
+
+        from clara_core.fsrs import calculate_memory_score, retrievability
+        from db import SessionLocal
+        from db.models import MemoryDynamics
+
+        # Collect all memory IDs that have them
+        memory_ids = [r.get("id") for r in results if r.get("id")]
+
+        if not memory_ids:
+            # No memory IDs, just return results sorted by semantic score
+            return sorted(results, key=lambda x: x.get("score", 0.5), reverse=True)
+
+        # Single batch query for all memory dynamics
+        db = SessionLocal()
+        try:
+            dynamics_records = (
+                db.query(MemoryDynamics)
+                .filter(
+                    MemoryDynamics.memory_id.in_(memory_ids),
+                    MemoryDynamics.user_id == user_id,
+                )
+                .all()
+            )
+            dynamics_map = {d.memory_id: d for d in dynamics_records}
+        finally:
+            db.close()
+
+        # Calculate composite scores using the batched data
+        now = datetime.now(UTC).replace(tzinfo=None)
+        scored_results = []
+
+        for r in results:
+            memory_id = r.get("id")
+            semantic_score = r.get("score", 0.5)
+
+            if memory_id and memory_id in dynamics_map:
+                dynamics = dynamics_map[memory_id]
+
+                # Calculate current retrievability
+                if dynamics.last_accessed_at:
+                    days_elapsed = (now - dynamics.last_accessed_at).total_seconds() / 86400.0
+                else:
+                    days_elapsed = 0.0
+
+                current_r = retrievability(days_elapsed, dynamics.stability)
+
+                # Combine semantic and FSRS scores
+                importance = dynamics.importance_weight if dynamics.importance_weight else 1.0
+                fsrs_score = calculate_memory_score(
+                    current_r,
+                    dynamics.storage_strength,
+                    importance,
+                )
+
+                composite_score = 0.6 * semantic_score + 0.4 * fsrs_score
+            else:
+                # No FSRS data, just use semantic score
+                composite_score = semantic_score
+
+            scored_results.append(
+                {
+                    **r,
+                    "_composite_score": composite_score,
+                }
+            )
 
         # Sort by composite score (descending)
         scored_results.sort(key=lambda x: x.get("_composite_score", 0), reverse=True)
@@ -1625,7 +1817,7 @@ class MemoryManager:
             calculate_similarity,
             detect_contradiction,
         )
-        from config.mem0 import MEM0
+        from clara_core.memory import MEM0
 
         if MEM0 is None:
             return "create", None
@@ -1722,7 +1914,7 @@ class MemoryManager:
         Returns:
             New memory ID, or None on failure
         """
-        from config.mem0 import MEM0
+        from clara_core.memory import MEM0
         from db import SessionLocal
         from db.models import MemorySupersession
 
@@ -1763,9 +1955,7 @@ class MemoryManager:
             # Demote old memory
             self.demote_memory(old_memory_id, user_id, reason="superseded")
 
-            memory_logger.info(
-                f"Superseded memory {old_memory_id} with {new_memory_id}"
-            )
+            memory_logger.info(f"Superseded memory {old_memory_id} with {new_memory_id}")
             return new_memory_id
 
         except Exception as e:

@@ -230,7 +230,7 @@ def init_platform(
             display notifications when memories are accessed.
     """
     from clara_core.llm import make_llm
-    from clara_core.memory import MemoryManager, load_initial_profile
+    from clara_core.memory_manager import MemoryManager, load_initial_profile
     from clara_core.tools import ToolRegistry
     from db.connection import init_db
 

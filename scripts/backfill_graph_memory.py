@@ -490,7 +490,7 @@ def main():
 
     # Check if graph memory is enabled
     logger.info("Initializing mem0...")
-    from config.mem0 import ENABLE_GRAPH_MEMORY, MEM0
+    from clara_core.memory import ENABLE_GRAPH_MEMORY, MEM0
 
     if not ENABLE_GRAPH_MEMORY:
         logger.error("✗ Graph memory is not enabled. Set ENABLE_GRAPH_MEMORY=true")

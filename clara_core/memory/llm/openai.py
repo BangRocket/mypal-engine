@@ -1,0 +1,70 @@
+"""OpenAI LLM implementation."""
+
+import json
+import os
+from typing import Dict, List, Optional
+
+from openai import OpenAI
+
+from clara_core.memory.llm.base import LLMBase, OpenAIConfig
+
+
+class OpenAILLM(LLMBase):
+    """OpenAI LLM implementation (works with OpenAI-compatible endpoints)."""
+
+    def __init__(self, config: Optional[OpenAIConfig] = None):
+        """Initialize OpenAI LLM.
+
+        Args:
+            config: OpenAI configuration
+        """
+        super().__init__(config)
+
+        # Set defaults
+        self.config.model = self.config.model or "gpt-4o-mini"
+
+        api_key = self.config.api_key or os.getenv("OPENAI_API_KEY")
+        base_url = self.config.base_url or os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1"
+
+        # Allow http_client override
+        client_kwargs = {"api_key": api_key, "base_url": base_url}
+        if self.config.http_client:
+            client_kwargs["http_client"] = self.config.http_client
+
+        self.client = OpenAI(**client_kwargs)
+
+    def generate_response(
+        self,
+        messages: List[Dict[str, str]],
+        response_format: Optional[Dict] = None,
+        tools: Optional[List[Dict]] = None,
+        tool_choice: Optional[str] = None,
+    ) -> str:
+        """Generate a response using OpenAI's API.
+
+        Args:
+            messages: List of message dictionaries.
+            response_format: Optional response format.
+            tools: Optional list of tools for function calling.
+            tool_choice: Optional tool choice specification.
+
+        Returns:
+            The generated response as a string.
+        """
+        params = {
+            "model": self.config.model,
+            "messages": messages,
+            "temperature": self.config.temperature,
+            "max_tokens": self.config.max_tokens,
+            "top_p": self.config.top_p,
+        }
+
+        if response_format:
+            params["response_format"] = response_format
+        if tools:
+            params["tools"] = tools
+        if tool_choice:
+            params["tool_choice"] = tool_choice
+
+        response = self.client.chat.completions.create(**params)
+        return response.choices[0].message.content
