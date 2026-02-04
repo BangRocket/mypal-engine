@@ -391,7 +391,7 @@ def register_local_file_tools(registry: ToolRegistry) -> None:
 def register_email_tools(registry: ToolRegistry) -> None:
     """Register email tools."""
     try:
-        from email_monitor import EMAIL_TOOLS
+        from clara_core.email import EMAIL_TOOLS
     except ImportError:
         logger.debug("Email tools not available")
         return
@@ -404,7 +404,7 @@ def register_email_tools(registry: ToolRegistry) -> None:
 
         async def make_handler(tool_name: str):
             async def handler(args: dict, context: Any) -> str:
-                from email_monitor import execute_email_tool
+                from clara_core.email import execute_email_tool
 
                 return await execute_email_tool(tool_name, args)
 

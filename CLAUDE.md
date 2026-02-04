@@ -107,7 +107,7 @@ poetry run python scripts/migrate.py reset
 - `clara_core/memory/` - Rook memory system (Qdrant/pgvector for vectors, OpenAI embeddings)
 - `models.py` - SQLAlchemy models: Project, Session, Message, ChannelSummary
 - `db.py` - Database setup (SQLite for dev, PostgreSQL for production)
-- `email_monitor.py` - Email monitoring and auto-response system
+- `clara_core/email/` - Email monitoring and auto-response system
 
 ### Sandbox System
 - `sandbox/docker.py` - Local Docker sandbox for code execution
