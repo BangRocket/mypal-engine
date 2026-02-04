@@ -6,6 +6,11 @@ from typing import Literal, Optional
 
 from openai import OpenAI
 
+# Pre-import OpenAI resources to avoid deadlock when used in concurrent contexts.
+# The OpenAI client lazy-loads these modules, which can cause import deadlocks
+# when multiple threads try to import simultaneously.
+import openai.resources.embeddings  # noqa: F401
+
 from clara_core.memory.embeddings.base import BaseEmbedderConfig, EmbeddingBase
 
 
@@ -39,6 +44,10 @@ class OpenAIEmbedding(EmbeddingBase):
             )
 
         self.client = OpenAI(api_key=api_key, base_url=base_url)
+
+        # Force eager initialization of embeddings to avoid import deadlock
+        # when used in ThreadPoolExecutor
+        _ = self.client.embeddings
 
     def embed(self, text, memory_action: Optional[Literal["add", "search", "update"]] = None):
         """Get the embedding for the given text using OpenAI.

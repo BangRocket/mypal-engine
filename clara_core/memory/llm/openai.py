@@ -6,6 +6,12 @@ from typing import Dict, List, Optional
 
 from openai import OpenAI
 
+# Pre-import OpenAI resources to avoid deadlock when used in concurrent contexts.
+# The OpenAI client lazy-loads these modules, which can cause import deadlocks
+# when multiple threads try to import simultaneously.
+import openai.resources.chat  # noqa: F401
+import openai.resources.embeddings  # noqa: F401
+
 from clara_core.memory.llm.base import LLMBase, OpenAIConfig
 
 
@@ -32,6 +38,10 @@ class OpenAILLM(LLMBase):
             client_kwargs["http_client"] = self.config.http_client
 
         self.client = OpenAI(**client_kwargs)
+
+        # Force eager initialization of chat.completions to avoid import deadlock
+        # when used in ThreadPoolExecutor
+        _ = self.client.chat
 
     def generate_response(
         self,
