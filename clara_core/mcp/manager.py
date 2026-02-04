@@ -428,10 +428,26 @@ class MCPServerManager:
             class _AsyncgenShutdownFilter(logging.Filter):
                 def filter(self, record):
                     msg = record.getMessage()
+                    # Check the message text
                     if "closing of asynchronous generator" in msg:
                         return False
                     if "cancel scope" in msg.lower() and "different task" in msg.lower():
                         return False
+                    if "stdio_client" in msg:
+                        return False
+                    # Also check exception info if present
+                    if record.exc_info:
+                        exc_text = str(record.exc_info[1]) if record.exc_info[1] else ""
+                        if "cancel scope" in exc_text.lower():
+                            return False
+                        if "GeneratorExit" in exc_text:
+                            return False
+                        # Check exception type
+                        exc_type = record.exc_info[0]
+                        if exc_type and exc_type.__name__ in ("RuntimeError", "GeneratorExit", "BaseExceptionGroup"):
+                            exc_str = str(record.exc_info[1])
+                            if "cancel scope" in exc_str.lower() or "stdio_client" in exc_str:
+                                return False
                     return True
 
             asyncio_logger = logging.getLogger("asyncio")
