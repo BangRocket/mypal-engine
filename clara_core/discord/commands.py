@@ -1225,7 +1225,7 @@ class ClaraCommands(commands.Cog):
 
         try:
             # Get memory stats from mem0
-            from vendor.mem0 import Memory
+            from clara_core.memory import Memory
 
             m = Memory()
             user_id = str(ctx.author.id)
@@ -1254,7 +1254,7 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
-            from vendor.mem0 import Memory
+            from clara_core.memory import Memory
 
             m = Memory()
             user_id = str(ctx.author.id)
@@ -1300,7 +1300,7 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
-            from vendor.mem0 import Memory
+            from clara_core.memory import Memory
 
             m = Memory()
             user_id = str(ctx.author.id)

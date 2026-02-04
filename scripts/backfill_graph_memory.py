@@ -39,9 +39,7 @@ logging.getLogger("openai").setLevel(logging.WARNING)
 logging.getLogger("anthropic").setLevel(logging.WARNING)
 logging.getLogger("neo4j").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("mem0").setLevel(logging.WARNING)
-logging.getLogger("mem0.config").setLevel(logging.WARNING)
-logging.getLogger("vendor.mem0").setLevel(logging.WARNING)
+logging.getLogger("clara_core.memory").setLevel(logging.WARNING)
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session as OrmSession
