@@ -9,12 +9,16 @@ from typing import Any, Callable
 
 import discord
 
+from config.logging import get_logger
+
 from .embeds import (
     EMBED_COLOR_PRIMARY,
     create_error_embed,
     create_help_embed,
     create_success_embed,
 )
+
+logger = get_logger("clara_core.discord.views")
 
 
 class ConfirmView(discord.ui.View):
@@ -304,3 +308,134 @@ class ConfirmPhraseModal(discord.ui.Modal):
                 embed=create_error_embed("Phrase mismatch", f"Expected: `{self.confirm_phrase}`"),
                 ephemeral=True,
             )
+
+
+class GatewayButtonView(discord.ui.View):
+    """Dynamic button view for gateway-generated buttons.
+
+    Handles buttons created by Clara's LLM responses with dismiss/confirm actions.
+    Buttons are dynamically created from configuration data.
+    """
+
+    # Map style names to Discord button styles
+    STYLE_MAP = {
+        "primary": discord.ButtonStyle.primary,
+        "secondary": discord.ButtonStyle.secondary,
+        "success": discord.ButtonStyle.success,
+        "danger": discord.ButtonStyle.danger,
+    }
+
+    def __init__(
+        self,
+        buttons: list[dict[str, Any]],
+        timeout: float = 180.0,
+    ):
+        """Initialize the gateway button view.
+
+        Args:
+            buttons: List of button configurations with label, style, action, disabled
+            timeout: View timeout in seconds
+        """
+        super().__init__(timeout=timeout)
+        self._setup_buttons(buttons)
+
+    def _setup_buttons(self, buttons: list[dict[str, Any]]) -> None:
+        """Create and add buttons from configuration.
+
+        Args:
+            buttons: Button configuration list
+        """
+        for i, btn_config in enumerate(buttons[:5]):  # Max 5 buttons
+            label = btn_config.get("label", f"Button {i + 1}")
+            style_name = btn_config.get("style", "secondary")
+            action = btn_config.get("action", "dismiss")
+            disabled = btn_config.get("disabled", False)
+
+            style = self.STYLE_MAP.get(style_name, discord.ButtonStyle.secondary)
+
+            button = GatewayButton(
+                label=label,
+                style=style,
+                action=action,
+                disabled=disabled,
+                custom_id=f"gateway_btn_{i}",
+            )
+            self.add_item(button)
+
+    async def on_timeout(self) -> None:
+        """Remove buttons when view times out."""
+        # Buttons become non-interactive after timeout
+        for item in self.children:
+            if isinstance(item, discord.ui.Button):
+                item.disabled = True
+        self.stop()
+
+
+class GatewayButton(discord.ui.Button):
+    """Individual button for GatewayButtonView."""
+
+    def __init__(
+        self,
+        label: str,
+        style: discord.ButtonStyle,
+        action: str,
+        disabled: bool = False,
+        custom_id: str | None = None,
+    ):
+        """Initialize a gateway button.
+
+        Args:
+            label: Button display text
+            style: Discord button style
+            action: Action type ('dismiss' or 'confirm')
+            disabled: Whether button is disabled
+            custom_id: Custom ID for the button
+        """
+        super().__init__(
+            label=label,
+            style=style,
+            disabled=disabled,
+            custom_id=custom_id,
+        )
+        self.action = action
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Handle button click.
+
+        Args:
+            interaction: Discord interaction
+        """
+        view = self.view
+        if not isinstance(view, GatewayButtonView):
+            return
+
+        try:
+            if self.action == "dismiss":
+                # Remove all buttons from the message
+                await interaction.response.edit_message(view=None)
+                view.stop()
+
+            elif self.action == "confirm":
+                # Update message to show confirmation
+                original_content = interaction.message.content if interaction.message else ""
+                confirmed_content = f"{original_content}\n\n✅ *Confirmed by {interaction.user.display_name}*"
+
+                await interaction.response.edit_message(
+                    content=confirmed_content,
+                    view=None,
+                )
+                view.stop()
+
+            else:
+                # Unknown action - just acknowledge
+                await interaction.response.defer()
+
+        except Exception as e:
+            logger.warning(f"Button callback error: {e}")
+            try:
+                await interaction.response.send_message(
+                    "Button action failed.",
+                    ephemeral=True,
+                )
+            except Exception:
+                pass
