@@ -1,6 +1,8 @@
 """Neo4j graph store implementation for Clara Memory System."""
 
 import logging
+import os
+from typing import TYPE_CHECKING
 
 try:
     from langchain_neo4j import Neo4jGraph
@@ -25,6 +27,9 @@ from clara_core.memory.graph.utils import (
     get_delete_messages,
     sanitize_relationship_for_cypher,
 )
+
+if TYPE_CHECKING:
+    from clara_core.memory.cache.graph_cache import GraphCache
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +85,21 @@ class MemoryGraph:
         # Similarity threshold for node matching
         self.threshold = getattr(config.graph_store, "threshold", 0.7)
 
+        # Initialize cache (lazy-loaded)
+        self._cache: "GraphCache | None" = None
+        self._cache_enabled = os.getenv("GRAPH_CACHE_ENABLED", "true").lower() == "true"
+
+    @property
+    def cache(self) -> "GraphCache | None":
+        """Lazy-load graph cache singleton."""
+        if self._cache is None and self._cache_enabled:
+            try:
+                from clara_core.memory.cache.graph_cache import GraphCache
+                self._cache = GraphCache.get_instance()
+            except Exception as e:
+                logger.debug(f"Graph cache unavailable: {e}")
+        return self._cache
+
     def _create_indexes(self):
         """Create Neo4j indexes for efficient querying."""
         try:
@@ -111,6 +131,10 @@ class MemoryGraph:
         deleted_entities = self._delete_entities(to_be_deleted, filters)
         added_entities = self._add_entities(to_be_added, filters, entity_type_map)
 
+        # Invalidate cache after graph modification
+        if self.cache and (deleted_entities or added_entities):
+            self.cache.invalidate_user(filters["user_id"])
+
         return {"deleted_entities": deleted_entities, "added_entities": added_entities}
 
     def search(self, query: str, filters: dict, limit: int = 100) -> list:
@@ -124,6 +148,15 @@ class MemoryGraph:
         Returns:
             List of dicts with source, relationship, destination keys
         """
+        user_id = filters["user_id"]
+
+        # Check cache first
+        if self.cache:
+            cached = self.cache.get_search_results(user_id, query, filters)
+            if cached is not None:
+                logger.info(f"Graph search cache hit: {len(cached)} results")
+                return cached
+
         entity_type_map = self._retrieve_nodes_from_data(query, filters)
         search_output = self._search_graph_db(node_list=list(entity_type_map.keys()), filters=filters)
 
@@ -141,6 +174,10 @@ class MemoryGraph:
         search_results = []
         for item in reranked_results:
             search_results.append({"source": item[0], "relationship": item[1], "destination": item[2]})
+
+        # Cache results
+        if self.cache and search_results:
+            self.cache.set_search_results(user_id, query, search_results, filters)
 
         logger.info(f"Returned {len(search_results)} search results")
         return search_results
@@ -169,6 +206,10 @@ class MemoryGraph:
             params["run_id"] = filters["run_id"]
         self.graph.query(cypher, params=params)
 
+        # Invalidate cache after deletion
+        if self.cache:
+            self.cache.invalidate_user(filters["user_id"])
+
     def get_all(self, filters: dict, limit: int = 100) -> list:
         """Get all relationships for a user.
 
@@ -179,12 +220,23 @@ class MemoryGraph:
         Returns:
             List of dicts with source, relationship, target keys
         """
-        params = {"user_id": filters["user_id"], "limit": limit}
+        user_id = filters["user_id"]
+        agent_id = filters.get("agent_id")
+
+        # Check cache first
+        if self.cache:
+            cached = self.cache.get_all_relationships(user_id, agent_id)
+            if cached is not None:
+                logger.info(f"Graph get_all cache hit: {len(cached)} relationships")
+                # Apply limit to cached results
+                return cached[:limit]
+
+        params = {"user_id": user_id, "limit": limit}
         node_props = ["user_id: $user_id"]
 
-        if filters.get("agent_id"):
+        if agent_id:
             node_props.append("agent_id: $agent_id")
-            params["agent_id"] = filters["agent_id"]
+            params["agent_id"] = agent_id
         if filters.get("run_id"):
             node_props.append("run_id: $run_id")
             params["run_id"] = filters["run_id"]
@@ -202,6 +254,10 @@ class MemoryGraph:
             {"source": r["source"], "relationship": r["relationship"], "target": r["target"]}
             for r in results
         ]
+
+        # Cache results
+        if self.cache and final_results:
+            self.cache.set_all_relationships(user_id, final_results, agent_id)
 
         logger.info(f"Retrieved {len(final_results)} relationships")
         return final_results
