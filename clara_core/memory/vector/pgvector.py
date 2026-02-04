@@ -199,6 +199,9 @@ class PGVector(VectorStoreBase):
 
         if filters:
             for k, v in filters.items():
+                # Skip None values - can't filter on null
+                if v is None:
+                    continue
                 filter_conditions.append("payload->>%s = %s")
                 filter_params.extend([k, str(v)])
 
@@ -293,6 +296,9 @@ class PGVector(VectorStoreBase):
 
         if filters:
             for k, v in filters.items():
+                # Skip None values - can't filter on null
+                if v is None:
+                    continue
                 filter_conditions.append("payload->>%s = %s")
                 filter_params.extend([k, str(v)])
 

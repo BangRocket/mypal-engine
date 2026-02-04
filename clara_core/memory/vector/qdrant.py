@@ -132,6 +132,9 @@ class Qdrant(VectorStoreBase):
 
         conditions = []
         for key, value in filters.items():
+            # Skip None values - can't filter on null
+            if value is None:
+                continue
             if isinstance(value, dict) and "gte" in value and "lte" in value:
                 conditions.append(FieldCondition(key=key, range=Range(gte=value["gte"], lte=value["lte"])))
             else:
