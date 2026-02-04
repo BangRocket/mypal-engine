@@ -135,6 +135,14 @@ class MemoryGraph:
         if self.cache and (deleted_entities or added_entities):
             self.cache.invalidate_user(filters["user_id"])
 
+        if added_entities or deleted_entities:
+            logger.info(
+                "Graph write: user_id=%s added=%d deleted=%d",
+                filters.get("user_id"),
+                len(added_entities),
+                len(deleted_entities),
+            )
+
         return {"deleted_entities": deleted_entities, "added_entities": added_entities}
 
     def search(self, query: str, filters: dict, limit: int = 100) -> list:

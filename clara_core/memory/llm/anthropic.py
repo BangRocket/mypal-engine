@@ -53,7 +53,7 @@ class AnthropicLLM(LLMBase):
         response_format: Optional[Dict] = None,
         tools: Optional[List[Dict]] = None,
         tool_choice: Optional[str] = None,
-    ) -> str:
+    ) -> Dict:
         """Generate a response using Anthropic's API.
 
         Args:
@@ -63,7 +63,7 @@ class AnthropicLLM(LLMBase):
             tool_choice: Optional tool choice specification.
 
         Returns:
-            The generated response as a string.
+            The generated response content or tool call payload.
         """
         # Extract system message if present
         system = None
@@ -93,6 +93,19 @@ class AnthropicLLM(LLMBase):
             params["tool_choice"] = tool_choice
 
         response = self.client.messages.create(**params)
+
+        if tools:
+            tool_calls = []
+            for block in response.content:
+                if getattr(block, "type", None) != "tool_use":
+                    continue
+                tool_calls.append(
+                    {
+                        "name": block.name,
+                        "arguments": block.input,
+                    }
+                )
+            return {"tool_calls": tool_calls}
 
         # Extract text content from response
         content = ""

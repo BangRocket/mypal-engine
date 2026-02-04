@@ -49,7 +49,7 @@ class OpenAILLM(LLMBase):
         response_format: Optional[Dict] = None,
         tools: Optional[List[Dict]] = None,
         tool_choice: Optional[str] = None,
-    ) -> str:
+    ) -> Dict:
         """Generate a response using OpenAI's API.
 
         Args:
@@ -59,7 +59,7 @@ class OpenAILLM(LLMBase):
             tool_choice: Optional tool choice specification.
 
         Returns:
-            The generated response as a string.
+            The generated response content or tool call payload.
         """
         params = {
             "model": self.config.model,
@@ -77,4 +77,23 @@ class OpenAILLM(LLMBase):
             params["tool_choice"] = tool_choice
 
         response = self.client.chat.completions.create(**params)
-        return response.choices[0].message.content
+        message = response.choices[0].message
+
+        if tools:
+            tool_calls = []
+            for call in message.tool_calls or []:
+                arguments = call.function.arguments
+                try:
+                    arguments = json.loads(arguments) if isinstance(arguments, str) else arguments
+                except json.JSONDecodeError:
+                    # Leave arguments as raw string if parsing fails
+                    pass
+                tool_calls.append(
+                    {
+                        "name": call.function.name,
+                        "arguments": arguments,
+                    }
+                )
+            return {"tool_calls": tool_calls}
+
+        return message.content
