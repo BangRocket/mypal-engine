@@ -32,6 +32,9 @@ pytz = "^2024.1"  # Timezone handling
 psycopg2-binary = "^2.9.9"  # PostgreSQL driver
 pgvector = "^0.3.0"  # Vector support for mem0
 
+# Caching
+redis = "^5.0.0"  # Redis for memory embedding cache
+
 # LLM backends
 openai = "^1.42.0"
 anthropic = "^0.40.0"
