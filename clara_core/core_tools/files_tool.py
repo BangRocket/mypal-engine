@@ -610,9 +610,10 @@ LOCAL_FILE_TOOLS = [
         "function": {
             "name": "save_to_local",
             "description": (
-                "Save content to a local file that persists across sessions. "
-                "Use this to save important results, generated content, or data "
-                "that should be available later. Files are stored per-user."
+                "Save content to persistent file storage that survives across sessions. "
+                "Use this to save important results, generated content, or data that "
+                "should be available later. Files are stored per-user. "
+                "To share a saved file in Discord chat, use `send_local_file`."
             ),
             "parameters": {
                 "type": "object",
@@ -748,8 +749,10 @@ LOCAL_FILE_TOOLS = [
         "function": {
             "name": "send_local_file",
             "description": (
-                "Send a locally saved file to the Discord chat. "
-                "Use this when the user asks to see or download a saved file."
+                "Send a saved file as a Discord chat attachment. "
+                "The file will be uploaded and visible to all users as a downloadable attachment. "
+                "Use this when the user asks to share, send, or show a saved file. "
+                "This is better than pasting large content directly into chat."
             ),
             "parameters": {
                 "type": "object",
