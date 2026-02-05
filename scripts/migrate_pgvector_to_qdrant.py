@@ -107,10 +107,10 @@ def parse_pgvector(vector_data) -> list[float] | None:
     # If it's a string representation like '[0.1,0.2,...]', parse it
     if isinstance(vector_data, str):
         # Remove brackets and split by comma
-        cleaned = vector_data.strip('[]')
+        cleaned = vector_data.strip("[]")
         if not cleaned:
             return None
-        return [float(x.strip()) for x in cleaned.split(',')]
+        return [float(x.strip()) for x in cleaned.split(",")]
 
     # Try to convert numpy array or similar
     try:

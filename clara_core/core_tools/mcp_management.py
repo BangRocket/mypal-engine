@@ -794,7 +794,9 @@ async def mcp_hot_reload(args: dict[str, Any], ctx: ToolContext) -> str:
         # Check if server exists and is local
         config = load_local_server_config(server_name)
         if not config:
-            return f"Server '{server_name}' not found or is not a local server. Hot reload only works with local servers."
+            return (
+                f"Server '{server_name}' not found or is not a local server. Hot reload only works with local servers."
+            )
 
         manager = _get_manager()
 

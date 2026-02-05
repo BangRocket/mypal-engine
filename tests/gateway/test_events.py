@@ -155,9 +155,7 @@ class TestEventEmitter:
         loop = asyncio.new_event_loop()
 
         for i in range(5):
-            loop.run_until_complete(
-                emitter.emit(Event(type=EventType.GATEWAY_STARTUP, data={"i": i}))
-            )
+            loop.run_until_complete(emitter.emit(Event(type=EventType.GATEWAY_STARTUP, data={"i": i})))
 
         history = emitter.get_history(limit=3)
         assert len(history) == 3

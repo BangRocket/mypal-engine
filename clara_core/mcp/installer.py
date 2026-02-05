@@ -139,9 +139,7 @@ class SmitheryClient:
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
-                        return SmitherySearchResult(
-                            error=f"Smithery API error ({response.status}): {error_text[:200]}"
-                        )
+                        return SmitherySearchResult(error=f"Smithery API error ({response.status}): {error_text[:200]}")
 
                     data = await response.json()
 
@@ -274,10 +272,7 @@ class MCPInstaller:
         if "github.com" in source or re.match(r"^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$", source):
             return "github"
 
-        if any(
-            x in source
-            for x in ["docker.io", "ghcr.io", "gcr.io", "quay.io", "registry.", "amazonaws.com"]
-        ):
+        if any(x in source for x in ["docker.io", "ghcr.io", "gcr.io", "quay.io", "registry.", "amazonaws.com"]):
             return "docker"
 
         if source.startswith("@") or re.match(r"^[a-zA-Z0-9_-]+$", source):
@@ -340,9 +335,7 @@ class MCPInstaller:
 
         npx_path = shutil.which("npx")
         if not npx_path:
-            return InstallResult(
-                success=False, error="npx not found. Please install Node.js and npm."
-            )
+            return InstallResult(success=False, error="npx not found. Please install Node.js and npm.")
 
         server_args = ["-y", "-q", package]
         if extra_args:
@@ -395,9 +388,7 @@ class MCPInstaller:
 
         npx_path = shutil.which("npx")
         if not npx_path:
-            return InstallResult(
-                success=False, error="npx not found. Please install Node.js and npm."
-            )
+            return InstallResult(success=False, error="npx not found. Please install Node.js and npm.")
 
         smithery = SmitheryClient()
         smithery_server = await smithery.get_server(package)
@@ -508,8 +499,7 @@ class MCPInstaller:
                 save_remote_server_config(server)
 
                 logger.info(
-                    f"[MCP Installer] Installed hosted server '{server_name}' "
-                    f"with {server.tool_count} tools"
+                    f"[MCP Installer] Installed hosted server '{server_name}' " f"with {server.tool_count} tools"
                 )
                 return InstallResult(
                     success=True,
@@ -635,9 +625,7 @@ class MCPInstaller:
             if result.returncode != 0:
                 return InstallResult(success=False, error=f"Git clone failed: {result.stderr}")
 
-            server = await self._configure_github_server(
-                clone_dir, server_name, source, env, installed_by
-            )
+            server = await self._configure_github_server(clone_dir, server_name, source, env, installed_by)
 
             if not server:
                 shutil.rmtree(clone_dir, ignore_errors=True)
@@ -802,9 +790,7 @@ class MCPInstaller:
             installed_by=installed_by,
         )
 
-        smithery_config = self._parse_smithery_yaml(repo_dir) or self._parse_smithery_yaml(
-            working_dir
-        )
+        smithery_config = self._parse_smithery_yaml(repo_dir) or self._parse_smithery_yaml(working_dir)
 
         package_json = working_dir / "package.json"
         if package_json.exists():
@@ -1016,9 +1002,7 @@ class MCPInstaller:
             installed_by=installed_by,
         )
 
-        configured = await self._configure_github_server(
-            local_path, server_name, str(local_path), env, installed_by
-        )
+        configured = await self._configure_github_server(local_path, server_name, str(local_path), env, installed_by)
 
         if configured:
             server = configured
@@ -1044,9 +1028,7 @@ class MCPInstaller:
             tools_discovered=server.tool_count,
         )
 
-    async def _test_local_server(
-        self, server: LocalServerConfig, timeout: float = 30.0
-    ) -> dict[str, Any]:
+    async def _test_local_server(self, server: LocalServerConfig, timeout: float = 30.0) -> dict[str, Any]:
         """Test a local MCP server connection."""
         process = LocalServerProcess(server)
 
@@ -1071,9 +1053,7 @@ class MCPInstaller:
         finally:
             await process.stop()
 
-    async def _test_remote_server(
-        self, server: RemoteServerConfig, timeout: float = 30.0
-    ) -> dict[str, Any]:
+    async def _test_remote_server(self, server: RemoteServerConfig, timeout: float = 30.0) -> dict[str, Any]:
         """Test a remote MCP server connection."""
         from .remote_server import RemoteServerConnection
 

@@ -139,9 +139,13 @@ def start_bot_daemon(pidfile: str, logfile: str | None = None) -> bool:
     print("Starting Clara as daemon...")
 
     cmd = [
-        "poetry", "run", "python", "discord_bot.py",
+        "poetry",
+        "run",
+        "python",
+        "discord_bot.py",
         "--daemon",
-        "--pidfile", pidfile,
+        "--pidfile",
+        pidfile,
     ]
     if logfile:
         cmd.extend(["--logfile", logfile])
@@ -223,12 +227,14 @@ Examples:
 """,
     )
     parser.add_argument(
-        "-y", "--yes",
+        "-y",
+        "--yes",
         action="store_true",
         help="Skip confirmation prompt",
     )
     parser.add_argument(
-        "-d", "--delay",
+        "-d",
+        "--delay",
         type=int,
         default=0,
         metavar="SECS",

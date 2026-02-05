@@ -105,6 +105,7 @@ def is_dangerous_command(command: str) -> tuple[bool, str]:
 @dataclass
 class CommandHistoryEntry:
     """A single command execution record."""
+
     command: str
     timestamp: datetime
     exit_code: int | None
@@ -160,10 +161,7 @@ async def execute_command(args: dict[str, Any], ctx: ToolContext) -> str:
         )
 
         try:
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(),
-                timeout=timeout
-            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
         except asyncio.TimeoutError:
             process.kill()
             await process.wait()
@@ -246,7 +244,9 @@ async def get_command_history(args: dict[str, Any], ctx: ToolContext) -> str:
     for i, entry in enumerate(entries, 1):
         status = "✅" if entry.success else "❌"
         ts = entry.timestamp.strftime("%H:%M:%S")
-        lines.append(f"{i}. {status} `{entry.command[:60]}{'...' if len(entry.command) > 60 else ''}` ({ts}, {entry.duration_ms}ms)")
+        lines.append(
+            f"{i}. {status} `{entry.command[:60]}{'...' if len(entry.command) > 60 else ''}` ({ts}, {entry.duration_ms}ms)"
+        )
 
     return "\n".join(lines)
 
@@ -409,7 +409,9 @@ async def write_file(args: dict[str, Any], ctx: ToolContext) -> str:
     # Check content size
     content_bytes = content.encode("utf-8")
     if len(content_bytes) > MAX_FILE_SIZE:
-        return f"Error: Content too large ({_format_size(len(content_bytes))}). Maximum is {_format_size(MAX_FILE_SIZE)}."
+        return (
+            f"Error: Content too large ({_format_size(len(content_bytes))}). Maximum is {_format_size(MAX_FILE_SIZE)}."
+        )
 
     try:
         # Ensure parent directory exists
@@ -722,8 +724,7 @@ TOOLS = [
     ToolDef(
         name="read_file",
         description=(
-            "Read file contents with optional row selection and JSON parsing. "
-            "Files larger than 10 MB are rejected."
+            "Read file contents with optional row selection and JSON parsing. " "Files larger than 10 MB are rejected."
         ),
         parameters={
             "type": "object",

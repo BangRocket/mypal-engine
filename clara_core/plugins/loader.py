@@ -87,14 +87,8 @@ class PluginLoader:
             bundled_dir: Path to bundled plugins
             global_dir: Path to global plugins
         """
-        self.bundled_dir = (
-            bundled_dir
-            or Path(__file__).parent.parent.parent / "plugins" / "bundled"
-        )
-        self.global_dir = (
-            global_dir
-            or Path.home() / ".mypalclara" / "plugins"
-        )
+        self.bundled_dir = bundled_dir or Path(__file__).parent.parent.parent / "plugins" / "bundled"
+        self.global_dir = global_dir or Path.home() / ".mypalclara" / "plugins"
 
         self._cache: dict[str, Any] = {}
 
@@ -111,27 +105,15 @@ class PluginLoader:
         seen = set()
 
         # 1. Bundled plugins
-        candidates.extend(
-            self._scan_directory(
-                self.bundled_dir, PluginOrigin.BUNDLED, workspace_dir, seen
-            )
-        )
+        candidates.extend(self._scan_directory(self.bundled_dir, PluginOrigin.BUNDLED, workspace_dir, seen))
 
         # 2. Global plugins
-        candidates.extend(
-            self._scan_directory(
-                self.global_dir, PluginOrigin.GLOBAL, workspace_dir, seen
-            )
-        )
+        candidates.extend(self._scan_directory(self.global_dir, PluginOrigin.GLOBAL, workspace_dir, seen))
 
         # 3. Workspace plugins
         if workspace_dir:
             workspace_plugins = workspace_dir / ".mypalclara" / "plugins"
-            candidates.extend(
-                self._scan_directory(
-                    workspace_plugins, PluginOrigin.WORKSPACE, workspace_dir, seen
-                )
-            )
+            candidates.extend(self._scan_directory(workspace_plugins, PluginOrigin.WORKSPACE, workspace_dir, seen))
 
         # 4. Extra paths from config
         extra_paths = []
@@ -139,11 +121,7 @@ class PluginLoader:
             extra_paths = self._cache["config"].get("plugin_paths", [])
 
         for extra_path in extra_paths:
-            candidates.extend(
-                self._scan_path(
-                    Path(extra_path), PluginOrigin.CONFIG, workspace_dir, seen
-                )
-            )
+            candidates.extend(self._scan_path(Path(extra_path), PluginOrigin.CONFIG, workspace_dir, seen))
 
         logger.info(f"Discovered {len(candidates)} plugin candidates")
         return candidates
@@ -185,9 +163,7 @@ class PluginLoader:
             seen.add(resolved)
 
             # Scan entry
-            candidates.extend(
-                self._scan_path(entry, origin, workspace_dir, seen)
-            )
+            candidates.extend(self._scan_path(entry, origin, workspace_dir, seen))
 
         return candidates
 
@@ -325,9 +301,7 @@ class PluginLoader:
 
         # Load manifests for all candidates
         for candidate in candidates:
-            success = await self._load_candidate(
-                registry, candidate, opts
-            )
+            success = await self._load_candidate(registry, candidate, opts)
             results.append((candidate.id_hint, success))
 
         loaded_count = sum(1 for _, s in results if s)
@@ -354,10 +328,7 @@ class PluginLoader:
         # Load manifest
         manifest_result = load_plugin_manifest(candidate.root_dir)
         if not manifest_result.ok:
-            logger.error(
-                f"Failed to load manifest for {candidate.id_hint}: "
-                f"{manifest_result.error}"
-            )
+            logger.error(f"Failed to load manifest for {candidate.id_hint}: " f"{manifest_result.error}")
             return False
 
         manifest = manifest_result.manifest
@@ -391,18 +362,12 @@ class PluginLoader:
             plugin_config = plugins_config.get(plugin_id, {})
 
             if manifest.config_schema:
-                valid, validated, errors = validate_plugin_config(
-                    manifest.config_schema, plugin_config
-                )
+                valid, validated, errors = validate_plugin_config(manifest.config_schema, plugin_config)
 
                 if not valid:
-                    logger.error(
-                        f"Invalid config for {plugin_id}: {', '.join(errors)}"
-                    )
+                    logger.error(f"Invalid config for {plugin_id}: {', '.join(errors)}")
                     plugin_record.status = "error"
-                    plugin_record.error = (
-                        f"Invalid config: {', '.join(errors)}"
-                    )
+                    plugin_record.error = f"Invalid config: {', '.join(errors)}"
                     registry.register_plugin(plugin_record)
                     return False
 
@@ -429,16 +394,10 @@ class PluginLoader:
             runtime=runtime,
             logger=logger,
             # Registration methods (bound to registry)
-            register_tool=lambda t, opt=False: registry.register_tool(
-                t, plugin_id, opt, candidate.source
-            ),
-            register_hook=lambda e, h: registry.register_hook(
-                e, h, plugin_id, candidate.source
-            ),
+            register_tool=lambda t, opt=False: registry.register_tool(t, plugin_id, opt, candidate.source),
+            register_hook=lambda e, h: registry.register_hook(e, h, plugin_id, candidate.source),
             register_channel=lambda c: registry.register_channel(c, plugin_id),
-            register_provider=lambda p: registry.register_provider(
-                p, plugin_id
-            ),
+            register_provider=lambda p: registry.register_provider(p, plugin_id),
             register_service=lambda s: registry.register_service(s, plugin_id),
             register_command=lambda cmd: None,  # TODO: implement
             resolve_path=lambda p: runtime.resolve_path(p),
@@ -446,9 +405,7 @@ class PluginLoader:
 
         # Load plugin module
         try:
-            spec = importlib.util.spec_from_file_location(
-                f"clara_plugin.{plugin_id}", candidate.source
-            )
+            spec = importlib.util.spec_from_file_location(f"clara_plugin.{plugin_id}", candidate.source)
 
             if spec is None or spec.loader is None:
                 logger.error(f"Failed to load spec for {plugin_id}")
@@ -476,9 +433,7 @@ class PluginLoader:
                     break
 
             if register_func is None:
-                logger.error(
-                    f"Plugin {plugin_id} missing register() or activate() function"
-                )
+                logger.error(f"Plugin {plugin_id} missing register() or activate() function")
                 plugin_record.status = "error"
                 plugin_record.error = "Missing register function"
                 registry.register_plugin(plugin_record)

@@ -27,9 +27,7 @@ if TYPE_CHECKING:
 MAX_IMAGE_DIMENSION = 1568
 
 
-def resize_image_for_vision(
-    image_bytes: bytes, max_dimension: int = MAX_IMAGE_DIMENSION
-) -> tuple[bytes, str]:
+def resize_image_for_vision(image_bytes: bytes, max_dimension: int = MAX_IMAGE_DIMENSION) -> tuple[bytes, str]:
     """Resize an image to fit within max_dimension while preserving aspect ratio.
 
     This function prepares images for LLM vision processing by:

@@ -95,6 +95,7 @@ class MemoryGraph:
         if self._cache is None and self._cache_enabled:
             try:
                 from clara_core.memory.cache.graph_cache import GraphCache
+
                 self._cache = GraphCache.get_instance()
             except Exception as e:
                 logger.debug(f"Graph cache unavailable: {e}")
@@ -259,8 +260,7 @@ class MemoryGraph:
         results = self.graph.query(query, params=params)
 
         final_results = [
-            {"source": r["source"], "relationship": r["relationship"], "target": r["target"]}
-            for r in results
+            {"source": r["source"], "relationship": r["relationship"], "target": r["target"]} for r in results
         ]
 
         # Cache results
@@ -517,10 +517,12 @@ class MemoryGraph:
                 ON MATCH SET r.mentions = coalesce(r.mentions, 0) + 1
                 RETURN source.name AS source, type(r) AS relationship, destination.name AS target
                 """
-                params.update({
-                    "source_id": source_node[0]["elementId(source_candidate)"],
-                    "destination_id": dest_node[0]["elementId(destination_candidate)"],
-                })
+                params.update(
+                    {
+                        "source_id": source_node[0]["elementId(source_candidate)"],
+                        "destination_id": dest_node[0]["elementId(destination_candidate)"],
+                    }
+                )
             elif source_node:
                 # Source exists, create destination
                 cypher = f"""
@@ -538,11 +540,13 @@ class MemoryGraph:
                 ON MATCH SET r.mentions = coalesce(r.mentions, 0) + 1
                 RETURN source.name AS source, type(r) AS relationship, destination.name AS target
                 """
-                params.update({
-                    "source_id": source_node[0]["elementId(source_candidate)"],
-                    "dest_name": destination,
-                    "dest_embedding": dest_embedding,
-                })
+                params.update(
+                    {
+                        "source_id": source_node[0]["elementId(source_candidate)"],
+                        "dest_name": destination,
+                        "dest_embedding": dest_embedding,
+                    }
+                )
             elif dest_node:
                 # Destination exists, create source
                 cypher = f"""
@@ -560,11 +564,13 @@ class MemoryGraph:
                 ON MATCH SET r.mentions = coalesce(r.mentions, 0) + 1
                 RETURN source.name AS source, type(r) AS relationship, destination.name AS target
                 """
-                params.update({
-                    "destination_id": dest_node[0]["elementId(destination_candidate)"],
-                    "source_name": source,
-                    "source_embedding": source_embedding,
-                })
+                params.update(
+                    {
+                        "destination_id": dest_node[0]["elementId(destination_candidate)"],
+                        "source_name": source,
+                        "source_embedding": source_embedding,
+                    }
+                )
             else:
                 # Neither exists, create both
                 cypher = f"""
@@ -585,12 +591,14 @@ class MemoryGraph:
                 ON MATCH SET r.mentions = coalesce(r.mentions, 0) + 1
                 RETURN source.name AS source, type(r) AS relationship, destination.name AS target
                 """
-                params.update({
-                    "source_name": source,
-                    "dest_name": destination,
-                    "source_embedding": source_embedding,
-                    "dest_embedding": dest_embedding,
-                })
+                params.update(
+                    {
+                        "source_name": source,
+                        "dest_name": destination,
+                        "source_embedding": source_embedding,
+                        "dest_embedding": dest_embedding,
+                    }
+                )
 
             result = self.graph.query(cypher, params=params)
             results.append(result)

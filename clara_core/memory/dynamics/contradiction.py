@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from clara_core.llm.messages import SystemMessage, UserMessage
+
 if TYPE_CHECKING:
     pass
 
@@ -179,9 +181,7 @@ def detect_contradiction(
 
     # Layer 5: LLM semantic check (optional)
     if use_llm and llm_callable:
-        result = _check_semantic_contradiction(
-            new_content, existing_content, llm_callable
-        )
+        result = _check_semantic_contradiction(new_content, existing_content, llm_callable)
         if result.contradicts:
             return result
 
@@ -246,17 +246,44 @@ def _check_antonyms(
         ContradictionResult
     """
     # Extract words from both contents
-    new_words = set(re.findall(r'\b\w+\b', new_content))
-    existing_words = set(re.findall(r'\b\w+\b', existing_content))
+    new_words = set(re.findall(r"\b\w+\b", new_content))
+    existing_words = set(re.findall(r"\b\w+\b", existing_content))
 
     for word1, word2 in ANTONYM_PAIRS:
         # Check if antonyms are split between contents
-        if (word1 in new_words and word2 in existing_words) or \
-           (word2 in new_words and word1 in existing_words):
+        if (word1 in new_words and word2 in existing_words) or (word2 in new_words and word1 in existing_words):
             # Find common context words to verify they're about the same thing
             common_words = new_words & existing_words
             # Filter out very common words
-            stop_words = {"the", "a", "an", "is", "are", "was", "were", "be", "been", "to", "of", "and", "or", "in", "on", "at", "for", "with", "that", "this", "it", "i", "you", "he", "she", "they", "we"}
+            stop_words = {
+                "the",
+                "a",
+                "an",
+                "is",
+                "are",
+                "was",
+                "were",
+                "be",
+                "been",
+                "to",
+                "of",
+                "and",
+                "or",
+                "in",
+                "on",
+                "at",
+                "for",
+                "with",
+                "that",
+                "this",
+                "it",
+                "i",
+                "you",
+                "he",
+                "she",
+                "they",
+                "we",
+            }
             meaningful_common = common_words - stop_words
 
             if meaningful_common:
@@ -305,10 +332,32 @@ def _check_temporal_conflicts(
 
         if new_date_strs != existing_date_strs and not new_date_strs & existing_date_strs:
             # Find common words to see if they're about the same thing
-            new_words = set(re.findall(r'\b\w+\b', new_content))
-            existing_words = set(re.findall(r'\b\w+\b', existing_content))
+            new_words = set(re.findall(r"\b\w+\b", new_content))
+            existing_words = set(re.findall(r"\b\w+\b", existing_content))
             common_words = new_words & existing_words
-            stop_words = {"the", "a", "an", "is", "are", "was", "were", "be", "been", "to", "of", "and", "or", "in", "on", "at", "for", "with", "that", "this", "it"}
+            stop_words = {
+                "the",
+                "a",
+                "an",
+                "is",
+                "are",
+                "was",
+                "were",
+                "be",
+                "been",
+                "to",
+                "of",
+                "and",
+                "or",
+                "in",
+                "on",
+                "at",
+                "for",
+                "with",
+                "that",
+                "this",
+                "it",
+            }
             meaningful_common = common_words - stop_words
 
             if meaningful_common:
@@ -358,10 +407,29 @@ def _check_numeric_conflicts(
 
             if new_nums != existing_nums and not new_nums & existing_nums:
                 # Check for common context
-                new_words = set(re.findall(r'\b\w+\b', new_content))
-                existing_words = set(re.findall(r'\b\w+\b', existing_content))
+                new_words = set(re.findall(r"\b\w+\b", new_content))
+                existing_words = set(re.findall(r"\b\w+\b", existing_content))
                 common_words = new_words & existing_words
-                stop_words = {"the", "a", "an", "is", "are", "was", "were", "be", "been", "to", "of", "and", "or", "in", "on", "at", "for", "with"}
+                stop_words = {
+                    "the",
+                    "a",
+                    "an",
+                    "is",
+                    "are",
+                    "was",
+                    "were",
+                    "be",
+                    "been",
+                    "to",
+                    "of",
+                    "and",
+                    "or",
+                    "in",
+                    "on",
+                    "at",
+                    "for",
+                    "with",
+                }
                 meaningful_common = common_words - stop_words
 
                 if meaningful_common:
@@ -416,10 +484,12 @@ Respond with ONLY one of:
 """
 
     try:
-        response = llm_callable([
-            {"role": "system", "content": "You are a logic analyzer that detects contradictions. Be precise and concise."},
-            {"role": "user", "content": prompt},
-        ])
+        response = llm_callable(
+            [
+                SystemMessage(content="You are a logic analyzer that detects contradictions. Be precise and concise."),
+                UserMessage(content=prompt),
+            ]
+        )
 
         response_upper = response.strip().upper()
 
@@ -453,8 +523,8 @@ def calculate_similarity(text1: str, text2: str) -> float:
         Similarity score between 0 and 1
     """
     # Normalize
-    words1 = set(re.findall(r'\b\w+\b', text1.lower()))
-    words2 = set(re.findall(r'\b\w+\b', text2.lower()))
+    words1 = set(re.findall(r"\b\w+\b", text1.lower()))
+    words2 = set(re.findall(r"\b\w+\b", text2.lower()))
 
     if not words1 or not words2:
         return 0.0

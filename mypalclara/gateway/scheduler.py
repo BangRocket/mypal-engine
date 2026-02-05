@@ -368,9 +368,7 @@ class Scheduler:
                     if now >= task.next_run:
                         # Time to run
                         if task.name not in self._running_tasks:
-                            self._running_tasks[task.name] = asyncio.create_task(
-                                self._run_task(task)
-                            )
+                            self._running_tasks[task.name] = asyncio.create_task(self._run_task(task))
 
                 # Sleep briefly before next check (100ms for responsive scheduling)
                 await asyncio.sleep(0.1)

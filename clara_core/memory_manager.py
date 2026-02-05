@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 # Import personality at module level to ensure it loads early
+from clara_core.llm.messages import AssistantMessage, Message, SystemMessage, UserMessage
 from config.bot import BOT_NAME, PERSONALITY
 from config.logging import get_logger
 
@@ -426,12 +427,11 @@ class MemoryManager:
         conversation = "\n".join(f"{m.role.upper()}: {m.content[:500]}" for m in all_msgs[-30:])
 
         summary_prompt = [
-            {
-                "role": "system",
-                "content": "Summarize this conversation in 2-3 sentences. "
+            SystemMessage(
+                content="Summarize this conversation in 2-3 sentences. "
                 "Focus on key topics, decisions, and important context.",
-            },
-            {"role": "user", "content": conversation},
+            ),
+            UserMessage(content=conversation),
         ]
 
         summary = self.llm(summary_prompt)
@@ -794,9 +794,12 @@ class MemoryManager:
             names = [p.get("name", p.get("id", "Unknown")) for p in participants]
             context_prefix = f"[Participants: {', '.join(names)}]\n"
 
-        history_slice = [{"role": m.role, "content": m.content} for m in recent_msgs[-4:]] + [
-            {"role": "user", "content": context_prefix + user_message},
-            {"role": "assistant", "content": assistant_reply},
+        history_slice = [
+            UserMessage(content=m.content) if m.role == "user" else AssistantMessage(content=m.content)
+            for m in recent_msgs[-4:]
+        ] + [
+            UserMessage(content=context_prefix + user_message),
+            AssistantMessage(content=assistant_reply),
         ]
 
         # Store with participant metadata for cross-user search
@@ -1089,7 +1092,7 @@ class MemoryManager:
         emotional_context: list[dict] | None = None,
         recurring_topics: list[dict] | None = None,
         graph_relations: list[dict] | None = None,
-    ) -> list[dict[str, str]]:
+    ) -> list[Message]:
         """Build the full prompt for the LLM.
 
         Args:
@@ -1103,7 +1106,7 @@ class MemoryManager:
             graph_relations: Optional list of entity relationships from graph memory
 
         Returns:
-            List of messages ready for LLM
+            List of typed Messages ready for LLM
         """
         system_base = PERSONALITY
 
@@ -1139,12 +1142,12 @@ class MemoryManager:
         if thread_summary:
             context_parts.append(f"THREAD SUMMARY:\n{thread_summary}")
 
-        messages: list[dict[str, str]] = [
-            {"role": "system", "content": system_base},
+        messages: list[Message] = [
+            SystemMessage(content=system_base),
         ]
 
         if context_parts:
-            messages.append({"role": "system", "content": "\n\n".join(context_parts)})
+            messages.append(SystemMessage(content="\n\n".join(context_parts)))
 
         # Add recent messages (only user messages get timestamps to avoid Clara mimicking the format)
         for m in recent_msgs:
@@ -1154,11 +1157,11 @@ class MemoryManager:
                     content = f"[{timestamp}] {m.content}"
                 else:
                     content = m.content
+                messages.append(UserMessage(content=content))
             else:
-                content = m.content
-            messages.append({"role": m.role, "content": content})
+                messages.append(AssistantMessage(content=m.content))
 
-        messages.append({"role": "user", "content": user_message})
+        messages.append(UserMessage(content=user_message))
 
         # Log prompt composition summary
         components = []

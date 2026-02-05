@@ -158,17 +158,18 @@ class ChannelSummaryManager:
         else:
             user_content = f"Conversation:\n{conversation}\n\nProvide a summary:"
 
+        from clara_core.llm.messages import SystemMessage, UserMessage
+
         prompt = [
-            {
-                "role": "system",
-                "content": (
+            SystemMessage(
+                content=(
                     "You are summarizing a channel conversation. "
                     "Create a concise summary (3-5 sentences) capturing key topics, "
                     "decisions, and context. Write in past tense. "
                     "Focus on information that would help continue the conversation."
                 ),
-            },
-            {"role": "user", "content": user_content},
+            ),
+            UserMessage(content=user_content),
         ]
 
         def call_llm():

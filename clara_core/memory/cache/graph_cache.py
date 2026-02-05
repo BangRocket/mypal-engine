@@ -66,6 +66,7 @@ class GraphCache:
             self._initialized = True
             if self._redis_cache is None:
                 from clara_core.memory.cache.redis_cache import RedisCache
+
                 self._redis_cache = RedisCache.get_instance()
         return self._redis_cache
 
@@ -85,10 +86,7 @@ class GraphCache:
         data = query
         if filters:
             # Include relevant filter fields in hash
-            filter_data = {
-                k: v for k, v in sorted(filters.items())
-                if k in ("user_id", "agent_id", "run_id")
-            }
+            filter_data = {k: v for k, v in sorted(filters.items()) if k in ("user_id", "agent_id", "run_id")}
             data += json.dumps(filter_data, sort_keys=True)
         return hashlib.sha256(data.encode()).hexdigest()[:16]
 

@@ -74,7 +74,7 @@ def get_delete_messages(existing_memories_string: str, data: str, user_id: str) 
     """
     return (
         DELETE_RELATIONS_SYSTEM_PROMPT.replace("USER_ID", user_id),
-        f"Here are the existing memories: {existing_memories_string} \n\n New Information: {data}"
+        f"Here are the existing memories: {existing_memories_string} \n\n New Information: {data}",
     )
 
 

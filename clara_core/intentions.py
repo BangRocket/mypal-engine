@@ -95,10 +95,7 @@ def check_intentions(
         )
 
         # Filter out expired intentions
-        intentions = [
-            i for i in query.all()
-            if i.expires_at is None or i.expires_at > now
-        ]
+        intentions = [i for i in query.all() if i.expires_at is None or i.expires_at > now]
 
         if not intentions:
             return []
@@ -120,9 +117,7 @@ def check_intentions(
             match_details = {}
 
             if trigger_type == TriggerType.KEYWORD:
-                should_fire, match_details = _check_keyword_trigger(
-                    message, trigger_conditions
-                )
+                should_fire, match_details = _check_keyword_trigger(message, trigger_conditions)
             elif trigger_type == TriggerType.TOPIC:
                 # For tiered strategy, skip expensive topic checks unless needed
                 if strategy == CheckStrategy.TIERED:
@@ -130,27 +125,23 @@ def check_intentions(
                     keywords = trigger_conditions.get("quick_keywords", [])
                     if keywords and not any(kw.lower() in message.lower() for kw in keywords):
                         continue
-                should_fire, match_details = _check_topic_trigger(
-                    message, trigger_conditions
-                )
+                should_fire, match_details = _check_topic_trigger(message, trigger_conditions)
             elif trigger_type == TriggerType.TIME:
-                should_fire, match_details = _check_time_trigger(
-                    now, trigger_conditions
-                )
+                should_fire, match_details = _check_time_trigger(now, trigger_conditions)
             elif trigger_type == TriggerType.CONTEXT:
-                should_fire, match_details = _check_context_trigger(
-                    context, trigger_conditions
-                )
+                should_fire, match_details = _check_context_trigger(context, trigger_conditions)
 
             if should_fire:
-                fired_intentions.append({
-                    "id": intention.id,
-                    "content": intention.content,
-                    "trigger_type": trigger_type,
-                    "priority": intention.priority,
-                    "match_details": match_details,
-                    "source_memory_id": intention.source_memory_id,
-                })
+                fired_intentions.append(
+                    {
+                        "id": intention.id,
+                        "content": intention.content,
+                        "trigger_type": trigger_type,
+                        "priority": intention.priority,
+                        "match_details": match_details,
+                        "source_memory_id": intention.source_memory_id,
+                    }
+                )
 
                 # Mark as fired
                 intention.fired = True
@@ -582,10 +573,14 @@ def cleanup_expired_intentions(db: "OrmSession | None" = None) -> int:
 
     try:
         now = datetime.now(UTC).replace(tzinfo=None)
-        result = db.query(Intention).filter(
-            Intention.expires_at.isnot(None),
-            Intention.expires_at < now,
-        ).delete()
+        result = (
+            db.query(Intention)
+            .filter(
+                Intention.expires_at.isnot(None),
+                Intention.expires_at < now,
+            )
+            .delete()
+        )
         db.commit()
 
         if result:

@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from clara_core.llm.messages import AssistantMessage, ToolResultMessage
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +40,19 @@ class ToolCall:
             },
         }
 
+    def to_result_message(self, output: str) -> "ToolResultMessage":
+        """Create a ToolResultMessage from this tool call's execution output.
+
+        Args:
+            output: The string result of executing this tool call.
+
+        Returns:
+            A ToolResultMessage with this call's ID and the output.
+        """
+        from clara_core.llm.messages import ToolResultMessage
+
+        return ToolResultMessage(tool_call_id=self.id, content=output)
+
     @classmethod
     def from_openai(cls, tc: dict) -> "ToolCall":
         """Create from OpenAI tool_call dict."""
@@ -49,8 +65,7 @@ class ToolCall:
             args = json.loads(args_str) if isinstance(args_str, str) else args_str
         except json.JSONDecodeError as e:
             logger.warning(
-                "Failed to parse tool call arguments for %s: %s. "
-                "Raw arguments: %s",
+                "Failed to parse tool call arguments for %s: %s. " "Raw arguments: %s",
                 tool_name,
                 str(e),
                 args_str[:200] if isinstance(args_str, str) else args_str,
@@ -98,6 +113,9 @@ class ToolResponse:
     def to_openai_dict(self) -> dict[str, Any]:
         """Convert to OpenAI-compatible message dict.
 
+        .. deprecated::
+            Use ``to_assistant_message()`` + ``message_to_openai()`` instead.
+
         Returns dict with:
         - content: Text content (or None)
         - role: "assistant"
@@ -110,6 +128,16 @@ class ToolResponse:
         if self.tool_calls:
             result["tool_calls"] = [tc.to_openai_format() for tc in self.tool_calls]
         return result
+
+    def to_assistant_message(self) -> "AssistantMessage":
+        """Convert this response to an AssistantMessage.
+
+        Returns:
+            An AssistantMessage with this response's content and tool_calls.
+        """
+        from clara_core.llm.messages import AssistantMessage
+
+        return AssistantMessage(content=self.content, tool_calls=list(self.tool_calls))
 
     @classmethod
     def from_openai(cls, response: Any) -> "ToolResponse":

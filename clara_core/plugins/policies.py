@@ -295,9 +295,7 @@ class PolicyEngine:
         self._config = config or EnhancedPolicyConfig()
 
         # Rate limiting state: tool_name -> user_id -> list of call timestamps
-        self._call_counts: dict[str, dict[str, list[datetime]]] = defaultdict(
-            lambda: defaultdict(list)
-        )
+        self._call_counts: dict[str, dict[str, list[datetime]]] = defaultdict(lambda: defaultdict(list))
 
         # Audit callbacks
         self._audit_callbacks: list[callable] = []
@@ -409,9 +407,7 @@ class PolicyEngine:
             if not self._evaluate_conditions(policy.conditions, context):
                 continue
 
-            logger.debug(
-                f"Policy '{policy.name}' matched tool '{tool_name}' -> {policy.action}"
-            )
+            logger.debug(f"Policy '{policy.name}' matched tool '{tool_name}' -> {policy.action}")
             return policy.action
 
         # No policy matched - use default
@@ -480,11 +476,7 @@ class PolicyEngine:
         Returns:
             List of allowed tool names
         """
-        return [
-            tool
-            for tool in all_tools
-            if self.evaluate(tool, context) == PolicyAction.ALLOW
-        ]
+        return [tool for tool in all_tools if self.evaluate(tool, context) == PolicyAction.ALLOW]
 
     # ==================== Enhanced Policy Methods ====================
 
@@ -531,11 +523,7 @@ class PolicyEngine:
             return False, f"Tool risk level '{tool_risk_level}' exceeds maximum allowed '{max_risk.value}'"
 
         # Require admin for dangerous tools if configured
-        if (
-            tool_risk == RiskLevel.DANGEROUS
-            and self._config.require_admin_for_dangerous
-            and not context.has_admin
-        ):
+        if tool_risk == RiskLevel.DANGEROUS and self._config.require_admin_for_dangerous and not context.has_admin:
             return False, "Dangerous tools require admin privileges"
 
         return True, ""

@@ -626,7 +626,9 @@ class GatewayServer:
                     request_id=msg.request_id,
                     success=success,
                     enabled=msg.enabled if success else not msg.enabled,
-                    error=None if success else f"Failed to {'enable' if msg.enabled else 'disable'} '{msg.server_name}'",
+                    error=None
+                    if success
+                    else f"Failed to {'enable' if msg.enabled else 'disable'} '{msg.server_name}'",
                 ),
             )
 

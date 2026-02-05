@@ -1,7 +1,9 @@
 """Base classes for LLM implementations."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import httpx
 
@@ -136,15 +138,15 @@ class LLMBase(ABC):
     @abstractmethod
     def generate_response(
         self,
-        messages: List[Dict[str, str]],
-        response_format: Optional[Dict] = None,
-        tools: Optional[List[Dict]] = None,
-        tool_choice: Optional[str] = None,
+        messages: list[dict[str, str]] | list[Any],
+        response_format: dict | None = None,
+        tools: list[dict] | None = None,
+        tool_choice: str | None = None,
     ) -> str:
         """Generate a response based on the given messages.
 
         Args:
-            messages: List of message dictionaries.
+            messages: List of message dicts or typed Message objects.
             response_format: Optional response format (e.g., {"type": "json_object"}).
             tools: Optional list of tools for function calling.
             tool_choice: Optional tool choice specification.

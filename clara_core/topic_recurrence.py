@@ -18,6 +18,7 @@ from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Callable
 
+from clara_core.llm.messages import SystemMessage, UserMessage
 from config.logging import get_logger
 
 if TYPE_CHECKING:
@@ -85,7 +86,7 @@ async def extract_topics_from_conversation(
         conversation=conversation_text[:4000],
         sentiment=conversation_sentiment,
     )
-    messages = [{"role": "user", "content": prompt}]
+    messages = [UserMessage(content=prompt)]
 
     try:
         response = await llm_call(messages)
@@ -114,12 +115,14 @@ async def extract_topics_from_conversation(
                 if weight not in valid_weights:
                     weight = "moderate"
 
-                valid_topics.append({
-                    "topic": topic_name,
-                    "topic_type": topic_type,
-                    "context_snippet": t.get("context_snippet", "")[:100],
-                    "emotional_weight": weight,
-                })
+                valid_topics.append(
+                    {
+                        "topic": topic_name,
+                        "topic_type": topic_type,
+                        "context_snippet": t.get("context_snippet", "")[:100],
+                        "emotional_weight": weight,
+                    }
+                )
 
             return valid_topics
 
@@ -183,7 +186,7 @@ def store_topic_mention(
 
     try:
         ROOK.add(
-            [{"role": "system", "content": memory_text}],
+            [SystemMessage(content=memory_text)],
             user_id=user_id,
             agent_id=agent_id,
             metadata=metadata,
@@ -270,15 +273,17 @@ async def extract_and_store_topics(
 
     # Notify via callback if registered
     if stored_topics and on_event:
-        on_event("topics_extracted", {
-            "user_id": user_id,
-            "topics": stored_topics,
-            "channel_name": channel_name,
-            "is_dm": is_dm,
-        })
+        on_event(
+            "topics_extracted",
+            {
+                "user_id": user_id,
+                "topics": stored_topics,
+                "channel_name": channel_name,
+                "is_dm": is_dm,
+            },
+        )
 
     return topics
-
 
 
 def fetch_topic_mentions(
@@ -323,9 +328,7 @@ def fetch_topic_mentions(
             timestamp_str = metadata.get("timestamp")
             if timestamp_str:
                 try:
-                    timestamp = datetime.fromisoformat(
-                        timestamp_str.replace("Z", "+00:00")
-                    )
+                    timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
                     if timestamp < cutoff:
                         continue
                 except (ValueError, TypeError):
@@ -333,16 +336,18 @@ def fetch_topic_mentions(
             else:
                 continue
 
-            mentions.append({
-                "memory": r.get("memory", ""),
-                "topic": metadata.get("topic", ""),
-                "topic_type": metadata.get("topic_type", "theme"),
-                "timestamp": timestamp_str,
-                "channel_name": metadata.get("channel_name", ""),
-                "is_dm": metadata.get("is_dm", False),
-                "sentiment": metadata.get("sentiment", 0.0),
-                "emotional_weight": metadata.get("emotional_weight", "moderate"),
-            })
+            mentions.append(
+                {
+                    "memory": r.get("memory", ""),
+                    "topic": metadata.get("topic", ""),
+                    "topic_type": metadata.get("topic_type", "theme"),
+                    "timestamp": timestamp_str,
+                    "channel_name": metadata.get("channel_name", ""),
+                    "is_dm": metadata.get("is_dm", False),
+                    "sentiment": metadata.get("sentiment", 0.0),
+                    "emotional_weight": metadata.get("emotional_weight", "moderate"),
+                }
+            )
 
         return mentions
 
@@ -483,17 +488,19 @@ def fetch_topic_recurrence(
         types = [m.get("topic_type", "theme") for m in topic_mentions]
         topic_type = max(set(types), key=types.count)
 
-        recurring.append({
-            "topic": topic,
-            "topic_type": topic_type,
-            "mention_count": pattern["mention_count"],
-            "first_mentioned": _format_relative_time(first_ts),
-            "last_mentioned": _format_relative_time(last_ts),
-            "sentiment_trend": pattern["sentiment_trend"],
-            "avg_emotional_weight": pattern["avg_emotional_weight"],
-            "pattern_note": pattern["pattern_note"],
-            "channels": channels,
-        })
+        recurring.append(
+            {
+                "topic": topic,
+                "topic_type": topic_type,
+                "mention_count": pattern["mention_count"],
+                "first_mentioned": _format_relative_time(first_ts),
+                "last_mentioned": _format_relative_time(last_ts),
+                "sentiment_trend": pattern["sentiment_trend"],
+                "avg_emotional_weight": pattern["avg_emotional_weight"],
+                "pattern_note": pattern["pattern_note"],
+                "channels": channels,
+            }
+        )
 
     # Sort by mention count (most recurring first)
     recurring.sort(key=lambda x: x["mention_count"], reverse=True)

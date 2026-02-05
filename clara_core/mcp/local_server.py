@@ -146,9 +146,7 @@ class LocalServerProcess:
             cwd=self.config.cwd,
         )
 
-        logger.info(
-            f"[MCP:{self.name}] Starting: {params.command} {' '.join(params.args or [])}"
-        )
+        logger.info(f"[MCP:{self.name}] Starting: {params.command} {' '.join(params.args or [])}")
 
         try:
             self._exit_stack = AsyncExitStack()
@@ -163,9 +161,7 @@ class LocalServerProcess:
             )
 
             # Enter session context
-            self._session = await self._exit_stack.enter_async_context(
-                ClientSession(read_stream, write_stream)
-            )
+            self._session = await self._exit_stack.enter_async_context(ClientSession(read_stream, write_stream))
 
             # Initialize the connection
             await self._session.initialize()
@@ -181,9 +177,7 @@ class LocalServerProcess:
             if self.config.hot_reload:
                 await self._start_file_watcher()
 
-            logger.info(
-                f"[MCP:{self.name}] Connected, discovered {len(self.state.tools)} tools"
-            )
+            logger.info(f"[MCP:{self.name}] Connected, discovered {len(self.state.tools)} tools")
             return True
 
         except Exception as e:
@@ -211,11 +205,7 @@ class LocalServerProcess:
                 MCPTool(
                     name=tool.name,
                     description=tool.description or "",
-                    input_schema=(
-                        tool.inputSchema
-                        if tool.inputSchema
-                        else {"type": "object", "properties": {}}
-                    ),
+                    input_schema=(tool.inputSchema if tool.inputSchema else {"type": "object", "properties": {}}),
                 )
                 for tool in tools_result.tools
             ]
@@ -228,9 +218,7 @@ class LocalServerProcess:
             if self._on_tools_changed:
                 self._on_tools_changed(self.name, self.state.tools)
 
-            logger.debug(
-                f"[MCP:{self.name}] Discovered tools: {[t.name for t in self.state.tools]}"
-            )
+            logger.debug(f"[MCP:{self.name}] Discovered tools: {[t.name for t in self.state.tools]}")
 
         except Exception as e:
             logger.warning(f"[MCP:{self.name}] Failed to discover tools: {e}")
@@ -328,15 +316,9 @@ class LocalServerProcess:
             if result.structuredContent:
                 import json
 
-                output_parts.append(
-                    f"\nStructured: {json.dumps(result.structuredContent, indent=2)}"
-                )
+                output_parts.append(f"\nStructured: {json.dumps(result.structuredContent, indent=2)}")
 
-            return (
-                "\n".join(output_parts)
-                if output_parts
-                else "Tool executed successfully (no output)"
-            )
+            return "\n".join(output_parts) if output_parts else "Tool executed successfully (no output)"
 
         except Exception as e:
             error_msg = str(e)
@@ -354,11 +336,7 @@ class LocalServerProcess:
                         for content in result.content:
                             if hasattr(content, "text"):
                                 output_parts.append(content.text)
-                        return (
-                            "\n".join(output_parts)
-                            if output_parts
-                            else "Tool executed successfully"
-                        )
+                        return "\n".join(output_parts) if output_parts else "Tool executed successfully"
                     except Exception as retry_error:
                         return f"Error calling tool '{tool_name}': {retry_error}"
 
@@ -390,9 +368,7 @@ class LocalServerProcess:
             "status": self.config.status,
         }
 
-    def _update_config_status(
-        self, status: str, error: str | None = None
-    ) -> None:
+    def _update_config_status(self, status: str, error: str | None = None) -> None:
         """Update the config status and save."""
         self.config.status = status
         if error:
@@ -437,9 +413,7 @@ class LocalServerProcess:
                 def _schedule_reload(self) -> None:
                     if self._debounce_task and not self._debounce_task.done():
                         self._debounce_task.cancel()
-                    self._debounce_task = self._loop.create_task(
-                        self._debounced_reload()
-                    )
+                    self._debounce_task = self._loop.create_task(self._debounced_reload())
 
                 async def _debounced_reload(self) -> None:
                     await asyncio.sleep(1.0)  # 1 second debounce
@@ -453,9 +427,7 @@ class LocalServerProcess:
             logger.info(f"[MCP:{self.name}] Hot reload enabled, watching: {watch_path}")
 
         except ImportError:
-            logger.warning(
-                f"[MCP:{self.name}] Hot reload requires 'watchdog' package: pip install watchdog"
-            )
+            logger.warning(f"[MCP:{self.name}] Hot reload requires 'watchdog' package: pip install watchdog")
         except Exception as e:
             logger.warning(f"[MCP:{self.name}] Failed to start file watcher: {e}")
 
@@ -652,9 +624,7 @@ class LocalServerManager:
             result[namespaced_name] = tool
         return result
 
-    async def call_tool(
-        self, server_name: str, tool_name: str, arguments: dict[str, Any]
-    ) -> str:
+    async def call_tool(self, server_name: str, tool_name: str, arguments: dict[str, Any]) -> str:
         """Call a tool on a specific server.
 
         Args:
@@ -703,16 +673,18 @@ class LocalServerManager:
             if process:
                 statuses.append(process.get_status())
             else:
-                statuses.append({
-                    "name": config.name,
-                    "type": "local",
-                    "connected": False,
-                    "enabled": config.enabled,
-                    "command": config.command,
-                    "tool_count": config.tool_count,
-                    "status": config.status,
-                    "last_error": config.last_error,
-                })
+                statuses.append(
+                    {
+                        "name": config.name,
+                        "type": "local",
+                        "connected": False,
+                        "enabled": config.enabled,
+                        "command": config.command,
+                        "tool_count": config.tool_count,
+                        "status": config.status,
+                        "last_error": config.last_error,
+                    }
+                )
 
         return statuses
 

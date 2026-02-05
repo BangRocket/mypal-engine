@@ -17,11 +17,23 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
+from clara_core.llm.messages import (
+    AssistantMessage,
+    ContentPart,
+    ContentPartType,
+    Message,
+    SystemMessage,
+    UserMessage,
+)
+from clara_core.llm.tools.formats import messages_to_openai
 from config.logging import get_logger
 from mypalclara.gateway.protocol import AttachmentInfo, ResponseChunk, ToolResult, ToolStart
 
 if TYPE_CHECKING:
     from websockets.server import WebSocketServerProtocol
+
+    from clara_core.llm.tools.response import ToolResponse
+    from clara_core.llm.tools.schema import ToolSchema
 
 logger = get_logger("gateway.llm")
 
@@ -89,8 +101,8 @@ class LLMOrchestrator:
 
     async def generate_with_tools(
         self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
+        messages: list[Message],
+        tools: "list[ToolSchema | dict[str, Any]]",
         user_id: str,
         request_id: str,
         tier: str | None = None,
@@ -107,7 +119,7 @@ class LLMOrchestrator:
         - complete: Final response
 
         Args:
-            messages: Conversation messages
+            messages: Conversation messages (typed Message objects)
             tools: Available tool definitions
             user_id: User ID for tool context
             request_id: Request ID for tracking
@@ -123,7 +135,7 @@ class LLMOrchestrator:
             raise RuntimeError("LLMOrchestrator not initialized")
 
         loop = asyncio.get_event_loop()
-        working_messages = list(messages)  # Copy to avoid mutation
+        working_messages: list[Message] = list(messages)  # Copy to avoid mutation
         total_tools_run = 0
         files_to_send: list[str] = []
 
@@ -137,10 +149,10 @@ class LLMOrchestrator:
         working_messages.insert(0, tool_instruction)
 
         # Log system prompt content summary on first iteration
-        system_msgs = [m for m in working_messages if m.get("role") == "system"]
+        system_msgs = [m for m in working_messages if isinstance(m, SystemMessage)]
         if system_msgs:
-            total_system_len = sum(len(m.get("content", "")) for m in system_msgs)
-            first_sys = system_msgs[0].get("content", "")[:100].replace("\n", "\\n")
+            total_system_len = sum(len(m.content) for m in system_msgs)
+            first_sys = system_msgs[0].content[:100].replace("\n", "\\n")
             logger.info(
                 f"[{request_id}] Sending {len(system_msgs)} system messages "
                 f"({total_system_len} chars total). First: {first_sys}..."
@@ -149,8 +161,8 @@ class LLMOrchestrator:
         for iteration in range(MAX_TOOL_ITERATIONS):
             logger.debug(f"[{request_id}] Iteration {iteration + 1}/{MAX_TOOL_ITERATIONS}")
 
-            # Call LLM
-            response = await self._call_llm(
+            # Call LLM (returns ToolResponse)
+            tool_response = await self._call_llm(
                 working_messages,
                 tools,
                 tier,
@@ -158,11 +170,10 @@ class LLMOrchestrator:
             )
 
             # Check for tool calls
-            tool_calls = response.get("tool_calls")
-            if not tool_calls:
+            if not tool_response.has_tool_calls:
                 # No tools - return final response
-                content = response.get("content") or ""
-                messages_for_llm = [m for m in working_messages if m != tool_instruction]
+                content = tool_response.content or ""
+                messages_for_llm = [m for m in working_messages if m is not tool_instruction]
 
                 # Check if auto-continue might be needed
                 might_auto_continue = AUTO_CONTINUE_ENABLED and auto_continue_count < AUTO_CONTINUE_MAX
@@ -205,8 +216,8 @@ class LLMOrchestrator:
                         yield {"type": "chunk", "text": chunk}
 
                     # Add assistant response and user confirmation
-                    working_messages.append({"role": "assistant", "content": content})
-                    working_messages.append({"role": "user", "content": "Yes, please proceed."})
+                    working_messages.append(AssistantMessage(content=content))
+                    working_messages.append(UserMessage(content="Yes, please proceed."))
 
                     # Recursive call for continuation
                     async for event in self.generate_with_tools(
@@ -245,30 +256,24 @@ class LLMOrchestrator:
                 }
                 return
 
-            # Process tool calls
-            working_messages.append(response)
+            # Process tool calls — append assistant message with tool calls
+            working_messages.append(tool_response.to_assistant_message())
 
-            for tool_call in tool_calls:
-                tool_name = tool_call["function"]["name"]
-                try:
-                    arguments = json.loads(tool_call["function"]["arguments"] or "{}")
-                except json.JSONDecodeError:
-                    arguments = {}
-
+            for tc in tool_response.tool_calls:
                 total_tools_run += 1
 
                 # Emit tool start
                 yield {
                     "type": "tool_start",
-                    "tool_name": tool_name,
+                    "tool_name": tc.name,
                     "step": total_tools_run,
-                    "arguments": arguments,
+                    "arguments": tc.arguments,
                 }
 
                 # Execute tool
                 output = await self._tool_executor.execute(
-                    tool_name=tool_name,
-                    arguments=arguments,
+                    tool_name=tc.name,
+                    arguments=tc.arguments,
                     user_id=user_id,
                     files_to_send=files_to_send,
                 )
@@ -277,20 +282,14 @@ class LLMOrchestrator:
                 if len(output) > MAX_TOOL_RESULT_CHARS:
                     output = self._truncate_output(output)
 
-                # Add to messages
-                working_messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call["id"],
-                        "content": output,
-                    }
-                )
+                # Add tool result to messages
+                working_messages.append(tc.to_result_message(output))
 
                 # Emit tool result
                 success = not output.startswith("Error:")
                 yield {
                     "type": "tool_result",
-                    "tool_name": tool_name,
+                    "tool_name": tc.name,
                     "success": success,
                     "output_preview": output[:200] if len(output) > 200 else output,
                 }
@@ -299,13 +298,11 @@ class LLMOrchestrator:
         logger.warning(f"[{request_id}] Max iterations reached")
 
         working_messages.append(
-            {
-                "role": "user",
-                "content": (
-                    "You've reached the maximum number of tool calls. "
-                    "Please summarize what you've accomplished."
+            UserMessage(
+                content=(
+                    "You've reached the maximum number of tool calls. " "Please summarize what you've accomplished."
                 ),
-            }
+            )
         )
 
         final_response = await self._call_main_llm(working_messages, tier, loop)
@@ -322,11 +319,11 @@ class LLMOrchestrator:
 
     async def _call_llm(
         self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
+        messages: list[Message],
+        tools: "list[ToolSchema | dict[str, Any]]",
         tier: str | None,
         loop: asyncio.AbstractEventLoop,
-    ) -> dict[str, Any]:
+    ) -> "ToolResponse":
         """Call LLM with tools.
 
         Supports three modes (controlled by TOOL_CALL_MODE env var):
@@ -334,8 +331,11 @@ class LLMOrchestrator:
         - "native": Uses API-native tool calling (OpenAI/Anthropic format)
         - "xml": OpenClaw-style system prompt injection
 
-        Returns dict with content and optional tool_calls.
+        Converts list[Message] to list[dict] at the boundary for compat functions.
+        Returns ToolResponse.
         """
+        from clara_core.llm.tools.response import ToolResponse
+
         if TOOL_CALL_MODE == "xml":
             return await self._call_llm_xml(messages, tools, tier, loop)
         elif TOOL_CALL_MODE == "native":
@@ -346,87 +346,90 @@ class LLMOrchestrator:
 
     async def _call_llm_langchain(
         self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
+        messages: list[Message],
+        tools: "list[ToolSchema | dict[str, Any]]",
         tier: str | None,
         loop: asyncio.AbstractEventLoop,
-    ) -> dict[str, Any]:
+    ) -> "ToolResponse":
         """Call LLM with LangChain's unified tool calling.
 
         Uses LangChain's bind_tools() which handles tool format conversion
         automatically for all providers (OpenAI, Anthropic, etc.).
 
-        Returns dict with content and optional tool_calls.
+        Returns ToolResponse.
         """
         from clara_core import ModelTier, make_llm_with_tools_langchain
+        from clara_core.llm.tools.response import ToolResponse
 
         model_tier = ModelTier(tier) if tier else None
+        msg_dicts = messages_to_openai(messages)
 
         def call():
             llm = make_llm_with_tools_langchain(tools, tier=model_tier)
-            return llm(messages)
+            return ToolResponse.from_dict(llm(msg_dicts))
 
         return await loop.run_in_executor(LLM_EXECUTOR, call)
 
     async def _call_llm_native(
         self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
+        messages: list[Message],
+        tools: "list[ToolSchema | dict[str, Any]]",
         tier: str | None,
         loop: asyncio.AbstractEventLoop,
-    ) -> dict[str, Any]:
+    ) -> "ToolResponse":
         """Call LLM with unified tool calling.
 
         Uses the unified LLM interface which handles all providers
         (OpenRouter, NanoGPT, OpenAI, Anthropic) with a single code path.
 
-        Returns dict with content and optional tool_calls.
+        Returns ToolResponse.
         """
         from clara_core import ModelTier, make_llm_with_tools_unified
 
         model_tier = ModelTier(tier) if tier else None
+        msg_dicts = messages_to_openai(messages)
 
         def call():
             llm = make_llm_with_tools_unified(tools, tier=model_tier)
-            response = llm(messages)
-            # ToolResponse.to_openai_dict() returns standardized format
-            return response.to_openai_dict()
+            return llm(msg_dicts)
 
         return await loop.run_in_executor(LLM_EXECUTOR, call)
 
     async def _call_llm_xml(
         self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
+        messages: list[Message],
+        tools: "list[ToolSchema | dict[str, Any]]",
         tier: str | None,
         loop: asyncio.AbstractEventLoop,
-    ) -> dict[str, Any]:
+    ) -> "ToolResponse":
         """Call LLM with OpenClaw-style XML tool injection.
 
         Tools are serialized to XML and injected into the system prompt.
         Function calls are parsed from the response text.
 
-        Returns dict with content and optional tool_calls.
+        Returns ToolResponse.
         """
         from clara_core import ModelTier, make_llm_with_xml_tools
+        from clara_core.llm.tools.response import ToolResponse
 
         model_tier = ModelTier(tier) if tier else None
+        msg_dicts = messages_to_openai(messages)
 
         def call():
             llm = make_llm_with_xml_tools(tools, tier=model_tier)
-            return llm(messages)
+            return ToolResponse.from_dict(llm(msg_dicts))
 
         return await loop.run_in_executor(LLM_EXECUTOR, call)
 
     async def _call_main_llm_streaming(
         self,
-        messages: list[dict[str, Any]],
+        messages: list[Message],
         tier: str | None,
     ) -> AsyncIterator[str]:
         """Call main LLM with streaming and yield chunks.
 
         Args:
-            messages: Conversation messages
+            messages: Conversation messages (typed Message objects)
             tier: Optional model tier
 
         Yields:
@@ -436,11 +439,12 @@ class LLMOrchestrator:
 
         model_tier = ModelTier(tier) if tier else None
         loop = asyncio.get_event_loop()
+        msg_dicts = messages_to_openai(messages)
 
         # Create the streaming LLM
         def get_stream():
             llm = make_llm_streaming(tier=model_tier)
-            return llm(messages)
+            return llm(msg_dicts)
 
         # Get the stream generator in executor
         stream = await loop.run_in_executor(LLM_EXECUTOR, get_stream)
@@ -460,7 +464,7 @@ class LLMOrchestrator:
 
     async def _call_main_llm(
         self,
-        messages: list[dict[str, Any]],
+        messages: list[Message],
         tier: str | None,
         loop: asyncio.AbstractEventLoop,
         images: list[AttachmentInfo] | None = None,
@@ -468,7 +472,7 @@ class LLMOrchestrator:
         """Call main LLM without tools (non-streaming fallback).
 
         Args:
-            messages: Conversation messages
+            messages: Conversation messages (typed Message objects)
             tier: Optional model tier
             loop: Event loop for executor
             images: Optional images (already added to messages if present)
@@ -479,10 +483,11 @@ class LLMOrchestrator:
         from clara_core import ModelTier, make_llm
 
         model_tier = ModelTier(tier) if tier else None
+        msg_dicts = messages_to_openai(messages)
 
         def call():
             llm = make_llm(tier=model_tier)
-            return llm(messages)
+            return llm(msg_dicts)
 
         return await loop.run_in_executor(LLM_EXECUTOR, call)
 
@@ -508,11 +513,10 @@ class LLMOrchestrator:
         if current_chunk:
             yield " ".join(current_chunk)
 
-    def _build_tool_instruction(self) -> dict[str, str]:
+    def _build_tool_instruction(self) -> SystemMessage:
         """Build the tool instruction system message."""
-        return {
-            "role": "system",
-            "content": (
+        return SystemMessage(
+            content=(
                 "TOOL USAGE GUIDELINES:\n\n"
                 "FILE SENDING (Discord):\n"
                 "- Use `send_discord_file` to create and send files directly to Discord chat\n"
@@ -543,7 +547,7 @@ class LLMOrchestrator:
                 "IMPORTANT: Your personality and context is defined in subsequent system messages. "
                 "Follow those guidelines for tone, style, and behavior."
             ),
-        }
+        )
 
     def _truncate_output(self, output: str) -> str:
         """Truncate tool output if too long."""
@@ -556,15 +560,17 @@ class LLMOrchestrator:
 
     def _add_images_to_messages(
         self,
-        messages: list[dict[str, Any]],
+        messages: list[Message],
         images: list[AttachmentInfo],
-    ) -> list[dict[str, Any]]:
+    ) -> list[Message]:
         """Add images to the last user message for vision processing.
 
-        Converts images to the appropriate format based on LLM provider.
+        Uses provider-neutral ContentPart types. The provider-specific
+        conversion (to OpenAI image_url or Anthropic image.source) happens
+        in the format converters at the boundary.
 
         Args:
-            messages: Conversation messages
+            messages: Conversation messages (typed Message objects)
             images: List of image attachments
 
         Returns:
@@ -573,56 +579,31 @@ class LLMOrchestrator:
         if not images:
             return messages
 
-        provider = os.getenv("LLM_PROVIDER", "openrouter").lower()
-
-        # Find the last user message
+        # Find the last UserMessage
         for i in range(len(messages) - 1, -1, -1):
-            if messages[i].get("role") == "user":
+            if isinstance(messages[i], UserMessage):
                 user_msg = messages[i]
 
-                # Build multimodal content
-                content_parts = []
+                # Start from existing parts or create text part from content
+                parts = (
+                    list(user_msg.parts)
+                    if user_msg.parts
+                    else [ContentPart(type=ContentPartType.TEXT, text=user_msg.content)]
+                )
 
-                # Add existing text content
-                existing_content = user_msg.get("content", "")
-                if isinstance(existing_content, str):
-                    content_parts.append({"type": "text", "text": existing_content})
-                elif isinstance(existing_content, list):
-                    content_parts.extend(existing_content)
-
-                # Add images
+                # Add images as provider-neutral ContentParts
                 for img in images:
                     if img.type != "image" or not img.base64_data:
                         continue
-
-                    if provider == "anthropic":
-                        # Anthropic native format
-                        content_parts.append(
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": img.media_type or "image/jpeg",
-                                    "data": img.base64_data,
-                                },
-                            }
+                    parts.append(
+                        ContentPart(
+                            type=ContentPartType.IMAGE_BASE64,
+                            media_type=img.media_type or "image/jpeg",
+                            data=img.base64_data,
                         )
-                    else:
-                        # OpenAI/OpenRouter format
-                        content_parts.append(
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:{img.media_type or 'image/jpeg'};base64,{img.base64_data}",
-                                },
-                            }
-                        )
+                    )
 
-                # Update message with multimodal content
-                messages[i] = {
-                    **user_msg,
-                    "content": content_parts,
-                }
+                messages[i] = UserMessage(content=user_msg.content, parts=parts)
                 break
 
         return messages

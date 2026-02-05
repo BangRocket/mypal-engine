@@ -84,17 +84,8 @@ def clear_databases(user_id: str, skip_confirm: bool = False):
 
 def main():
     parser = argparse.ArgumentParser(description="Clear all mem0 databases")
-    parser.add_argument(
-        "--yes", "-y",
-        action="store_true",
-        help="Skip confirmation prompt"
-    )
-    parser.add_argument(
-        "--user", "-u",
-        type=str,
-        default=USER_ID,
-        help=f"User ID to clear (default: {USER_ID})"
-    )
+    parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
+    parser.add_argument("--user", "-u", type=str, default=USER_ID, help=f"User ID to clear (default: {USER_ID})")
     args = parser.parse_args()
 
     clear_databases(args.user, skip_confirm=args.yes)

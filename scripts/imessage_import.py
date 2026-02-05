@@ -25,6 +25,7 @@ from typing import Optional
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass  # dotenv not required if env vars are set directly
@@ -190,16 +191,15 @@ def format_conversation_for_mem0(conversation: list, contact_id: str, contact_na
             continue
 
         if is_from_me:
-            messages.append({
-                "role": "user",
-                "content": content.strip()
-            })
+            messages.append({"role": "user", "content": content.strip()})
         else:
             # Messages from the contact - prefix with their name for context
-            messages.append({
-                "role": "assistant",  # Using assistant role for the contact's messages
-                "content": f"[{display_name}]: {content.strip()}"
-            })
+            messages.append(
+                {
+                    "role": "assistant",  # Using assistant role for the contact's messages
+                    "content": f"[{display_name}]: {content.strip()}",
+                }
+            )
 
     return messages
 
@@ -282,7 +282,9 @@ def import_to_mem0(
             last_date = convo[-1][2] if convo[-1][2] else "unknown"
 
             if dry_run:
-                print(f"  [DRY RUN] Would add conversation {i+1}: {len(mem0_messages)} messages ({first_date} to {last_date})")
+                print(
+                    f"  [DRY RUN] Would add conversation {i+1}: {len(mem0_messages)} messages ({first_date} to {last_date})"
+                )
                 for msg in mem0_messages[:3]:
                     preview = msg["content"][:80] + "..." if len(msg["content"]) > 80 else msg["content"]
                     print(f"    {msg['role']}: {preview}")
@@ -290,10 +292,12 @@ def import_to_mem0(
                     print(f"    ... and {len(mem0_messages) - 3} more messages")
             else:
                 # Add a context-setting message at the start
-                context_intro = [{
-                    "role": "user",
-                    "content": f"Here is a conversation I had with {contact_name} (contact: {contact_id}) from {first_date} to {last_date}. Please remember important details about them and our relationship."
-                }]
+                context_intro = [
+                    {
+                        "role": "user",
+                        "content": f"Here is a conversation I had with {contact_name} (contact: {contact_id}) from {first_date} to {last_date}. Please remember important details about them and our relationship.",
+                    }
+                ]
 
                 # Add to mem0 with contact metadata
                 try:
@@ -305,7 +309,7 @@ def import_to_mem0(
                             "contact_id": contact_id,
                             "contact_name": contact_name,
                             "date_range": f"{first_date} to {last_date}",
-                        }
+                        },
                     )
                     memories_added = len(result.get("results", []))
                     total_memories_added += memories_added
@@ -339,44 +343,23 @@ Examples:
 
     # Import only the 50 most recent messages per contact
     python imessage_import.py --contacts "+15551234567" --limit 50
-        """
+        """,
     )
 
     parser.add_argument(
-        "--contacts",
-        type=str,
-        help="Comma-separated list of contact identifiers (phone numbers or emails)"
+        "--contacts", type=str, help="Comma-separated list of contact identifiers (phone numbers or emails)"
     )
     parser.add_argument(
-        "--names",
-        type=str,
-        help="Comma-separated contact name mappings (e.g., '+15551234567=Mom,+15559876543=Dad')"
+        "--names", type=str, help="Comma-separated contact name mappings (e.g., '+15551234567=Mom,+15559876543=Dad')"
     )
     parser.add_argument(
-        "--db-path",
-        type=str,
-        help="Path to iMessage database (defaults to ~/Library/Messages/chat.db)"
+        "--db-path", type=str, help="Path to iMessage database (defaults to ~/Library/Messages/chat.db)"
     )
+    parser.add_argument("--limit", type=int, help="Maximum number of messages to import per contact")
+    parser.add_argument("--dry-run", action="store_true", help="Show what would be imported without actually importing")
+    parser.add_argument("--list-contacts", action="store_true", help="List all contacts with message counts")
     parser.add_argument(
-        "--limit",
-        type=int,
-        help="Maximum number of messages to import per contact"
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Show what would be imported without actually importing"
-    )
-    parser.add_argument(
-        "--list-contacts",
-        action="store_true",
-        help="List all contacts with message counts"
-    )
-    parser.add_argument(
-        "--user-id",
-        type=str,
-        default=os.getenv("USER_ID", "demo-user"),
-        help="User ID for mem0 storage"
+        "--user-id", type=str, default=os.getenv("USER_ID", "demo-user"), help="User ID for mem0 storage"
     )
 
     args = parser.parse_args()
@@ -386,11 +369,7 @@ Examples:
         contacts = list_contacts(args.db_path)
 
         # Sort by total message count
-        sorted_contacts = sorted(
-            contacts.items(),
-            key=lambda x: x[1]["sent"] + x[1]["received"],
-            reverse=True
-        )
+        sorted_contacts = sorted(contacts.items(), key=lambda x: x[1]["sent"] + x[1]["received"], reverse=True)
 
         print(f"\nFound {len(sorted_contacts)} contacts:\n")
         print(f"{'Contact':<40} {'Sent':>8} {'Recv':>8} {'Total':>8} {'Last Message':<20}")

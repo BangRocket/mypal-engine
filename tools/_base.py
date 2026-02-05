@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 if TYPE_CHECKING:
-    pass
+    from clara_core.llm.tools.schema import ToolSchema
 
 
 @dataclass
@@ -66,6 +66,12 @@ class ToolDef:
     # Policy metadata
     risk_level: str = "safe"  # safe, moderate, dangerous
     intent: str = "read"  # read, write, execute, network
+
+    def to_schema(self) -> "ToolSchema":
+        """Convert to a ToolSchema for the unified LLM pipeline."""
+        from clara_core.llm.tools.schema import ToolSchema
+
+        return ToolSchema(name=self.name, description=self.description, parameters=self.parameters)
 
     def to_openai_format(self) -> dict[str, Any]:
         """Convert to OpenAI tool format for LLM consumption."""

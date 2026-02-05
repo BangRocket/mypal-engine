@@ -17,10 +17,11 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
-from clara_core.llm.providers.base import LLMProvider
+from clara_core.llm.providers.base import LLMProvider, _normalize_tools
 from clara_core.llm.tools.formats import (
-    convert_message_to_anthropic,
-    convert_messages_to_langchain,
+    messages_to_anthropic,
+    messages_to_langchain,
+    messages_to_openai,
 )
 from clara_core.llm.tools.response import ToolResponse
 
@@ -28,6 +29,8 @@ if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
 
     from clara_core.llm.config import LLMConfig
+    from clara_core.llm.messages import Message
+    from clara_core.llm.tools.schema import ToolSchema
 
 
 # Cached LangChain models keyed by (provider, model, base_url)
@@ -48,44 +51,45 @@ class LangChainProvider(LLMProvider):
 
     def complete(
         self,
-        messages: list[dict[str, Any]],
+        messages: list[Message],
         config: "LLMConfig",
     ) -> str:
         """Generate a text completion using LangChain."""
         model = self.get_langchain_model(config)
-        lc_messages = convert_messages_to_langchain(messages)
+        lc_messages = messages_to_langchain(messages)
         response = model.invoke(lc_messages)
         return response.content if isinstance(response.content, str) else str(response.content)
 
     def complete_with_tools(
         self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
+        messages: list[Message],
+        tools: "list[ToolSchema | dict[str, Any]]",
         config: "LLMConfig",
     ) -> ToolResponse:
         """Generate a response with tool calling via LangChain bind_tools()."""
         model = self.get_langchain_model(config)
+        normalized = _normalize_tools(tools)
 
         # Bind tools to model
-        if tools:
-            model_with_tools = model.bind_tools(tools)
+        if normalized:
+            model_with_tools = model.bind_tools(normalized)
         else:
             model_with_tools = model
 
         # Convert and invoke
-        lc_messages = convert_messages_to_langchain(messages)
+        lc_messages = messages_to_langchain(messages)
         response = model_with_tools.invoke(lc_messages)
 
         return ToolResponse.from_langchain(response)
 
     def stream(
         self,
-        messages: list[dict[str, Any]],
+        messages: list[Message],
         config: "LLMConfig",
     ) -> Iterator[str]:
         """Generate a streaming completion using LangChain."""
         model = self.get_langchain_model(config)
-        lc_messages = convert_messages_to_langchain(messages)
+        lc_messages = messages_to_langchain(messages)
 
         for chunk in model.stream(lc_messages):
             content = chunk.content
@@ -94,8 +98,8 @@ class LangChainProvider(LLMProvider):
 
     def stream_with_tools(
         self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
+        messages: list[Message],
+        tools: "list[ToolSchema | dict[str, Any]]",
         config: "LLMConfig",
     ) -> Iterator[str]:
         """Stream with tool support.
@@ -105,13 +109,14 @@ class LangChainProvider(LLMProvider):
         for tool call detection after streaming completes.
         """
         model = self.get_langchain_model(config)
+        normalized = _normalize_tools(tools)
 
-        if tools:
-            model_with_tools = model.bind_tools(tools)
+        if normalized:
+            model_with_tools = model.bind_tools(normalized)
         else:
             model_with_tools = model
 
-        lc_messages = convert_messages_to_langchain(messages)
+        lc_messages = messages_to_langchain(messages)
 
         for chunk in model_with_tools.stream(lc_messages):
             content = chunk.content
@@ -197,8 +202,7 @@ class LangChainProvider(LLMProvider):
             from langchain_aws import ChatBedrock
         except ImportError as e:
             raise ImportError(
-                "Amazon Bedrock support requires langchain-aws. "
-                "Install it with: pip install langchain-aws"
+                "Amazon Bedrock support requires langchain-aws. " "Install it with: pip install langchain-aws"
             ) from e
 
         kwargs: dict[str, Any] = {
@@ -226,9 +230,7 @@ class LangChainProvider(LLMProvider):
         from langchain_openai import AzureChatOpenAI
 
         if not config.azure_deployment:
-            raise ValueError(
-                "Azure OpenAI requires AZURE_DEPLOYMENT_NAME environment variable"
-            )
+            raise ValueError("Azure OpenAI requires AZURE_DEPLOYMENT_NAME environment variable")
 
         kwargs: dict[str, Any] = {
             "azure_deployment": config.azure_deployment,
@@ -278,28 +280,17 @@ class DirectAnthropicProvider(LLMProvider):
 
     def complete(
         self,
-        messages: list[dict[str, Any]],
+        messages: list[Message],
         config: "LLMConfig",
     ) -> str:
         """Generate a text completion using native Anthropic SDK."""
         client = self._get_client(config)
-
-        # Extract system messages
-        system_parts = []
-        filtered = []
-        for m in messages:
-            if m.get("role") == "system":
-                content = m.get("content", "")
-                if isinstance(content, str):
-                    system_parts.append(content)
-            else:
-                filtered.append(convert_message_to_anthropic(m))
-        system = "\n\n".join(system_parts)
+        system, api_messages = messages_to_anthropic(messages)
 
         kwargs: dict[str, Any] = {
             "model": config.model,
             "max_tokens": config.max_tokens,
-            "messages": filtered,
+            "messages": api_messages,
         }
         if system:
             kwargs["system"] = system
@@ -309,62 +300,43 @@ class DirectAnthropicProvider(LLMProvider):
 
     def complete_with_tools(
         self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
+        messages: list[Message],
+        tools: "list[ToolSchema | dict[str, Any]]",
         config: "LLMConfig",
     ) -> ToolResponse:
         """Generate a response with native Anthropic tool calling."""
         from clara_core.llm.tools.formats import convert_tools_to_claude_format
 
         client = self._get_client(config)
-
-        # Extract system messages
-        system_parts = []
-        filtered = []
-        for m in messages:
-            if m.get("role") == "system":
-                system_parts.append(m.get("content", ""))
-            else:
-                filtered.append(convert_message_to_anthropic(m))
-        system = "\n\n".join(system_parts)
+        system, api_messages = messages_to_anthropic(messages)
+        normalized = _normalize_tools(tools)
 
         kwargs: dict[str, Any] = {
             "model": config.model,
             "max_tokens": config.max_tokens,
-            "messages": filtered,
+            "messages": api_messages,
         }
         if system:
             kwargs["system"] = system
-        if tools:
-            kwargs["tools"] = convert_tools_to_claude_format(tools)
+        if normalized:
+            kwargs["tools"] = convert_tools_to_claude_format(normalized)
 
         response = client.messages.create(**kwargs)
         return ToolResponse.from_anthropic(response)
 
     def stream(
         self,
-        messages: list[dict[str, Any]],
+        messages: list[Message],
         config: "LLMConfig",
     ) -> Iterator[str]:
         """Generate a streaming completion using native Anthropic SDK."""
         client = self._get_client(config)
-
-        # Extract system messages
-        system_parts = []
-        filtered = []
-        for m in messages:
-            if m.get("role") == "system":
-                content = m.get("content", "")
-                if isinstance(content, str):
-                    system_parts.append(content)
-            else:
-                filtered.append(convert_message_to_anthropic(m))
-        system = "\n\n".join(system_parts)
+        system, api_messages = messages_to_anthropic(messages)
 
         kwargs: dict[str, Any] = {
             "model": config.model,
             "max_tokens": config.max_tokens,
-            "messages": filtered,
+            "messages": api_messages,
         }
         if system:
             kwargs["system"] = system
@@ -421,47 +393,51 @@ class DirectOpenAIProvider(LLMProvider):
 
     def complete(
         self,
-        messages: list[dict[str, Any]],
+        messages: list[Message],
         config: "LLMConfig",
     ) -> str:
         """Generate a text completion using OpenAI SDK."""
         client = self._get_client(config)
+        api_messages = messages_to_openai(messages)
         response = client.chat.completions.create(
             model=config.model,
-            messages=messages,
+            messages=api_messages,
         )
         content = response.choices[0].message.content
         return content if content else ""
 
     def complete_with_tools(
         self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
+        messages: list[Message],
+        tools: "list[ToolSchema | dict[str, Any]]",
         config: "LLMConfig",
     ) -> ToolResponse:
         """Generate a response with OpenAI tool calling."""
         client = self._get_client(config)
+        api_messages = messages_to_openai(messages)
+        normalized = _normalize_tools(tools)
 
         kwargs: dict[str, Any] = {
             "model": config.model,
-            "messages": messages,
+            "messages": api_messages,
         }
-        if tools:
-            kwargs["tools"] = tools
+        if normalized:
+            kwargs["tools"] = normalized
 
         response = client.chat.completions.create(**kwargs)
         return ToolResponse.from_openai(response)
 
     def stream(
         self,
-        messages: list[dict[str, Any]],
+        messages: list[Message],
         config: "LLMConfig",
     ) -> Iterator[str]:
         """Generate a streaming completion using OpenAI SDK."""
         client = self._get_client(config)
+        api_messages = messages_to_openai(messages)
         stream = client.chat.completions.create(
             model=config.model,
-            messages=messages,
+            messages=api_messages,
             stream=True,
         )
 

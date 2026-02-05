@@ -143,12 +143,8 @@ async def initialize_mcp_integration(registry: PluginRegistry) -> None:
             runtime=registry.runtime,
             logger=logger,
             # Registration methods (bound to registry)
-            register_tool=lambda t, opt=False: registry.register_tool(
-                t, "mcp", opt, "clara_core.plugins.mcp"
-            ),
-            register_hook=lambda e, h: registry.register_hook(
-                e, h, "mcp", "clara_core.plugins.mcp"
-            ),
+            register_tool=lambda t, opt=False: registry.register_tool(t, "mcp", opt, "clara_core.plugins.mcp"),
+            register_hook=lambda e, h: registry.register_hook(e, h, "mcp", "clara_core.plugins.mcp"),
             register_channel=lambda c: None,  # MCP doesn't register channels
             register_provider=lambda p: None,  # MCP doesn't register providers
             register_service=lambda s: None,  # MCP doesn't register services
@@ -166,6 +162,7 @@ async def initialize_mcp_integration(registry: PluginRegistry) -> None:
         logger.error(f"Failed to initialize MCP integration: {e}", exc_info=True)
         # Import Diagnostic here to avoid circular import
         from .types import Diagnostic
+
         registry.push_diagnostic(
             Diagnostic(
                 level=DiagnosticLevel.ERROR,

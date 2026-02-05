@@ -358,27 +358,16 @@ class MCPMetricsTracker:
                 limits = (
                     db.query(MCPRateLimit)
                     .filter(MCPRateLimit.enabled == True)
-                    .filter(
-                        (MCPRateLimit.user_id == user_id) | (MCPRateLimit.user_id.is_(None))
-                    )
-                    .filter(
-                        (MCPRateLimit.server_name == server_name)
-                        | (MCPRateLimit.server_name.is_(None))
-                    )
-                    .filter(
-                        (MCPRateLimit.tool_name == tool_name)
-                        | (MCPRateLimit.tool_name.is_(None))
-                    )
+                    .filter((MCPRateLimit.user_id == user_id) | (MCPRateLimit.user_id.is_(None)))
+                    .filter((MCPRateLimit.server_name == server_name) | (MCPRateLimit.server_name.is_(None)))
+                    .filter((MCPRateLimit.tool_name == tool_name) | (MCPRateLimit.tool_name.is_(None)))
                     .all()
                 )
 
                 for limit in limits:
                     # Check minute limit
                     if limit.max_calls_per_minute:
-                        if (
-                            limit.minute_window_start
-                            and (now - limit.minute_window_start).total_seconds() < 60
-                        ):
+                        if limit.minute_window_start and (now - limit.minute_window_start).total_seconds() < 60:
                             if limit.current_minute_count >= limit.max_calls_per_minute:
                                 return False
                         else:
@@ -388,10 +377,7 @@ class MCPMetricsTracker:
 
                     # Check hour limit
                     if limit.max_calls_per_hour:
-                        if (
-                            limit.hour_window_start
-                            and (now - limit.hour_window_start).total_seconds() < 3600
-                        ):
+                        if limit.hour_window_start and (now - limit.hour_window_start).total_seconds() < 3600:
                             if limit.current_hour_count >= limit.max_calls_per_hour:
                                 return False
                         else:
@@ -400,10 +386,7 @@ class MCPMetricsTracker:
 
                     # Check day limit
                     if limit.max_calls_per_day:
-                        if (
-                            limit.day_window_start
-                            and (now - limit.day_window_start).total_seconds() < 86400
-                        ):
+                        if limit.day_window_start and (now - limit.day_window_start).total_seconds() < 86400:
                             if limit.current_day_count >= limit.max_calls_per_day:
                                 return False
                         else:
@@ -520,9 +503,7 @@ async def track_tool_call(
     @asynccontextmanager
     async def _track():
         tracker = get_metrics_tracker()
-        call_id = await tracker.start_call(
-            user_id, server_name, tool_name, arguments, session_id, request_id
-        )
+        call_id = await tracker.start_call(user_id, server_name, tool_name, arguments, session_id, request_id)
 
         class CallTracker:
             def __init__(self):

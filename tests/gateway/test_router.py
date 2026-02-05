@@ -210,9 +210,7 @@ class TestDeduplication:
 
         # Submit identical message with skip_dedup
         duplicate = make_request("req-2", content="Hello")
-        acquired, pos = await router.submit(
-            duplicate, mock_websocket, "node-1", skip_dedup=True
-        )
+        acquired, pos = await router.submit(duplicate, mock_websocket, "node-1", skip_dedup=True)
 
         assert acquired is True
 

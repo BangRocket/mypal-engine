@@ -144,9 +144,8 @@ async def handle_oauth_callback(
             "success": True,
             "server_name": server_name,
             "connected": connected,
-            "message": f"Authorization successful for {server_name}. " + (
-                "Server connected!" if connected else "Please try connecting the server again."
-            ),
+            "message": f"Authorization successful for {server_name}. "
+            + ("Server connected!" if connected else "Please try connecting the server again."),
         }
 
     except Exception as e:
@@ -203,9 +202,7 @@ async def _store_token_in_db(
 
             if expires_at:
                 try:
-                    token.expires_at = datetime.fromisoformat(
-                        expires_at.replace("Z", "+00:00")
-                    ).replace(tzinfo=None)
+                    token.expires_at = datetime.fromisoformat(expires_at.replace("Z", "+00:00")).replace(tzinfo=None)
                 except ValueError:
                     pass
 
@@ -305,9 +302,7 @@ def get_oauth_router():
 
         state = load_oauth_state(server_name)
         if not state:
-            return JSONResponse(
-                content={"status": "not_configured", "server_name": server_name}
-            )
+            return JSONResponse(content={"status": "not_configured", "server_name": server_name})
 
         if state.tokens:
             return JSONResponse(
@@ -319,9 +314,7 @@ def get_oauth_router():
                 }
             )
 
-        return JSONResponse(
-            content={"status": "pending", "server_name": server_name}
-        )
+        return JSONResponse(content={"status": "pending", "server_name": server_name})
 
     return router
 

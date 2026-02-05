@@ -71,9 +71,7 @@ class PluginRuntime:
         """
         self._state_store[key] = value
 
-    async def run_command(
-        self, command: str, timeout: int = 60, **kwargs: Any
-    ) -> tuple[int, str, str]:
+    async def run_command(self, command: str, timeout: int = 60, **kwargs: Any) -> tuple[int, str, str]:
         """Run a shell command.
 
         Args:
@@ -93,9 +91,7 @@ class PluginRuntime:
                 **kwargs,
             )
 
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=timeout
-            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
 
             return process.returncode or 0, stdout.decode(), stderr.decode()
 

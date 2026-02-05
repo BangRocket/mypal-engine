@@ -49,11 +49,13 @@ os.makedirs(clara_memory_dir, exist_ok=True)
 
 class MemoryType(str, Enum):
     """Types of memory that can be stored."""
+
     PROCEDURAL = "procedural_memory"
 
 
 class ClaraMemoryItem(BaseModel):
     """A memory item stored in the system."""
+
     id: str = Field(..., description="The unique identifier for the memory")
     memory: str = Field(..., description="The memory content")
     hash: Optional[str] = Field(None, description="The hash of the memory content")
@@ -130,7 +132,7 @@ def _build_filters_and_metadata(
             message="At least one of 'user_id', 'agent_id', or 'run_id' must be provided.",
             error_code="VALIDATION_001",
             details={"provided_ids": {"user_id": user_id, "agent_id": agent_id, "run_id": run_id}},
-            suggestion="Please provide at least one identifier to scope the memory operation."
+            suggestion="Please provide at least one identifier to scope the memory operation.",
         )
 
     resolved_actor_id = actor_id or effective_filters.get("actor_id")
@@ -200,6 +202,7 @@ class ClaraMemory(MemoryBase):
         if hasattr(self.config, "graph_store") and self.config.graph_store and self.config.graph_store.config:
             try:
                 from clara_core.memory.graph.factory import GraphStoreFactory
+
                 provider = self.config.graph_store.provider
                 self.graph = GraphStoreFactory.create(provider, self.config)
                 self.enable_graph = True
@@ -284,9 +287,12 @@ class ClaraMemory(MemoryBase):
             messages = [{"role": "user", "content": messages}]
         elif isinstance(messages, dict):
             messages = [messages]
+        elif isinstance(messages, list) and messages and not isinstance(messages[0], dict):
+            # Typed Message objects — convert to dicts for downstream processing
+            messages = [m.to_dict() for m in messages]
         elif not isinstance(messages, list):
             raise ClaraMemoryValidationError(
-                message="messages must be str, dict, or list[dict]",
+                message="messages must be str, dict, list[dict], or list[Message]",
                 error_code="VALIDATION_003",
             )
 
@@ -341,13 +347,15 @@ class ClaraMemory(MemoryBase):
                 embeddings = self.embedding_model.embed(content, "add")
                 mem_id = self._create_memory(content, embeddings, per_msg_meta, timestamp=timestamp)
 
-                returned_memories.append({
-                    "id": mem_id,
-                    "memory": content,
-                    "event": "ADD",
-                    "actor_id": actor_name,
-                    "role": msg_dict["role"],
-                })
+                returned_memories.append(
+                    {
+                        "id": mem_id,
+                        "memory": content,
+                        "event": "ADD",
+                        "actor_id": actor_name,
+                        "role": msg_dict["role"],
+                    }
+                )
             return returned_memories
 
         # Use LLM inference to extract facts
@@ -422,11 +430,13 @@ class ClaraMemory(MemoryBase):
 
             for mem in existing_memories:
                 existing_is_key = mem.payload.get("is_key", "false")
-                retrieved_old_memory.append({
-                    "id": mem.id,
-                    "text": mem.payload.get("data", ""),
-                    "is_key": existing_is_key,
-                })
+                retrieved_old_memory.append(
+                    {
+                        "id": mem.id,
+                        "text": mem.payload.get("data", ""),
+                        "is_key": existing_is_key,
+                    }
+                )
 
         # Deduplicate
         unique_data = {item["id"]: item for item in retrieved_old_memory}
@@ -487,12 +497,14 @@ class ClaraMemory(MemoryBase):
                             metadata=add_meta,
                             timestamp=timestamp,
                         )
-                        returned_memories.append({
-                            "id": mem_id,
-                            "memory": action_text,
-                            "event": event_type,
-                            "is_key": is_key_str,
-                        })
+                        returned_memories.append(
+                            {
+                                "id": mem_id,
+                                "memory": action_text,
+                                "event": event_type,
+                                "is_key": is_key_str,
+                            }
+                        )
                     elif event_type == "UPDATE":
                         target_id = temp_uuid_mapping.get(resp.get("id"))
                         if target_id:
@@ -504,13 +516,15 @@ class ClaraMemory(MemoryBase):
                                 existing_embeddings=new_message_embeddings,
                                 metadata=update_meta,
                             )
-                            returned_memories.append({
-                                "id": target_id,
-                                "memory": action_text,
-                                "event": event_type,
-                                "previous_memory": resp.get("old_memory"),
-                                "is_key": is_key_str,
-                            })
+                            returned_memories.append(
+                                {
+                                    "id": target_id,
+                                    "memory": action_text,
+                                    "event": event_type,
+                                    "previous_memory": resp.get("old_memory"),
+                                    "is_key": is_key_str,
+                                }
+                            )
                         else:
                             # Target not found, convert to ADD
                             logger.info(f"UPDATE target not found, converting to ADD")
@@ -522,21 +536,25 @@ class ClaraMemory(MemoryBase):
                                 metadata=add_meta,
                                 timestamp=timestamp,
                             )
-                            returned_memories.append({
-                                "id": mem_id,
-                                "memory": action_text,
-                                "event": "ADD",
-                                "is_key": is_key_str,
-                            })
+                            returned_memories.append(
+                                {
+                                    "id": mem_id,
+                                    "memory": action_text,
+                                    "event": "ADD",
+                                    "is_key": is_key_str,
+                                }
+                            )
                     elif event_type == "DELETE":
                         target_id = temp_uuid_mapping.get(resp.get("id"))
                         if target_id:
                             self._delete_memory(memory_id=target_id)
-                            returned_memories.append({
-                                "id": target_id,
-                                "memory": action_text,
-                                "event": event_type,
-                            })
+                            returned_memories.append(
+                                {
+                                    "id": target_id,
+                                    "memory": action_text,
+                                    "event": event_type,
+                                }
+                            )
                     elif event_type == "NONE":
                         logger.debug("NOOP for memory")
                 except Exception as e:
@@ -619,9 +637,7 @@ class ClaraMemory(MemoryBase):
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
             future_memories = executor.submit(self._get_all_from_vector_store, effective_filters, limit)
-            future_graph = (
-                executor.submit(self.graph.get_all, effective_filters, limit) if self.enable_graph else None
-            )
+            future_graph = executor.submit(self.graph.get_all, effective_filters, limit) if self.enable_graph else None
 
             futures = [future_memories, future_graph] if future_graph else [future_memories]
             concurrent.futures.wait(futures)
@@ -703,12 +719,9 @@ class ClaraMemory(MemoryBase):
         )
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            future_memories = executor.submit(
-                self._search_vector_store, query, effective_filters, limit, threshold
-            )
+            future_memories = executor.submit(self._search_vector_store, query, effective_filters, limit, threshold)
             future_graph = (
-                executor.submit(self.graph.search, query, effective_filters, limit)
-                if self.enable_graph else None
+                executor.submit(self.graph.search, query, effective_filters, limit) if self.enable_graph else None
             )
 
             futures = [future_memories, future_graph] if future_graph else [future_memories]
@@ -1016,12 +1029,14 @@ class ClaraMemory(MemoryBase):
 # Simplified config classes (for internal use - full config in config.py)
 class ProviderConfig(BaseModel):
     """Configuration for a provider."""
+
     provider: str
     config: Dict[str, Any]
 
 
 class ClaraMemoryConfig(BaseModel):
     """Configuration for ClaraMemory."""
+
     vector_store: ProviderConfig
     llm: ProviderConfig
     embedder: ProviderConfig

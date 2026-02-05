@@ -23,23 +23,25 @@ def register(api: PluginAPI):
     api.info(f"Registering example plugin: {api.id}")
 
     # Register a tool using factory pattern
-    api.register_tool(lambda ctx: [
-        ToolDef(
-            name="example_echo",
-            description="Echo back the provided message",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "message": {
-                        "type": "string",
-                        "description": "Message to echo back",
-                    }
+    api.register_tool(
+        lambda ctx: [
+            ToolDef(
+                name="example_echo",
+                description="Echo back the provided message",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "message": {
+                            "type": "string",
+                            "description": "Message to echo back",
+                        }
+                    },
+                    "required": ["message"],
                 },
-                "required": ["message"],
-            },
-            handler=_make_echo_handler(api),
-        )
-    ])
+                handler=_make_echo_handler(api),
+            )
+        ]
+    )
 
     # Register a hook for tool execution
     async def on_tool_end(tool_name: str, result: str, **kwargs):
@@ -59,6 +61,7 @@ def _make_echo_handler(api: PluginAPI):
     Returns:
         Async tool handler function
     """
+
     async def handler(args: dict, ctx: ToolContext) -> str:
         message = args.get("message", "")
         api.info(f"Echoing: {message} for user {ctx.user_id}")

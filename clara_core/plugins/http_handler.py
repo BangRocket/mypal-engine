@@ -76,10 +76,7 @@ def create_tool_router(prefix: str = ""):
     try:
         from fastapi import APIRouter, HTTPException, Query
     except ImportError:
-        raise ImportError(
-            "FastAPI is required for HTTP tool handler. "
-            "Install it with: pip install fastapi"
-        )
+        raise ImportError("FastAPI is required for HTTP tool handler. " "Install it with: pip install fastapi")
 
     router = APIRouter(tags=["tools"])
 
@@ -242,10 +239,7 @@ def create_app(
     try:
         from fastapi import FastAPI
     except ImportError:
-        raise ImportError(
-            "FastAPI is required for HTTP tool handler. "
-            "Install it with: pip install fastapi"
-        )
+        raise ImportError("FastAPI is required for HTTP tool handler. " "Install it with: pip install fastapi")
 
     app = FastAPI(
         title=title,
@@ -282,10 +276,7 @@ def run_standalone(host: str = "127.0.0.1", port: int = 8001):
     try:
         import uvicorn
     except ImportError:
-        raise ImportError(
-            "Uvicorn is required to run standalone. "
-            "Install it with: pip install uvicorn"
-        )
+        raise ImportError("Uvicorn is required to run standalone. " "Install it with: pip install uvicorn")
 
     app = create_app()
     uvicorn.run(app, host=host, port=port)

@@ -100,9 +100,7 @@ class MCPServerManager:
 
             self._initialized = True
             connected = sum(1 for v in results.values() if v)
-            logger.info(
-                f"[MCP] Initialization complete: {connected}/{len(results)} servers connected"
-            )
+            logger.info(f"[MCP] Initialization complete: {connected}/{len(results)} servers connected")
             return results
 
     def _get_current_status(self) -> dict[str, bool]:
@@ -347,10 +345,7 @@ class MCPServerManager:
         location = self.find_tool(tool_name)
         if not location:
             available = list(self.get_namespaced_tools().keys())
-            return (
-                f"Error: Tool '{tool_name}' not found. "
-                f"Available MCP tools: {', '.join(available[:10])}"
-            )
+            return f"Error: Tool '{tool_name}' not found. " f"Available MCP tools: {', '.join(available[:10])}"
 
         server_name, actual_tool_name = location
 
@@ -473,14 +468,8 @@ class MCPServerManager:
             all_configs = list_all_server_configs()
 
             # Build sets of enabled servers
-            enabled_local = {
-                c.name for c in all_configs
-                if isinstance(c, LocalServerConfig) and c.enabled
-            }
-            enabled_remote = {
-                c.name for c in all_configs
-                if isinstance(c, RemoteServerConfig) and c.enabled
-            }
+            enabled_local = {c.name for c in all_configs if isinstance(c, LocalServerConfig) and c.enabled}
+            enabled_remote = {c.name for c in all_configs if isinstance(c, RemoteServerConfig) and c.enabled}
 
             # Handle local servers
             running_local = set(self._local._servers.keys())

@@ -38,9 +38,7 @@ def get_clara_mcp_binary() -> str:
     elif debug_binary.exists():
         return str(debug_binary)
     else:
-        raise FileNotFoundError(
-            "clara-mcp-server binary not found. Run: cd clara-mcp-server && cargo build --release"
-        )
+        raise FileNotFoundError("clara-mcp-server binary not found. Run: cd clara-mcp-server && cargo build --release")
 
 
 def init_clara_mcp_server():

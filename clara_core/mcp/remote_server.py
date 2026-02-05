@@ -169,9 +169,7 @@ class RemoteServerConnection:
                 )
 
             # Enter session context
-            self._session = await self._exit_stack.enter_async_context(
-                ClientSession(read_stream, write_stream)
-            )
+            self._session = await self._exit_stack.enter_async_context(ClientSession(read_stream, write_stream))
 
             # Initialize the connection
             await self._session.initialize()
@@ -183,9 +181,7 @@ class RemoteServerConnection:
             self.state.reconnect_attempts = 0
             self._update_config_status("running")
 
-            logger.info(
-                f"[MCP:{self.name}] Connected, discovered {len(self.state.tools)} tools"
-            )
+            logger.info(f"[MCP:{self.name}] Connected, discovered {len(self.state.tools)} tools")
             return True
 
         except Exception as e:
@@ -222,11 +218,7 @@ class RemoteServerConnection:
                 MCPTool(
                     name=tool.name,
                     description=tool.description or "",
-                    input_schema=(
-                        tool.inputSchema
-                        if tool.inputSchema
-                        else {"type": "object", "properties": {}}
-                    ),
+                    input_schema=(tool.inputSchema if tool.inputSchema else {"type": "object", "properties": {}}),
                 )
                 for tool in tools_result.tools
             ]
@@ -239,9 +231,7 @@ class RemoteServerConnection:
             if self._on_tools_changed:
                 self._on_tools_changed(self.name, self.state.tools)
 
-            logger.debug(
-                f"[MCP:{self.name}] Discovered tools: {[t.name for t in self.state.tools]}"
-            )
+            logger.debug(f"[MCP:{self.name}] Discovered tools: {[t.name for t in self.state.tools]}")
 
         except Exception as e:
             logger.warning(f"[MCP:{self.name}] Failed to discover tools: {e}")
@@ -323,15 +313,9 @@ class RemoteServerConnection:
             if result.structuredContent:
                 import json
 
-                output_parts.append(
-                    f"\nStructured: {json.dumps(result.structuredContent, indent=2)}"
-                )
+                output_parts.append(f"\nStructured: {json.dumps(result.structuredContent, indent=2)}")
 
-            return (
-                "\n".join(output_parts)
-                if output_parts
-                else "Tool executed successfully (no output)"
-            )
+            return "\n".join(output_parts) if output_parts else "Tool executed successfully (no output)"
 
         except Exception as e:
             error_msg = str(e)
@@ -348,11 +332,7 @@ class RemoteServerConnection:
                         for content in result.content:
                             if hasattr(content, "text"):
                                 output_parts.append(content.text)
-                        return (
-                            "\n".join(output_parts)
-                            if output_parts
-                            else "Tool executed successfully"
-                        )
+                        return "\n".join(output_parts) if output_parts else "Tool executed successfully"
                     except Exception as retry_error:
                         return f"Error calling tool '{tool_name}': {retry_error}"
 
@@ -383,9 +363,7 @@ class RemoteServerConnection:
             "status": self.config.status,
         }
 
-    def _update_config_status(
-        self, status: str, error: str | None = None
-    ) -> None:
+    def _update_config_status(self, status: str, error: str | None = None) -> None:
         """Update the config status and save."""
         self.config.status = status
         if error:
@@ -544,9 +522,7 @@ class RemoteServerManager:
             result[namespaced_name] = tool
         return result
 
-    async def call_tool(
-        self, server_name: str, tool_name: str, arguments: dict[str, Any]
-    ) -> str:
+    async def call_tool(self, server_name: str, tool_name: str, arguments: dict[str, Any]) -> str:
         """Call a tool on a specific server.
 
         Args:
@@ -595,16 +571,18 @@ class RemoteServerManager:
             if connection:
                 statuses.append(connection.get_status())
             else:
-                statuses.append({
-                    "name": config.name,
-                    "type": "remote",
-                    "connected": False,
-                    "enabled": config.enabled,
-                    "server_url": config.server_url,
-                    "tool_count": config.tool_count,
-                    "status": config.status,
-                    "last_error": config.last_error,
-                })
+                statuses.append(
+                    {
+                        "name": config.name,
+                        "type": "remote",
+                        "connected": False,
+                        "enabled": config.enabled,
+                        "server_url": config.server_url,
+                        "tool_count": config.tool_count,
+                        "status": config.status,
+                        "last_error": config.last_error,
+                    }
+                )
 
         return statuses
 
@@ -663,9 +641,7 @@ def add_remote_server(
     return config
 
 
-def add_remote_server_from_standard_config(
-    config_data: dict[str, Any]
-) -> list[RemoteServerConfig]:
+def add_remote_server_from_standard_config(config_data: dict[str, Any]) -> list[RemoteServerConfig]:
     """Add remote servers from standard MCP config format.
 
     Args:

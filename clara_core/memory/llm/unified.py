@@ -140,7 +140,7 @@ class UnifiedLLM(LLMBase):
         """Generate a response using unified providers.
 
         Args:
-            messages: List of message dictionaries.
+            messages: List of message dicts or typed Message objects.
             response_format: Optional response format (not widely supported).
             tools: Optional list of tools for function calling.
             tool_choice: Optional tool choice specification.
@@ -148,9 +148,18 @@ class UnifiedLLM(LLMBase):
         Returns:
             String content for text responses, or {"tool_calls": [...]} for tools.
         """
+        # Convert dict messages to typed Messages at the boundary.
+        # Providers expect list[Message] after the Phase 3 migration.
+        from clara_core.llm.messages import Message, messages_from_dicts
+
+        if messages and isinstance(messages[0], dict):
+            typed_messages = messages_from_dicts(messages)
+        else:
+            typed_messages = messages  # Already typed
+
         if tools:
             # Use tool calling
-            response = self._provider.complete_with_tools(messages, tools, self._llm_config)
+            response = self._provider.complete_with_tools(typed_messages, tools, self._llm_config)
 
             if response.has_tool_calls:
                 return {"tool_calls": [{"name": tc.name, "arguments": tc.arguments} for tc in response.tool_calls]}
@@ -158,4 +167,4 @@ class UnifiedLLM(LLMBase):
             return response.content or ""
 
         # Simple completion
-        return self._provider.complete(messages, self._llm_config)
+        return self._provider.complete(typed_messages, self._llm_config)

@@ -13,11 +13,13 @@ from clara_core.memory.vector.base import VectorStoreBase
 try:
     from psycopg.types.json import Json
     from psycopg_pool import ConnectionPool
+
     PSYCOPG_VERSION = 3
 except ImportError:
     try:
         from psycopg2.extras import Json, execute_values
         from psycopg2.pool import ThreadedConnectionPool as ConnectionPool
+
         PSYCOPG_VERSION = 2
     except ImportError:
         raise ImportError(
@@ -30,6 +32,7 @@ logger = logging.getLogger("clara.memory.vector.pgvector")
 
 class OutputData(BaseModel):
     """Output data model for vector search results."""
+
     id: Optional[str]
     score: Optional[float]
     payload: Optional[dict]
@@ -84,9 +87,10 @@ class PGVector(VectorStoreBase):
             self.connection_pool = connection_pool
         elif connection_string:
             if sslmode:
-                if 'sslmode=' in connection_string:
+                if "sslmode=" in connection_string:
                     import re
-                    connection_string = re.sub(r'sslmode=[^ ]*', f'sslmode={sslmode}', connection_string)
+
+                    connection_string = re.sub(r"sslmode=[^ ]*", f"sslmode={sslmode}", connection_string)
                 else:
                     connection_string = f"{connection_string} sslmode={sslmode}"
         else:
@@ -96,7 +100,9 @@ class PGVector(VectorStoreBase):
 
         if self.connection_pool is None:
             if PSYCOPG_VERSION == 3:
-                self.connection_pool = ConnectionPool(conninfo=connection_string, min_size=minconn, max_size=maxconn, open=True)
+                self.connection_pool = ConnectionPool(
+                    conninfo=connection_string, min_size=minconn, max_size=maxconn, open=True
+                )
             else:
                 self.connection_pool = ConnectionPool(minconn=minconn, maxconn=maxconn, dsn=connection_string)
 
@@ -285,11 +291,7 @@ class PGVector(VectorStoreBase):
             result = cur.fetchone()
         return {"name": result[0], "count": result[1], "size": result[2]}
 
-    def list(
-        self,
-        filters: Optional[dict] = None,
-        limit: Optional[int] = 100
-    ) -> List[OutputData]:
+    def list(self, filters: Optional[dict] = None, limit: Optional[int] = 100) -> List[OutputData]:
         """List all vectors in a collection."""
         filter_conditions = []
         filter_params = []

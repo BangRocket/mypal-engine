@@ -96,6 +96,7 @@ class MemoryGraph:
         if self._cache is None and self._cache_enabled:
             try:
                 from clara_core.memory.cache.graph_cache import GraphCache
+
                 self._cache = GraphCache.get_instance()
             except Exception as e:
                 logger.debug(f"Graph cache unavailable: {e}")
@@ -278,8 +279,7 @@ class MemoryGraph:
         results = self._execute(query, parameters=params)
 
         final_results = [
-            {"source": r["source"], "relationship": r["relationship"], "target": r["target"]}
-            for r in results
+            {"source": r["source"], "relationship": r["relationship"], "target": r["target"]} for r in results
         ]
 
         # Cache results
@@ -383,10 +383,11 @@ class MemoryGraph:
             results = []
             for match_fragment in [
                 f"(n)-[r]->(m {self.node_label} {{{node_props_str}}}) WITH n as src, r, m as dst, similarity",
-                f"(m {self.node_label} {{{node_props_str}}})-[r]->(n) WITH m as src, r, n as dst, similarity"
+                f"(m {self.node_label} {{{node_props_str}}})-[r]->(n) WITH m as src, r, n as dst, similarity",
             ]:
-                results.extend(self._execute(
-                    f"""
+                results.extend(
+                    self._execute(
+                        f"""
                     MATCH (n {self.node_label} {{{node_props_str}}})
                     WHERE n.embedding IS NOT NULL
                     WITH n, array_cosine_similarity(n.embedding, CAST($n_embedding,'FLOAT[{self.embedding_dims}]')) AS similarity
@@ -402,8 +403,9 @@ class MemoryGraph:
                         similarity
                     LIMIT $limit
                     """,
-                    parameters=params
-                ))
+                        parameters=params,
+                    )
+                )
 
             # Sort and limit since Kuzu doesn't support sort over unions
             result_relations.extend(sorted(results, key=lambda x: x["similarity"], reverse=True)[:limit])
@@ -533,17 +535,21 @@ class MemoryGraph:
                 ON MATCH SET r.mentions = coalesce(r.mentions, 0) + 1
                 RETURN source.name AS source, r.name AS relationship, destination.name AS target
                 """
-                params.update({
-                    "src_table": source_node[0]["id"]["table"],
-                    "src_offset": source_node[0]["id"]["offset"],
-                    "dst_table": dest_node[0]["id"]["table"],
-                    "dst_offset": dest_node[0]["id"]["offset"],
-                })
+                params.update(
+                    {
+                        "src_table": source_node[0]["id"]["table"],
+                        "src_offset": source_node[0]["id"]["offset"],
+                        "dst_table": dest_node[0]["id"]["table"],
+                        "dst_offset": dest_node[0]["id"]["offset"],
+                    }
+                )
             elif source_node:
                 # Source exists, create destination
-                merge_props_str = ", ".join(["name: $dest_name", "user_id: $user_id"] +
-                                            (["agent_id: $agent_id"] if agent_id else []) +
-                                            (["run_id: $run_id"] if run_id else []))
+                merge_props_str = ", ".join(
+                    ["name: $dest_name", "user_id: $user_id"]
+                    + (["agent_id: $agent_id"] if agent_id else [])
+                    + (["run_id: $run_id"] if run_id else [])
+                )
                 cypher = f"""
                 MATCH (source) WHERE id(source) = internal_id($table_id, $offset_id)
                 SET source.mentions = coalesce(source.mentions, 0) + 1
@@ -561,17 +567,21 @@ class MemoryGraph:
                 ON MATCH SET r.mentions = coalesce(r.mentions, 0) + 1
                 RETURN source.name AS source, r.name AS relationship, destination.name AS target
                 """
-                params.update({
-                    "table_id": source_node[0]["id"]["table"],
-                    "offset_id": source_node[0]["id"]["offset"],
-                    "dest_name": destination,
-                    "dest_embedding": dest_embedding,
-                })
+                params.update(
+                    {
+                        "table_id": source_node[0]["id"]["table"],
+                        "offset_id": source_node[0]["id"]["offset"],
+                        "dest_name": destination,
+                        "dest_embedding": dest_embedding,
+                    }
+                )
             elif dest_node:
                 # Destination exists, create source
-                merge_props_str = ", ".join(["name: $source_name", "user_id: $user_id"] +
-                                            (["agent_id: $agent_id"] if agent_id else []) +
-                                            (["run_id: $run_id"] if run_id else []))
+                merge_props_str = ", ".join(
+                    ["name: $source_name", "user_id: $user_id"]
+                    + (["agent_id: $agent_id"] if agent_id else [])
+                    + (["run_id: $run_id"] if run_id else [])
+                )
                 cypher = f"""
                 MATCH (destination) WHERE id(destination) = internal_id($table_id, $offset_id)
                 SET destination.mentions = coalesce(destination.mentions, 0) + 1
@@ -589,20 +599,26 @@ class MemoryGraph:
                 ON MATCH SET r.mentions = coalesce(r.mentions, 0) + 1
                 RETURN source.name AS source, r.name AS relationship, destination.name AS target
                 """
-                params.update({
-                    "table_id": dest_node[0]["id"]["table"],
-                    "offset_id": dest_node[0]["id"]["offset"],
-                    "source_name": source,
-                    "source_embedding": source_embedding,
-                })
+                params.update(
+                    {
+                        "table_id": dest_node[0]["id"]["table"],
+                        "offset_id": dest_node[0]["id"]["offset"],
+                        "source_name": source,
+                        "source_embedding": source_embedding,
+                    }
+                )
             else:
                 # Neither exists, create both
-                source_props_str = ", ".join(["name: $source_name", "user_id: $user_id"] +
-                                             (["agent_id: $agent_id"] if agent_id else []) +
-                                             (["run_id: $run_id"] if run_id else []))
-                dest_props_str = ", ".join(["name: $dest_name", "user_id: $user_id"] +
-                                           (["agent_id: $agent_id"] if agent_id else []) +
-                                           (["run_id: $run_id"] if run_id else []))
+                source_props_str = ", ".join(
+                    ["name: $source_name", "user_id: $user_id"]
+                    + (["agent_id: $agent_id"] if agent_id else [])
+                    + (["run_id: $run_id"] if run_id else [])
+                )
+                dest_props_str = ", ".join(
+                    ["name: $dest_name", "user_id: $user_id"]
+                    + (["agent_id: $agent_id"] if agent_id else [])
+                    + (["run_id: $run_id"] if run_id else [])
+                )
                 cypher = f"""
                 MERGE (source {self.node_label} {{{source_props_str}}})
                 ON CREATE SET
@@ -625,12 +641,14 @@ class MemoryGraph:
                 ON MATCH SET r.mentions = coalesce(r.mentions, 0) + 1
                 RETURN source.name AS source, r.name AS relationship, destination.name AS target
                 """
-                params.update({
-                    "source_name": source,
-                    "dest_name": destination,
-                    "source_embedding": source_embedding,
-                    "dest_embedding": dest_embedding,
-                })
+                params.update(
+                    {
+                        "source_name": source,
+                        "dest_name": destination,
+                        "source_embedding": source_embedding,
+                        "dest_embedding": dest_embedding,
+                    }
+                )
 
             result = self._execute(cypher, parameters=params)
             results.append(result)

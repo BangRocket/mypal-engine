@@ -15,6 +15,8 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
+from clara_core.llm.messages import AssistantMessage, SystemMessage, UserMessage
+from clara_core.llm.messages import Message as LLMMessage
 from config.logging import get_logger
 from db import SessionLocal
 from db.models import Message
@@ -495,21 +497,24 @@ class MessageProcessor:
 
         # Add gateway context
         gateway_context = self._build_gateway_context(request, is_dm, participants)
-        messages.insert(1, {"role": "system", "content": gateway_context})
+        messages.insert(1, SystemMessage(content=gateway_context))
 
         # Add fired intentions as reminders
         if fired_intentions:
             intention_text = self._memory_manager.format_intentions_for_prompt(fired_intentions)
             if intention_text:
-                messages.insert(2, {"role": "system", "content": intention_text})
+                messages.insert(2, SystemMessage(content=intention_text))
 
         # Add reply chain if present
         if request.reply_chain:
-            chain_messages = []
+            chain_messages: list[LLMMessage] = []
             for msg in request.reply_chain:
                 role = msg.get("role", "user")
                 content = msg.get("content", "")
-                chain_messages.append({"role": role, "content": content})
+                if role == "assistant":
+                    chain_messages.append(AssistantMessage(content=content))
+                else:
+                    chain_messages.append(UserMessage(content=content))
 
             # Insert before the current message
             messages = messages[:-1] + chain_messages + [messages[-1]]

@@ -303,10 +303,7 @@ class AdapterManager:
                 self.adapters[name].state = AdapterState.DISABLED
 
         # Determine which adapters to start
-        to_start = adapter_names if adapter_names else [
-            name for name, ap in self.adapters.items()
-            if ap.config.enabled
-        ]
+        to_start = adapter_names if adapter_names else [name for name, ap in self.adapters.items() if ap.config.enabled]
 
         # Start requested adapters
         for name in to_start:
@@ -360,9 +357,7 @@ class AdapterManager:
         # Check required environment variables
         env_ok, missing = self.check_adapter_env(name)
         if not env_ok:
-            logger.error(
-                f"Adapter {name} missing required environment variables: {', '.join(missing)}"
-            )
+            logger.error(f"Adapter {name} missing required environment variables: {', '.join(missing)}")
             ap.state = AdapterState.FAILED
             return False
 
@@ -566,9 +561,7 @@ class AdapterManager:
                     if exit_code is not None:
                         ap.last_exit_code = exit_code
                         ap.state = AdapterState.STOPPED
-                        logger.warning(
-                            f"Adapter {name} exited with code {exit_code}"
-                        )
+                        logger.warning(f"Adapter {name} exited with code {exit_code}")
 
                         # Clean up PID file
                         pidfile = get_adapter_pidfile(name)
@@ -581,8 +574,7 @@ class AdapterManager:
                         if should_restart:
                             # Update restart tracking
                             now = time.time()
-                            if ap.first_restart_time is None or \
-                               now - ap.first_restart_time > ap.config.reset_window:
+                            if ap.first_restart_time is None or now - ap.first_restart_time > ap.config.reset_window:
                                 ap.first_restart_time = now
                                 ap.restart_count = 0
 
@@ -637,9 +629,7 @@ class AdapterManager:
 
         return False
 
-    async def _read_output(
-        self, name: str, process: subprocess.Popen
-    ) -> None:
+    async def _read_output(self, name: str, process: subprocess.Popen) -> None:
         """Read and log adapter output.
 
         Args:
@@ -654,16 +644,12 @@ class AdapterManager:
 
         # Pattern to match log format: "HH:MM:SS LEVEL     [logger] message"
         # Level is padded to 8 chars, logger name is in brackets
-        log_pattern = re.compile(
-            r"^(\d{2}:\d{2}:\d{2})\s+(\w+)\s+\[([^\]]+)\]\s*(.*)$"
-        )
+        log_pattern = re.compile(r"^(\d{2}:\d{2}:\d{2})\s+(\w+)\s+\[([^\]]+)\]\s*(.*)$")
         adapter_logger = get_logger(f"adapter.{name}")
 
         try:
             while True:
-                line = await asyncio.get_event_loop().run_in_executor(
-                    None, process.stdout.readline
-                )
+                line = await asyncio.get_event_loop().run_in_executor(None, process.stdout.readline)
                 if not line:
                     break
                 line_str = line.decode("utf-8", errors="replace").rstrip()

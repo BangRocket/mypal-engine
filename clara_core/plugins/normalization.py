@@ -114,8 +114,7 @@ class ToolNameNormalizer:
             existing = self._alias_to_canonical.get(normalized_alias)
             if existing and existing != canonical_name and not overwrite:
                 logger.warning(
-                    f"Alias '{alias}' already maps to '{existing}', "
-                    f"skipping registration for '{canonical_name}'"
+                    f"Alias '{alias}' already maps to '{existing}', " f"skipping registration for '{canonical_name}'"
                 )
                 continue
 
@@ -127,10 +126,7 @@ class ToolNameNormalizer:
         # Also map canonical name to itself for easy lookup
         self._alias_to_canonical[canonical_name] = canonical_name
 
-        logger.debug(
-            f"Registered aliases for '{canonical_name}': "
-            f"{self._aliases[canonical_name]}"
-        )
+        logger.debug(f"Registered aliases for '{canonical_name}': " f"{self._aliases[canonical_name]}")
 
     def unregister_aliases(self, canonical_name: str) -> bool:
         """Remove all aliases for a canonical name.

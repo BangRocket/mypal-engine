@@ -18,6 +18,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from clara_core.llm.messages import SystemMessage, UserMessage
+
 logger = logging.getLogger(__name__)
 
 
@@ -122,15 +124,14 @@ class MCPMemoryIntegration:
 
             # Store to mem0 with MCP-specific metadata
             messages = [
-                {
-                    "role": "system",
-                    "content": (
+                SystemMessage(
+                    content=(
                         "The user successfully used an MCP tool. Extract useful patterns "
                         "about how they use tools for future reference. Focus on the task, "
                         "tool choice, and any notable argument patterns."
                     ),
-                },
-                {"role": "user", "content": content},
+                ),
+                UserMessage(content=content),
             ]
 
             result = ROOK.add(
@@ -147,10 +148,7 @@ class MCPMemoryIntegration:
 
             if isinstance(result, dict) and result.get("results"):
                 self._last_stored[cache_key] = now
-                logger.info(
-                    f"[MCPMemory] Stored {len(result['results'])} memories "
-                    f"for {server_name}__{tool_name}"
-                )
+                logger.info(f"[MCPMemory] Stored {len(result['results'])} memories " f"for {server_name}__{tool_name}")
                 return True
 
             return False
@@ -197,9 +195,7 @@ class MCPMemoryIntegration:
 
         return " ".join(parts)
 
-    def _extract_notable_arguments(
-        self, arguments: dict[str, Any], max_len: int = 100
-    ) -> str | None:
+    def _extract_notable_arguments(self, arguments: dict[str, Any], max_len: int = 100) -> str | None:
         """Extract notable arguments for pattern learning.
 
         Filters out trivial arguments and formats the rest.
@@ -258,11 +254,8 @@ class MCPMemoryIntegration:
             )
 
             messages = [
-                {
-                    "role": "system",
-                    "content": "Extract the user's tool preference for future reference.",
-                },
-                {"role": "user", "content": content},
+                SystemMessage(content="Extract the user's tool preference for future reference."),
+                UserMessage(content=content),
             ]
 
             result = ROOK.add(
@@ -337,12 +330,14 @@ class MCPMemoryIntegration:
                 metadata = r.get("metadata", {})
                 # Only include MCP-related memories
                 if metadata.get("memory_type", "").startswith("mcp_"):
-                    memories.append({
-                        "memory": r.get("memory", ""),
-                        "server_name": metadata.get("server_name"),
-                        "tool_name": metadata.get("tool_name"),
-                        "relevance_score": r.get("score", 0),
-                    })
+                    memories.append(
+                        {
+                            "memory": r.get("memory", ""),
+                            "server_name": metadata.get("server_name"),
+                            "tool_name": metadata.get("tool_name"),
+                            "relevance_score": r.get("score", 0),
+                        }
+                    )
 
             return memories
 
@@ -391,12 +386,14 @@ class MCPMemoryIntegration:
                 if metadata.get("memory_type") == "mcp_preference":
                     if server_name and metadata.get("server_name") != server_name:
                         continue
-                    preferences.append({
-                        "memory": r.get("memory", ""),
-                        "server_name": metadata.get("server_name"),
-                        "tool_name": metadata.get("tool_name"),
-                        "preference_type": metadata.get("preference_type"),
-                    })
+                    preferences.append(
+                        {
+                            "memory": r.get("memory", ""),
+                            "server_name": metadata.get("server_name"),
+                            "tool_name": metadata.get("tool_name"),
+                            "preference_type": metadata.get("preference_type"),
+                        }
+                    )
 
             return preferences
 

@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from clara_core.llm.messages import SystemMessage
 from clara_core.sentiment import analyze_sentiment
 from config.logging import get_logger
 
@@ -84,11 +85,7 @@ def track_message_sentiment(
 
 def get_conversation_sentiments(user_id: str, channel_id: str) -> list[float]:
     """Get tracked sentiments for a conversation."""
-    return (
-        _conversation_sentiments.get(user_id, {})
-        .get(channel_id, {})
-        .get("sentiments", [])
-    )
+    return _conversation_sentiments.get(user_id, {}).get(channel_id, {}).get("sentiments", [])
 
 
 def clear_conversation_sentiments(user_id: str, channel_id: str) -> None:
@@ -116,11 +113,7 @@ def compute_emotional_arc(sentiment_timeline: list[float]) -> str:
     end_avg = sum(sentiment_timeline[-3:]) / 3
 
     # Calculate variance to detect volatility
-    variance = (
-        statistics.variance(sentiment_timeline)
-        if len(sentiment_timeline) > 1
-        else 0
-    )
+    variance = statistics.variance(sentiment_timeline) if len(sentiment_timeline) > 1 else 0
 
     # Classify arc based on trajectory and volatility
     if variance > 0.3:
@@ -204,7 +197,7 @@ def finalize_conversation_emotional_context(
 
         try:
             ROOK.add(
-                [{"role": "system", "content": memory_text}],
+                [SystemMessage(content=memory_text)],
                 user_id=user_id,
                 agent_id=agent_id,
                 metadata=metadata,
@@ -212,13 +205,16 @@ def finalize_conversation_emotional_context(
             logger.info(f"Stored emotional context for {user_id}: {arc} arc, {energy} energy")
             # Notify via callback if registered
             if on_event:
-                on_event("emotional_context_stored", {
-                    "user_id": user_id,
-                    "arc": arc,
-                    "energy": energy,
-                    "channel_name": channel_name,
-                    "is_dm": is_dm,
-                })
+                on_event(
+                    "emotional_context_stored",
+                    {
+                        "user_id": user_id,
+                        "arc": arc,
+                        "energy": energy,
+                        "channel_name": channel_name,
+                        "is_dm": is_dm,
+                    },
+                )
         except Exception as e:
             logger.error(f"Error storing emotional context: {e}", exc_info=True)
 
@@ -246,16 +242,10 @@ def _format_emotional_memory(summary: EmotionalSummary) -> str:
     topic = summary.topic_summary or "general conversation"
     energy = summary.dominant_emotion or "neutral"
 
-    return (
-        f"Conversation about {topic}. "
-        f"They {arc_desc} throughout. "
-        f"Ended with {energy} energy."
-    )
+    return f"Conversation about {topic}. " f"They {arc_desc} throughout. " f"Ended with {energy} energy."
 
 
 def has_pending_emotional_context(user_id: str, channel_id: str) -> bool:
     """Check if there's unfinalized emotional context for a conversation."""
     sentiments = get_conversation_sentiments(user_id, channel_id)
     return len(sentiments) > 0
-
-

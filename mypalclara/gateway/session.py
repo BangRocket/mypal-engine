@@ -326,10 +326,7 @@ class SessionManager:
         removed = 0
 
         async with self._lock:
-            stale_keys = [
-                key for key, session in self._sessions.items()
-                if session.last_activity < cutoff
-            ]
+            stale_keys = [key for key, session in self._sessions.items() if session.last_activity < cutoff]
 
             for key in stale_keys:
                 session = self._sessions[key]
@@ -381,10 +378,7 @@ class SessionManager:
             # Extract topics from conversation
             await self._extract_session_topics(session, channel_name, is_dm)
 
-            logger.debug(
-                f"Finalized emotional context for user {session.user_id} "
-                f"in channel {session.channel_id}"
-            )
+            logger.debug(f"Finalized emotional context for user {session.user_id} " f"in channel {session.channel_id}")
 
         except ImportError:
             logger.debug("Emotional context module not available")
@@ -420,6 +414,7 @@ class SessionManager:
             # Create async LLM callable
             async def llm_call(messages):
                 from clara_core import ModelTier, make_llm
+
                 llm = make_llm(tier=ModelTier.LOW)
                 return llm(messages)
 

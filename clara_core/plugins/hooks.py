@@ -266,12 +266,8 @@ class MCPServerErrorEvent:
 
 
 # Hook handler type aliases
-MessageReceivedHandler: TypeAlias = Callable[
-    [MessageReceivedEvent], Awaitable[Any]
-]
-MessageSendingHandler: TypeAlias = Callable[
-    [MessageSendingEvent], Awaitable[MessageSendingResult | None]
-]
+MessageReceivedHandler: TypeAlias = Callable[[MessageReceivedEvent], Awaitable[Any]]
+MessageSendingHandler: TypeAlias = Callable[[MessageSendingEvent], Awaitable[MessageSendingResult | None]]
 MessageSentHandler: TypeAlias = Callable[[MessageSentEvent], Awaitable[Any]]
 ToolStartHandler: TypeAlias = Callable[[ToolStartEvent], Awaitable[Any]]
 ToolEndHandler: TypeAlias = Callable[[ToolEndEvent], Awaitable[Any]]

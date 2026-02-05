@@ -43,21 +43,39 @@ DEFAULT_POLICY = {
     "always_load": ["profile_bio", "interaction_style", "project_seed"],
     "conditional_load": {
         "project_context:creative_portfolio": [
-            "game", "story", "plot", "godot", "engine", "puzzle",
-            "ARG", "memento", "clara", "project", "creative"
+            "game",
+            "story",
+            "plot",
+            "godot",
+            "engine",
+            "puzzle",
+            "ARG",
+            "memento",
+            "clara",
+            "project",
+            "creative",
         ],
         "restricted:sensitive": [
-            "anxiety", "depression", "adhd", "burnout", "overwhelmed",
-            "meds", "therapy", "stress", "mental", "tired", "exhausted"
-        ]
+            "anxiety",
+            "depression",
+            "adhd",
+            "burnout",
+            "overwhelmed",
+            "meds",
+            "therapy",
+            "stress",
+            "mental",
+            "tired",
+            "exhausted",
+        ],
     },
     "top_k": {
         "profile_bio": 12,
         "interaction_style": 10,
         "project_seed": 12,
         "project_context:creative_portfolio": 18,
-        "restricted:sensitive": 6
-    }
+        "restricted:sensitive": 6,
+    },
 }
 
 EXTRACTION_PROMPT = """You are a memory extraction system. Your task is to extract atomic, factual memories from user profile text and categorize them into specific namespaces.
@@ -133,7 +151,7 @@ def extract_memories_with_llm(profile_text: str) -> dict:
 
     messages = [
         {"role": "system", "content": "You are a precise memory extraction system. Output only valid JSON."},
-        {"role": "user", "content": prompt}
+        {"role": "user", "content": prompt},
     ]
 
     print("[bootstrap] Extracting memories with LLM...")
@@ -142,7 +160,7 @@ def extract_memories_with_llm(profile_text: str) -> dict:
     # Parse JSON from response
     try:
         # Try to find JSON in response
-        json_match = re.search(r'\{[\s\S]*\}', response)
+        json_match = re.search(r"\{[\s\S]*\}", response)
         if json_match:
             return json.loads(json_match.group())
         return json.loads(response)
@@ -156,9 +174,9 @@ def normalize_key(key: str) -> str:
     """Normalize a key to be stable and deterministic."""
     # Lowercase, replace spaces with dots, remove special chars
     key = key.lower().strip()
-    key = re.sub(r'[^a-z0-9._]', '.', key)
-    key = re.sub(r'\.+', '.', key)  # Collapse multiple dots
-    key = key.strip('.')
+    key = re.sub(r"[^a-z0-9._]", ".", key)
+    key = re.sub(r"\.+", ".", key)  # Collapse multiple dots
+    key = key.strip(".")
     return key
 
 
@@ -194,11 +212,7 @@ def validate_memories(memories: dict) -> dict:
             # Clamp confidence
             confidence = max(0.0, min(1.0, confidence))
 
-            validated[namespace].append({
-                "key": key,
-                "value": value,
-                "confidence": confidence
-            })
+            validated[namespace].append({"key": key, "value": value, "confidence": confidence})
 
     return validated
 
@@ -222,13 +236,13 @@ def write_json_files(memories: dict, output_dir: Path):
             continue
 
         filepath = output_dir / filename
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             json.dump(items, f, indent=2)
         print(f"[bootstrap] Wrote {len(items)} items to {filepath}")
 
     # Write memory policy
     policy_path = output_dir / "memory_policy.json"
-    with open(policy_path, 'w') as f:
+    with open(policy_path, "w") as f:
         json.dump(DEFAULT_POLICY, f, indent=2)
     print(f"[bootstrap] Wrote memory policy to {policy_path}")
 
@@ -272,48 +286,56 @@ def group_memories_for_graph(memories: dict) -> list[dict]:
         # Build a relationship-rich statement
         facts = [item["value"] for item in family_items]
         content = "Here's information about me and my family: " + ". ".join(facts)
-        groups.append({
-            "namespace": "profile_bio",
-            "category": "identity_and_family",
-            "content": content,
-            "items": family_items,
-        })
+        groups.append(
+            {
+                "namespace": "profile_bio",
+                "category": "identity_and_family",
+                "content": content,
+                "items": family_items,
+            }
+        )
 
     # Group 2: Career and skills
     career_items = [item for item in bio_items if any(k in item["key"] for k in ["career", "skill"])]
     if career_items:
         facts = [item["value"] for item in career_items]
         content = "About my career and skills: " + ". ".join(facts)
-        groups.append({
-            "namespace": "profile_bio",
-            "category": "career",
-            "content": content,
-            "items": career_items,
-        })
+        groups.append(
+            {
+                "namespace": "profile_bio",
+                "category": "career",
+                "content": content,
+                "items": career_items,
+            }
+        )
 
     # Group 3: Interaction preferences (as a cohesive set)
     style_items = memories.get("interaction_style", [])
     if style_items:
         facts = [item["value"] for item in style_items]
         content = "My preferences for how Clara should interact with me: " + ". ".join(facts)
-        groups.append({
-            "namespace": "interaction_style",
-            "category": "preferences",
-            "content": content,
-            "items": style_items,
-        })
+        groups.append(
+            {
+                "namespace": "interaction_style",
+                "category": "preferences",
+                "content": content,
+                "items": style_items,
+            }
+        )
 
     # Group 4: Project seed principles
     seed_items = memories.get("project_seed", [])
     if seed_items:
         facts = [item["value"] for item in seed_items]
         content = "Core principles for how the assistant should operate: " + ". ".join(facts)
-        groups.append({
-            "namespace": "project_seed",
-            "category": "principles",
-            "content": content,
-            "items": seed_items,
-        })
+        groups.append(
+            {
+                "namespace": "project_seed",
+                "category": "principles",
+                "content": content,
+                "items": seed_items,
+            }
+        )
 
     # Group 5: Creative projects - group by project
     creative_items = memories.get("project_context:creative_portfolio", [])
@@ -338,36 +360,42 @@ def group_memories_for_graph(memories: dict) -> list[dict]:
         facts = [item["value"] for item in items]
         display_name = proj_name.replace("_", " ").title()
         content = f"About my game project '{display_name}': " + ". ".join(facts)
-        groups.append({
-            "namespace": "project_context:creative_portfolio",
-            "category": f"project_{proj_name}",
-            "content": content,
-            "items": items,
-        })
+        groups.append(
+            {
+                "namespace": "project_context:creative_portfolio",
+                "category": f"project_{proj_name}",
+                "content": content,
+                "items": items,
+            }
+        )
 
     # Other creative preferences
     if other_creative:
         facts = [item["value"] for item in other_creative]
         content = "My creative preferences and interests: " + ". ".join(facts)
-        groups.append({
-            "namespace": "project_context:creative_portfolio",
-            "category": "preferences",
-            "content": content,
-            "items": other_creative,
-        })
+        groups.append(
+            {
+                "namespace": "project_context:creative_portfolio",
+                "category": "preferences",
+                "content": content,
+                "items": other_creative,
+            }
+        )
 
     # Group 6: Sensitive/mental health - flag but include
     sensitive_items = memories.get("restricted:sensitive", [])
     if sensitive_items:
         facts = [item["value"] for item in sensitive_items]
         content = "Personal context about my mental health and challenges: " + ". ".join(facts)
-        groups.append({
-            "namespace": "restricted:sensitive",
-            "category": "mental_health",
-            "content": content,
-            "items": sensitive_items,
-            "sensitive": True,  # Flag it
-        })
+        groups.append(
+            {
+                "namespace": "restricted:sensitive",
+                "category": "mental_health",
+                "content": content,
+                "items": sensitive_items,
+                "sensitive": True,  # Flag it
+            }
+        )
 
     return groups
 
@@ -376,6 +404,7 @@ def link_user_to_person(user_id: str):
     """Link the mem0 user_id node to person nodes in Neo4j graph."""
     try:
         from neo4j import GraphDatabase
+
         NEO4J_URL = os.getenv("NEO4J_URL")
         NEO4J_USERNAME = os.getenv("NEO4J_USERNAME", "neo4j")
         NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
@@ -388,13 +417,16 @@ def link_user_to_person(user_id: str):
 
         with driver.session() as session:
             # Find person nodes that should be linked (joshua, josh)
-            result = session.run('''
+            result = session.run(
+                """
                 MATCH (u:__User__ {name: $user_name})
                 MATCH (p:person)
                 WHERE p.name IN ["joshua", "josh"]
                 MERGE (u)-[r:is_person]->(p)
                 RETURN p.name as linked
-            ''', user_name=user_node_name)
+            """,
+                user_name=user_node_name,
+            )
 
             linked = [record["linked"] for record in result]
             if linked:
@@ -447,7 +479,7 @@ def apply_to_mem0(memories: dict, user_id: str, dry_run: bool = False):
         try:
             messages = [
                 {"role": "user", "content": content},
-                {"role": "assistant", "content": f"I've noted this information about {category.replace('_', ' ')}."}
+                {"role": "assistant", "content": f"I've noted this information about {category.replace('_', ' ')}."},
             ]
 
             result = ROOK.add(
@@ -518,37 +550,14 @@ def consolidate_memories(memories: dict) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Extract and bootstrap memories from user profile"
-    )
+    parser = argparse.ArgumentParser(description="Extract and bootstrap memories from user profile")
+    parser.add_argument("--input", "-i", type=str, required=True, help="Input profile text file")
+    parser.add_argument("--out", "-o", type=str, default="generated/", help="Output directory for JSON files")
     parser.add_argument(
-        "--input", "-i",
-        type=str,
-        required=True,
-        help="Input profile text file"
+        "--apply", action="store_true", help="Apply memories to mem0 (without this flag, only generates JSON)"
     )
-    parser.add_argument(
-        "--out", "-o",
-        type=str,
-        default="generated/",
-        help="Output directory for JSON files"
-    )
-    parser.add_argument(
-        "--apply",
-        action="store_true",
-        help="Apply memories to mem0 (without this flag, only generates JSON)"
-    )
-    parser.add_argument(
-        "--user", "-u",
-        type=str,
-        default=os.getenv("USER_ID", "demo-user"),
-        help="User ID for mem0"
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Force regeneration even if JSON files exist"
-    )
+    parser.add_argument("--user", "-u", type=str, default=os.getenv("USER_ID", "demo-user"), help="User ID for mem0")
+    parser.add_argument("--force", action="store_true", help="Force regeneration even if JSON files exist")
 
     args = parser.parse_args()
 

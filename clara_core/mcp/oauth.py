@@ -394,9 +394,7 @@ class SmitheryOAuthClient:
                 if "expires_in" in token_data:
                     from datetime import timedelta
 
-                    expires_at = (
-                        datetime.now(timezone.utc) + timedelta(seconds=token_data["expires_in"])
-                    ).isoformat()
+                    expires_at = (datetime.now(timezone.utc) + timedelta(seconds=token_data["expires_in"])).isoformat()
 
                 self._state.tokens = OAuthTokens(
                     access_token=token_data["access_token"],
@@ -460,9 +458,7 @@ class SmitheryOAuthClient:
                 if "expires_in" in token_data:
                     from datetime import timedelta
 
-                    expires_at = (
-                        datetime.now(timezone.utc) + timedelta(seconds=token_data["expires_in"])
-                    ).isoformat()
+                    expires_at = (datetime.now(timezone.utc) + timedelta(seconds=token_data["expires_in"])).isoformat()
 
                 self._state.tokens = OAuthTokens(
                     access_token=token_data["access_token"],

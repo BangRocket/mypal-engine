@@ -136,10 +136,7 @@ class MessageRouter:
         async with self._dedup_lock:
             # Clean old entries periodically
             if len(self._seen_messages) > DEDUP_MAX_ENTRIES:
-                self._seen_messages = {
-                    fp: ts for fp, ts in self._seen_messages.items()
-                    if ts > cutoff
-                }
+                self._seen_messages = {fp: ts for fp, ts in self._seen_messages.items() if ts > cutoff}
 
             # Check if seen recently
             if fingerprint in self._seen_messages:

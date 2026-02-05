@@ -416,7 +416,9 @@ class ClaraCommands(commands.Cog):
                     )
                     await ctx.respond(embed=embed)
                 else:
-                    await ctx.respond(embed=create_error_embed("Installation Failed", response.error or "Unknown error"))
+                    await ctx.respond(
+                        embed=create_error_embed("Installation Failed", response.error or "Unknown error")
+                    )
                 return
 
             # Local mode
@@ -532,7 +534,9 @@ class ClaraCommands(commands.Cog):
                         embed=create_success_embed("Server Enabled", f"**{server}** is now enabled and running.")
                     )
                 else:
-                    await ctx.respond(embed=create_error_embed("Failed", response.error or f"Could not enable '{server}'."))
+                    await ctx.respond(
+                        embed=create_error_embed("Failed", response.error or f"Could not enable '{server}'.")
+                    )
                 return
 
             # Local mode
@@ -570,7 +574,9 @@ class ClaraCommands(commands.Cog):
                 if response.success:
                     await ctx.respond(embed=create_success_embed("Server Disabled", f"**{server}** is now disabled."))
                 else:
-                    await ctx.respond(embed=create_error_embed("Failed", response.error or f"Could not disable '{server}'."))
+                    await ctx.respond(
+                        embed=create_error_embed("Failed", response.error or f"Could not disable '{server}'.")
+                    )
                 return
 
             # Local mode
@@ -604,9 +610,13 @@ class ClaraCommands(commands.Cog):
                 response = await gateway.mcp_restart(server_name=server, timeout=60.0)
 
                 if response.success:
-                    await ctx.respond(embed=create_success_embed("Server Restarted", f"**{server}** has been restarted."))
+                    await ctx.respond(
+                        embed=create_success_embed("Server Restarted", f"**{server}** has been restarted.")
+                    )
                 else:
-                    await ctx.respond(embed=create_error_embed("Failed", response.error or f"Could not restart '{server}'."))
+                    await ctx.respond(
+                        embed=create_error_embed("Failed", response.error or f"Could not restart '{server}'.")
+                    )
                 return
 
             # Local mode
@@ -901,8 +911,7 @@ class ClaraCommands(commands.Cog):
                 await ctx.respond(
                     embed=create_success_embed(
                         "Token Set",
-                        f"Token configured for **{server}**!\n"
-                        f"Server connected with {tool_count} tools available.",
+                        f"Token configured for **{server}**!\n" f"Server connected with {tool_count} tools available.",
                     )
                 )
             else:

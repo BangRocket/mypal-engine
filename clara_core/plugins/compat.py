@@ -69,9 +69,7 @@ class ToolRegistryAdapter:
             ValueError: If tool already registered by different module
         """
         if self._plugin_registry is None:
-            logger.warning(
-                "Plugin registry not set, tool will not be registered"
-            )
+            logger.warning("Plugin registry not set, tool will not be registered")
             return
 
         from tools._base import ToolDef
@@ -227,10 +225,7 @@ class ToolRegistryAdapter:
         tool = self._plugin_registry.get_tool(tool_name)
         if not tool:
             available = list(self._plugin_registry.tools.keys())
-            return (
-                f"Error: Unknown tool '{tool_name}'. "
-                f"Available tools: {', '.join(available)}"
-            )
+            return f"Error: Unknown tool '{tool_name}'. " f"Available tools: {', '.join(available)}"
 
         try:
             return await tool.handler(arguments, context)

@@ -104,9 +104,7 @@ class Qdrant(VectorStoreBase):
         for field in common_fields:
             try:
                 self.client.create_payload_index(
-                    collection_name=self.collection_name,
-                    field_name=field,
-                    field_schema="keyword"
+                    collection_name=self.collection_name, field_name=field, field_schema="keyword"
                 )
                 logger.info(f"Created index for {field} in collection {self.collection_name}")
             except Exception as e:

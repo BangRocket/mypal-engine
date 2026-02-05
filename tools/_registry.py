@@ -123,6 +123,7 @@ class ToolRegistry:
         """Lazy-load the plugin registry to avoid circular imports."""
         if self._plugin_registry is None:
             from clara_core.plugins import get_registry
+
             self._plugin_registry = get_registry()
         return self._plugin_registry
 

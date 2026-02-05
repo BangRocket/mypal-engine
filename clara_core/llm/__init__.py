@@ -32,7 +32,6 @@ Backward Compatibility:
     - make_llm_with_tools, make_llm_with_tools_anthropic
     - make_llm_with_tools_langchain, make_llm_with_xml_tools
     - get_model_for_tier, get_base_model, get_current_tier
-    - anthropic_to_openai_response
     - generate_tool_description
 """
 
@@ -53,6 +52,17 @@ from clara_core.llm.compat import (
 
 # Core components
 from clara_core.llm.config import LLMConfig
+from clara_core.llm.messages import (
+    AssistantMessage,
+    ContentPart,
+    ContentPartType,
+    Message,
+    SystemMessage,
+    ToolResultMessage,
+    UserMessage,
+    message_from_dict,
+    messages_from_dicts,
+)
 from clara_core.llm.providers.base import LLMProvider
 from clara_core.llm.providers.langchain import (
     DirectAnthropicProvider,
@@ -71,15 +81,19 @@ from clara_core.llm.tiers import (
     get_tool_model,
 )
 from clara_core.llm.tools.formats import (
-    anthropic_to_openai_response,
     convert_message_to_anthropic,
-    convert_messages_to_langchain,
     convert_to_claude_format,
     convert_to_mcp_format,
     convert_to_openai_format,
     convert_tools_to_claude_format,
+    message_to_anthropic,
+    message_to_openai,
+    messages_to_anthropic,
+    messages_to_langchain,
+    messages_to_openai,
 )
 from clara_core.llm.tools.response import ToolCall, ToolResponse
+from clara_core.llm.tools.schema import ToolSchema
 
 __all__ = [
     # Core new API
@@ -92,6 +106,17 @@ __all__ = [
     "get_provider",
     "ToolResponse",
     "ToolCall",
+    "ToolSchema",
+    # Typed message types
+    "Message",
+    "SystemMessage",
+    "UserMessage",
+    "AssistantMessage",
+    "ToolResultMessage",
+    "ContentPart",
+    "ContentPartType",
+    "message_from_dict",
+    "messages_from_dicts",
     # Tiers
     "ModelTier",
     "DEFAULT_TIER",
@@ -101,14 +126,19 @@ __all__ = [
     "get_current_tier",
     "get_tier_info",
     "get_tool_model",
-    # Format converters
+    # Tool format converters
     "convert_to_openai_format",
     "convert_to_claude_format",
     "convert_to_mcp_format",
-    "convert_message_to_anthropic",
     "convert_tools_to_claude_format",
-    "anthropic_to_openai_response",
-    "convert_messages_to_langchain",
+    # Dict-based message converter (deprecated, use message_to_anthropic)
+    "convert_message_to_anthropic",
+    # Typed-message converters
+    "message_to_openai",
+    "messages_to_openai",
+    "message_to_anthropic",
+    "messages_to_anthropic",
+    "messages_to_langchain",
     # Backward compatibility
     "make_llm",
     "make_llm_streaming",

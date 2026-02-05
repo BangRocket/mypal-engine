@@ -20,6 +20,7 @@ from collections.abc import Callable, Generator
 from typing import TYPE_CHECKING, Any
 
 from clara_core.llm.config import LLMConfig
+from clara_core.llm.messages import Message, messages_from_dicts
 from clara_core.llm.providers.registry import get_provider
 from clara_core.llm.tiers import ModelTier
 from clara_core.llm.tools.response import ToolResponse
@@ -29,11 +30,24 @@ if TYPE_CHECKING:
     from openai.types.chat import ChatCompletion
 
 
+def _ensure_messages(messages: list) -> list[Message]:
+    """Bridge: accept dicts or Messages, always return list[Message].
+
+    This allows compat functions to accept both old-style dict messages
+    and new-style typed Message objects.
+    """
+    if messages and isinstance(messages[0], dict):
+        return messages_from_dicts(messages)
+    return messages
+
+
 # ============== Non-streaming LLM ==============
 
 
-def make_llm(tier: ModelTier | None = None) -> Callable[[list[dict[str, str]]], str]:
+def make_llm(tier: ModelTier | None = None) -> Callable[[list], str]:
     """Return a function(messages) -> assistant_reply string.
+
+    Accepts both list[dict] (legacy) and list[Message] (new).
 
     Select backend with env var LLM_PROVIDER:
       - "openrouter" (default)
@@ -48,8 +62,8 @@ def make_llm(tier: ModelTier | None = None) -> Callable[[list[dict[str, str]]], 
     config = LLMConfig.from_env(tier=tier)
     provider = get_provider("langchain")
 
-    def llm(messages: list[dict[str, str]]) -> str:
-        return provider.complete(messages, config)
+    def llm(messages: list) -> str:
+        return provider.complete(_ensure_messages(messages), config)
 
     return llm
 
@@ -59,8 +73,10 @@ def make_llm(tier: ModelTier | None = None) -> Callable[[list[dict[str, str]]], 
 
 def make_llm_streaming(
     tier: ModelTier | None = None,
-) -> Callable[[list[dict[str, str]]], Generator[str, None, None]]:
+) -> Callable[[list], Generator[str, None, None]]:
     """Return a streaming LLM function that yields chunks.
+
+    Accepts both list[dict] (legacy) and list[Message] (new).
 
     Args:
         tier: Optional model tier ("high", "mid", "low").
@@ -69,8 +85,8 @@ def make_llm_streaming(
     config = LLMConfig.from_env(tier=tier)
     provider = get_provider("langchain")
 
-    def llm(messages: list[dict[str, str]]) -> Generator[str, None, None]:
-        yield from provider.stream(messages, config)
+    def llm(messages: list) -> Generator[str, None, None]:
+        yield from provider.stream(_ensure_messages(messages), config)
 
     return llm
 
@@ -180,8 +196,10 @@ def make_llm_with_tools_anthropic(
 def make_llm_with_tools_langchain(
     tools: list[dict] | None = None,
     tier: ModelTier | None = None,
-) -> Callable[[list[dict]], dict]:
+) -> Callable[[list], dict]:
     """Return a function(messages) -> dict that supports tool calling via LangChain.
+
+    Accepts both list[dict] (legacy) and list[Message] (new).
 
     Uses LangChain's bind_tools() for unified tool calling across all providers.
     This is the recommended approach for tool calling as it handles format conversion
@@ -204,8 +222,8 @@ def make_llm_with_tools_langchain(
     config = LLMConfig.from_env(tier=tier, for_tools=True)
     provider = get_provider("langchain")
 
-    def llm(messages: list[dict]) -> dict:
-        response = provider.complete_with_tools(messages, tools or [], config)
+    def llm(messages: list) -> dict:
+        response = provider.complete_with_tools(_ensure_messages(messages), tools or [], config)
         return response.to_openai_dict()
 
     return llm
@@ -217,8 +235,10 @@ def make_llm_with_tools_langchain(
 def make_llm_with_tools_unified(
     tools: list[dict] | None = None,
     tier: ModelTier | None = None,
-) -> Callable[[list[dict]], ToolResponse]:
+) -> Callable[[list], ToolResponse]:
     """Return a unified tool-calling function that works with ANY provider.
+
+    Accepts both list[dict] (legacy) and list[Message] (new).
 
     This is the RECOMMENDED way to use tool calling. It:
     - Works with all providers (OpenRouter, NanoGPT, OpenAI, Anthropic)
@@ -253,8 +273,8 @@ def make_llm_with_tools_unified(
     config = LLMConfig.from_env(tier=tier, for_tools=True)
     provider = get_provider("langchain")
 
-    def llm(messages: list[dict]) -> ToolResponse:
-        return provider.complete_with_tools(messages, tools or [], config)
+    def llm(messages: list) -> ToolResponse:
+        return provider.complete_with_tools(_ensure_messages(messages), tools or [], config)
 
     return llm
 
@@ -468,13 +488,15 @@ Your description (no quotes, no period at end):"""
         config = LLMConfig.from_env(tier=tier)  # type: ignore
         provider = get_provider("langchain")
 
-        messages = [{"role": "user", "content": prompt}]
+        from clara_core.llm.messages import UserMessage
+
+        msgs = [UserMessage(content=prompt)]
 
         # Run in executor since providers are sync
         loop = asyncio.get_event_loop()
         text = await loop.run_in_executor(
             None,
-            lambda: provider.complete(messages, config),
+            lambda: provider.complete(msgs, config),
         )
 
         # Clean up response

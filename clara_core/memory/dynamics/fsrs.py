@@ -55,17 +55,17 @@ class FsrsParams:
     """
 
     w: tuple[float, ...] = (
-        0.212,   # w[0]: Initial stability for Again
+        0.212,  # w[0]: Initial stability for Again
         1.2931,  # w[1]: Initial stability for Hard
         2.3065,  # w[2]: Initial stability for Good
         8.2956,  # w[3]: Initial stability for Easy
         6.4133,  # w[4]: Initial difficulty mean
         0.8334,  # w[5]: Initial difficulty modifier
         3.0194,  # w[6]: Stability increase base
-        0.001,   # w[7]: Stability increase grade modifier
+        0.001,  # w[7]: Stability increase grade modifier
         1.8722,  # w[8]: Stability after lapse multiplier
         0.1666,  # w[9]: Hard penalty
-        0.796,   # w[10]: Easy bonus
+        0.796,  # w[10]: Easy bonus
         1.4835,  # w[11]: Difficulty after success
         0.0614,  # w[12]: Difficulty after failure
         0.2629,  # w[13]: Difficulty constraint
@@ -379,6 +379,7 @@ def review(
         params = FsrsParams()
     if review_time is None:
         from datetime import UTC
+
         review_time = datetime.now(UTC).replace(tzinfo=None)
 
     # Calculate elapsed time

@@ -68,10 +68,7 @@ class UserMCPContext:
                 servers = (
                     db.query(MCPServer)
                     .filter(MCPServer.enabled == True)
-                    .filter(
-                        (MCPServer.user_id == self.user_id)
-                        | (MCPServer.user_id.is_(None))
-                    )
+                    .filter((MCPServer.user_id == self.user_id) | (MCPServer.user_id.is_(None)))
                     .all()
                 )
 
@@ -126,10 +123,7 @@ class UserMCPContext:
                 exists = (
                     db.query(MCPServer)
                     .filter(MCPServer.name == server_name)
-                    .filter(
-                        (MCPServer.user_id == self.user_id)
-                        | (MCPServer.user_id.is_(None))
-                    )
+                    .filter((MCPServer.user_id == self.user_id) | (MCPServer.user_id.is_(None)))
                     .first()
                     is not None
                 )
@@ -148,11 +142,7 @@ class UserMCPContext:
             List of (server_name, tool) tuples for accessible servers
         """
         all_tools = self._manager.get_all_tools()
-        return [
-            (server_name, tool)
-            for server_name, tool in all_tools
-            if self._can_access_server(server_name)
-        ]
+        return [(server_name, tool) for server_name, tool in all_tools if self._can_access_server(server_name)]
 
     def get_namespaced_tools(self) -> dict[str, MCPTool]:
         """Get tools with namespaced names, filtered for this user.
@@ -200,9 +190,7 @@ class UserMCPContext:
                     result.append(tool)
         return result
 
-    async def call_tool(
-        self, tool_name: str, arguments: dict[str, Any]
-    ) -> str:
+    async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> str:
         """Call a tool if user has access.
 
         Args:
@@ -219,10 +207,7 @@ class UserMCPContext:
         server_name, actual_tool = location
 
         if not self._can_access_server(server_name):
-            return (
-                f"Error: Access denied to server '{server_name}'. "
-                "Install the server with mcp_install first."
-            )
+            return f"Error: Access denied to server '{server_name}'. " "Install the server with mcp_install first."
 
         return await self._manager.call_tool(tool_name, arguments)
 
@@ -276,11 +261,7 @@ class UserMCPContext:
             List of status dicts
         """
         all_status = self._manager.get_all_server_status()
-        return [
-            status
-            for status in all_status
-            if self._can_access_server(status.get("name", ""))
-        ]
+        return [status for status in all_status if self._can_access_server(status.get("name", ""))]
 
 
 async def register_server_for_user(
@@ -314,11 +295,7 @@ async def register_server_for_user(
             existing = (
                 db.query(MCPServer)
                 .filter(MCPServer.name == server_name)
-                .filter(
-                    (MCPServer.user_id == user_id)
-                    if user_id
-                    else MCPServer.user_id.is_(None)
-                )
+                .filter((MCPServer.user_id == user_id) if user_id else MCPServer.user_id.is_(None))
                 .first()
             )
 
@@ -341,8 +318,7 @@ async def register_server_for_user(
             db.commit()
 
             logger.info(
-                f"[MCP] Registered server '{server_name}' for "
-                f"{'global' if not user_id else f'user {user_id}'}"
+                f"[MCP] Registered server '{server_name}' for " f"{'global' if not user_id else f'user {user_id}'}"
             )
             return server.id
 
@@ -371,10 +347,7 @@ async def unregister_server_for_user(user_id: str, server_name: str) -> bool:
         db = SessionLocal()
         try:
             server = (
-                db.query(MCPServer)
-                .filter(MCPServer.name == server_name)
-                .filter(MCPServer.user_id == user_id)
-                .first()
+                db.query(MCPServer).filter(MCPServer.name == server_name).filter(MCPServer.user_id == user_id).first()
             )
 
             if not server:
@@ -410,28 +383,23 @@ async def get_user_servers(user_id: str) -> list[dict[str, Any]]:
 
         db = SessionLocal()
         try:
-            servers = (
-                db.query(MCPServer)
-                .filter(
-                    (MCPServer.user_id == user_id)
-                    | (MCPServer.user_id.is_(None))
-                )
-                .all()
-            )
+            servers = db.query(MCPServer).filter((MCPServer.user_id == user_id) | (MCPServer.user_id.is_(None))).all()
 
             result = []
             for server in servers:
-                result.append({
-                    "id": server.id,
-                    "name": server.name,
-                    "server_type": server.server_type,
-                    "source_type": server.source_type,
-                    "enabled": server.enabled,
-                    "status": server.status,
-                    "is_global": server.user_id is None,
-                    "total_tool_calls": server.total_tool_calls or 0,
-                    "last_used_at": server.last_used_at.isoformat() if server.last_used_at else None,
-                })
+                result.append(
+                    {
+                        "id": server.id,
+                        "name": server.name,
+                        "server_type": server.server_type,
+                        "source_type": server.source_type,
+                        "enabled": server.enabled,
+                        "status": server.status,
+                        "is_global": server.user_id is None,
+                        "total_tool_calls": server.total_tool_calls or 0,
+                        "last_used_at": server.last_used_at.isoformat() if server.last_used_at else None,
+                    }
+                )
 
             return result
 

@@ -13,7 +13,31 @@ if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
 
     from clara_core.llm.config import LLMConfig
+    from clara_core.llm.messages import Message
     from clara_core.llm.tools.response import ToolResponse
+    from clara_core.llm.tools.schema import ToolSchema
+
+
+def _normalize_tools(tools: "list[ToolSchema | dict[str, Any]]") -> list[dict[str, Any]]:
+    """Normalize a list of ToolSchema or dicts to OpenAI-format dicts.
+
+    Providers call this at their boundary to accept both typed and untyped tools.
+
+    Args:
+        tools: Mixed list of ToolSchema objects and/or OpenAI-format dicts.
+
+    Returns:
+        List of dicts in OpenAI format.
+    """
+    from clara_core.llm.tools.schema import ToolSchema
+
+    result = []
+    for t in tools:
+        if isinstance(t, ToolSchema):
+            result.append(t.to_openai())
+        else:
+            result.append(t)
+    return result
 
 
 class LLMProvider(ABC):
@@ -26,19 +50,20 @@ class LLMProvider(ABC):
     - stream_with_tools: Streaming with tool support
     - get_langchain_model: Access to underlying LangChain model
 
-    All methods accept an LLMConfig for provider configuration.
+    All methods accept list[Message] and an LLMConfig for provider configuration.
+    Tool methods accept list[ToolSchema | dict] — providers normalize at their boundary.
     """
 
     @abstractmethod
     def complete(
         self,
-        messages: list[dict[str, Any]],
+        messages: list[Message],
         config: "LLMConfig",
     ) -> str:
         """Generate a text completion.
 
         Args:
-            messages: List of message dicts with 'role' and 'content'
+            messages: List of typed Message objects
             config: LLM configuration
 
         Returns:
@@ -49,15 +74,15 @@ class LLMProvider(ABC):
     @abstractmethod
     def complete_with_tools(
         self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
+        messages: list[Message],
+        tools: "list[ToolSchema | dict[str, Any]]",
         config: "LLMConfig",
     ) -> "ToolResponse":
         """Generate a response with tool calling support.
 
         Args:
-            messages: List of message dicts
-            tools: List of tool definitions in OpenAI format
+            messages: List of typed Message objects
+            tools: List of ToolSchema objects or OpenAI-format dicts
             config: LLM configuration
 
         Returns:
@@ -68,13 +93,13 @@ class LLMProvider(ABC):
     @abstractmethod
     def stream(
         self,
-        messages: list[dict[str, Any]],
+        messages: list[Message],
         config: "LLMConfig",
     ) -> Iterator[str]:
         """Generate a streaming text completion.
 
         Args:
-            messages: List of message dicts
+            messages: List of typed Message objects
             config: LLM configuration
 
         Yields:
@@ -84,8 +109,8 @@ class LLMProvider(ABC):
 
     def stream_with_tools(
         self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
+        messages: list[Message],
+        tools: "list[ToolSchema | dict[str, Any]]",
         config: "LLMConfig",
     ) -> Iterator[str]:
         """Generate a streaming response with tools.
@@ -94,7 +119,7 @@ class LLMProvider(ABC):
         Providers can override for true streaming support.
 
         Args:
-            messages: List of message dicts
+            messages: List of typed Message objects
             tools: List of tool definitions
             config: LLM configuration
 
@@ -108,7 +133,7 @@ class LLMProvider(ABC):
 
     async def acomplete(
         self,
-        messages: list[dict[str, Any]],
+        messages: list[Message],
         config: "LLMConfig",
     ) -> str:
         """Async text completion.
@@ -116,7 +141,7 @@ class LLMProvider(ABC):
         Default implementation runs sync version in executor.
 
         Args:
-            messages: List of message dicts
+            messages: List of typed Message objects
             config: LLM configuration
 
         Returns:
@@ -132,8 +157,8 @@ class LLMProvider(ABC):
 
     async def acomplete_with_tools(
         self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
+        messages: list[Message],
+        tools: "list[ToolSchema | dict[str, Any]]",
         config: "LLMConfig",
     ) -> "ToolResponse":
         """Async tool completion.
@@ -141,7 +166,7 @@ class LLMProvider(ABC):
         Default implementation runs sync version in executor.
 
         Args:
-            messages: List of message dicts
+            messages: List of typed Message objects
             tools: List of tool definitions
             config: LLM configuration
 
@@ -158,7 +183,7 @@ class LLMProvider(ABC):
 
     async def astream(
         self,
-        messages: list[dict[str, Any]],
+        messages: list[Message],
         config: "LLMConfig",
     ) -> AsyncIterator[str]:
         """Async streaming completion.
@@ -166,7 +191,7 @@ class LLMProvider(ABC):
         Default implementation wraps sync stream.
 
         Args:
-            messages: List of message dicts
+            messages: List of typed Message objects
             config: LLM configuration
 
         Yields:

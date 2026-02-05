@@ -126,13 +126,9 @@ class PluginRegistry:
         level_str = diagnostic.level.value.upper()
 
         if diagnostic.level == DiagnosticLevel.ERROR:
-            logger.error(
-                f"[{diagnostic.plugin_id or 'system'}] {diagnostic.message}"
-            )
+            logger.error(f"[{diagnostic.plugin_id or 'system'}] {diagnostic.message}")
         else:
-            logger.warning(
-                f"[{diagnostic.plugin_id or 'system'}] {diagnostic.message}"
-            )
+            logger.warning(f"[{diagnostic.plugin_id or 'system'}] {diagnostic.message}")
 
     def register_plugin(
         self,
@@ -156,10 +152,7 @@ class PluginRegistry:
             return
 
         self.plugins[record.id] = record
-        logger.info(
-            f"Registered plugin: {record.id} ({record.name}) "
-            f"from {record.origin}"
-        )
+        logger.info(f"Registered plugin: {record.id} ({record.name}) " f"from {record.origin}")
 
     def register_tool(
         self,
@@ -590,11 +583,7 @@ class PluginRegistry:
 
         if allowed_modules is not None:
             allowed_set = set(allowed_modules)
-            prompts = [
-                prompt
-                for plugin_id, prompt in self.system_prompts.items()
-                if plugin_id in allowed_set
-            ]
+            prompts = [prompt for plugin_id, prompt in self.system_prompts.items() if plugin_id in allowed_set]
         else:
             prompts = list(self.system_prompts.values())
 
@@ -634,10 +623,7 @@ class PluginRegistry:
 
         tool = self.tools.get(canonical_name)
         if not tool:
-            return (
-                f"Error: Unknown tool '{tool_name}'. "
-                f"Available tools: {', '.join(self.tools.keys())}"
-            )
+            return f"Error: Unknown tool '{tool_name}'. " f"Available tools: {', '.join(self.tools.keys())}"
 
         # Check policy
         if self.policy_engine:
@@ -738,10 +724,7 @@ class PluginRegistry:
                 # Check plugin ID
                 if allowed_set:
                     plugin_normalized = registration.plugin_id.lower().replace("-", "_")
-                    if any(
-                        a.lower().replace("-", "_") == plugin_normalized
-                        for a in allowed_set
-                    ):
+                    if any(a.lower().replace("-", "_") == plugin_normalized for a in allowed_set):
                         allowed = True
 
                     # Check "group:plugins" catch-all
@@ -763,9 +746,7 @@ class PluginRegistry:
 
                 from tools._base import ToolDef
 
-                tools: list[ToolDef] = (
-                    [result] if isinstance(result, ToolDef) else result
-                )
+                tools: list[ToolDef] = [result] if isinstance(result, ToolDef) else result
 
                 for tool in tools:
                     if tool.name in self.tools:
@@ -783,10 +764,7 @@ class PluginRegistry:
                     plugin_record.tool_names.append(tool.name)
                     resolved.append(tool)
 
-                    logger.debug(
-                        f"Resolved tool: {tool.name} from factory "
-                        f"({registration.plugin_id})"
-                    )
+                    logger.debug(f"Resolved tool: {tool.name} from factory " f"({registration.plugin_id})")
 
             except Exception as e:
                 logger.error(

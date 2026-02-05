@@ -38,8 +38,7 @@ class OpenAIEmbedding(EmbeddingBase):
 
         if os.environ.get("OPENAI_API_BASE"):
             warnings.warn(
-                "The environment variable 'OPENAI_API_BASE' is deprecated. "
-                "Please use 'OPENAI_BASE_URL' instead.",
+                "The environment variable 'OPENAI_API_BASE' is deprecated. " "Please use 'OPENAI_BASE_URL' instead.",
                 DeprecationWarning,
             )
 
@@ -61,11 +60,7 @@ class OpenAIEmbedding(EmbeddingBase):
         """
         text = text.replace("\n", " ")
         return (
-            self.client.embeddings.create(
-                input=[text],
-                model=self.config.model,
-                dimensions=self.config.embedding_dims
-            )
+            self.client.embeddings.create(input=[text], model=self.config.model, dimensions=self.config.embedding_dims)
             .data[0]
             .embedding
         )

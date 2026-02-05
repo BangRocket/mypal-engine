@@ -84,9 +84,7 @@ class ToolRegistry:
     def get_instance(cls) -> "ToolRegistry":
         """Get the singleton registry instance."""
         if cls._instance is None:
-            raise RuntimeError(
-                "ToolRegistry not initialized. Call ToolRegistry.initialize() first."
-            )
+            raise RuntimeError("ToolRegistry not initialized. Call ToolRegistry.initialize() first.")
         return cls._instance
 
     @classmethod

@@ -5,12 +5,20 @@ Handles conversion between:
 - Claude format ({"name": ..., "input_schema": ...})
 - MCP format ({"name": ..., "inputSchema": ...})
 - LangChain format (varies by model)
+
+Typed-message converters (Message -> provider-specific format):
+- message_to_openai / messages_to_openai
+- message_to_anthropic / messages_to_anthropic
+- messages_to_langchain (from typed Messages)
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from clara_core.llm.messages import Message
 
 
 def convert_to_openai_format(tool: dict[str, Any]) -> dict[str, Any]:
@@ -150,6 +158,9 @@ def convert_tools_to_claude_format(tools: list[dict]) -> list[dict]:
 def convert_message_to_anthropic(msg: dict) -> dict:
     """Convert a single OpenAI-style message to Anthropic format.
 
+    .. deprecated::
+        Use ``message_to_anthropic()`` with typed Message objects instead.
+
     Handles:
     - Assistant messages with tool_calls -> assistant with tool_use content blocks
     - Tool role messages -> user messages with tool_result content blocks
@@ -239,103 +250,225 @@ def convert_message_to_anthropic(msg: dict) -> dict:
     return msg
 
 
-def anthropic_to_openai_response(msg: Any) -> dict:
-    """Convert Anthropic Message to OpenAI-like response dict for compatibility.
+# =============================================================================
+# Typed-message converters (Message -> provider-specific format)
+# =============================================================================
 
-    This allows code to process Anthropic responses using the same
-    code path as OpenAI responses.
+
+def message_to_openai(msg: "Message") -> dict[str, Any]:
+    """Convert a typed Message to OpenAI-format dict.
+
+    Delegates to each message type's to_dict() method, which already
+    produces OpenAI format.
 
     Args:
-        msg: Anthropic Message object
+        msg: A typed Message instance.
 
     Returns:
-        Dict with:
-        - content: text content (or None)
-        - role: "assistant"
-        - tool_calls: list of tool calls in OpenAI format (if any)
+        OpenAI-format message dict.
     """
-    tool_calls = []
-    text_content = ""
+    return msg.to_dict()
 
-    for block in msg.content:
-        if block.type == "text":
-            text_content += block.text
-        elif block.type == "tool_use":
-            tool_calls.append(
+
+def messages_to_openai(msgs: list["Message"]) -> list[dict[str, Any]]:
+    """Convert a list of typed Messages to OpenAI-format dicts.
+
+    Args:
+        msgs: List of typed Message instances.
+
+    Returns:
+        List of OpenAI-format message dicts.
+    """
+    return [message_to_openai(m) for m in msgs]
+
+
+def message_to_anthropic(msg: "Message") -> dict[str, Any]:
+    """Convert a typed Message to Anthropic API format.
+
+    Handles the key differences from OpenAI format:
+    - Assistant messages with tool_calls -> content blocks with tool_use
+    - ToolResultMessage -> user message with tool_result content block
+    - UserMessage with multimodal parts -> Anthropic image format
+    - SystemMessage -> pass through (caller should extract separately)
+
+    Args:
+        msg: A typed Message instance.
+
+    Returns:
+        Anthropic-format message dict.
+    """
+    from clara_core.llm.messages import (
+        AssistantMessage as AssistantMsg,
+    )
+    from clara_core.llm.messages import (
+        ContentPartType,
+    )
+    from clara_core.llm.messages import (
+        SystemMessage as SystemMsg,
+    )
+    from clara_core.llm.messages import (
+        ToolResultMessage as ToolResultMsg,
+    )
+    from clara_core.llm.messages import (
+        UserMessage as UserMsg,
+    )
+
+    if isinstance(msg, SystemMsg):
+        return {"role": "system", "content": msg.content}
+
+    if isinstance(msg, UserMsg):
+        if msg.parts:
+            converted_content = []
+            for part in msg.parts:
+                if part.type == ContentPartType.TEXT:
+                    converted_content.append({"type": "text", "text": part.text or ""})
+                elif part.type == ContentPartType.IMAGE_BASE64:
+                    converted_content.append(
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": part.media_type or "image/jpeg",
+                                "data": part.data or "",
+                            },
+                        }
+                    )
+                elif part.type == ContentPartType.IMAGE_URL:
+                    converted_content.append(
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "url",
+                                "url": part.url or "",
+                            },
+                        }
+                    )
+            return {"role": "user", "content": converted_content}
+        return {"role": "user", "content": msg.content}
+
+    if isinstance(msg, AssistantMsg):
+        if msg.tool_calls:
+            content: list[dict[str, Any]] = []
+            if msg.content:
+                content.append({"type": "text", "text": msg.content})
+            for tc in msg.tool_calls:
+                content.append(
+                    {
+                        "type": "tool_use",
+                        "id": tc.id,
+                        "name": tc.name,
+                        "input": tc.arguments,
+                    }
+                )
+            return {"role": "assistant", "content": content}
+        return {"role": "assistant", "content": msg.content or ""}
+
+    if isinstance(msg, ToolResultMsg):
+        return {
+            "role": "user",
+            "content": [
                 {
-                    "id": block.id,
-                    "type": "function",
-                    "function": {
-                        "name": block.name,
-                        "arguments": json.dumps(block.input),
-                    },
+                    "type": "tool_result",
+                    "tool_use_id": msg.tool_call_id,
+                    "content": msg.content,
                 }
-            )
+            ],
+        }
 
-    result = {
-        "content": text_content or None,
-        "role": "assistant",
-    }
-    if tool_calls:
-        result["tool_calls"] = tool_calls
-
-    return result
+    return msg.to_dict()
 
 
-def convert_messages_to_langchain(messages: list[dict]) -> list:
-    """Convert OpenAI-style messages to LangChain format.
+def messages_to_anthropic(
+    msgs: list["Message"],
+) -> tuple[str, list[dict[str, Any]]]:
+    """Convert typed Messages to Anthropic API format, extracting system messages.
+
+    Anthropic's API takes system as a separate parameter. This function
+    splits system messages out and joins them, returning the rest as
+    converted API messages.
 
     Args:
-        messages: List of OpenAI-style message dicts
+        msgs: List of typed Message instances.
 
     Returns:
-        List of LangChain message objects
+        Tuple of (system_prompt, api_messages) where system_prompt is
+        the joined system messages and api_messages is the list of
+        non-system messages in Anthropic format.
     """
-    from langchain_core.messages import (
-        AIMessage,
-        HumanMessage,
-        SystemMessage,
-        ToolMessage,
+    from clara_core.llm.messages import SystemMessage as SystemMsg
+
+    system_parts: list[str] = []
+    api_messages: list[dict[str, Any]] = []
+
+    for msg in msgs:
+        if isinstance(msg, SystemMsg):
+            system_parts.append(msg.content)
+        else:
+            api_messages.append(message_to_anthropic(msg))
+
+    return "\n\n".join(system_parts), api_messages
+
+
+def messages_to_langchain(msgs: list["Message"]) -> list:
+    """Convert typed Messages to LangChain message objects.
+
+    Args:
+        msgs: List of typed Message instances.
+
+    Returns:
+        List of LangChain message objects (SystemMessage, HumanMessage,
+        AIMessage, ToolMessage).
+    """
+    from langchain_core.messages import AIMessage as LCAIMessage
+    from langchain_core.messages import HumanMessage as LCHumanMessage
+    from langchain_core.messages import SystemMessage as LCSystemMessage
+    from langchain_core.messages import ToolMessage as LCToolMessage
+
+    from clara_core.llm.messages import (
+        AssistantMessage as AssistantMsg,
+    )
+    from clara_core.llm.messages import (
+        SystemMessage as SystemMsg,
+    )
+    from clara_core.llm.messages import (
+        ToolResultMessage as ToolResultMsg,
+    )
+    from clara_core.llm.messages import (
+        UserMessage as UserMsg,
     )
 
     lc_messages = []
-    for msg in messages:
-        role = msg.get("role")
-        content = msg.get("content", "")
-
-        if role == "system":
-            lc_messages.append(SystemMessage(content=content))
-        elif role == "user":
-            # Handle multimodal content
-            if isinstance(content, list):
-                lc_messages.append(HumanMessage(content=content))
+    for msg in msgs:
+        if isinstance(msg, SystemMsg):
+            lc_messages.append(LCSystemMessage(content=msg.content))
+        elif isinstance(msg, UserMsg):
+            if msg.parts:
+                # Pass multimodal content as list (LangChain handles it)
+                lc_messages.append(LCHumanMessage(content=[p.to_dict() for p in msg.parts]))
             else:
-                lc_messages.append(HumanMessage(content=content))
-        elif role == "assistant":
-            # Handle assistant with tool_calls
-            if msg.get("tool_calls"):
-                # LangChain needs tool_calls in a specific format
-                ai_msg = AIMessage(
-                    content=content or "",
-                    tool_calls=[
-                        {
-                            "id": tc["id"],
-                            "name": tc["function"]["name"],
-                            "args": json.loads(tc["function"]["arguments"])
-                            if isinstance(tc["function"]["arguments"], str)
-                            else tc["function"]["arguments"],
-                        }
-                        for tc in msg["tool_calls"]
-                    ],
+                lc_messages.append(LCHumanMessage(content=msg.content))
+        elif isinstance(msg, AssistantMsg):
+            if msg.tool_calls:
+                lc_messages.append(
+                    LCAIMessage(
+                        content=msg.content or "",
+                        tool_calls=[
+                            {
+                                "id": tc.id,
+                                "name": tc.name,
+                                "args": tc.arguments,
+                            }
+                            for tc in msg.tool_calls
+                        ],
+                    )
                 )
-                lc_messages.append(ai_msg)
             else:
-                lc_messages.append(AIMessage(content=content))
-        elif role == "tool":
+                lc_messages.append(LCAIMessage(content=msg.content or ""))
+        elif isinstance(msg, ToolResultMsg):
             lc_messages.append(
-                ToolMessage(
-                    content=content,
-                    tool_call_id=msg.get("tool_call_id", ""),
+                LCToolMessage(
+                    content=msg.content,
+                    tool_call_id=msg.tool_call_id,
                 )
             )
 

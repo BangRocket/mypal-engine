@@ -134,12 +134,7 @@ def get_date_range(sessions: list[Session]) -> tuple[datetime | None, datetime |
 
 def get_session_messages(db: OrmSession, session_id: str) -> list[Message]:
     """Get all messages for a session ordered by time."""
-    return (
-        db.query(Message)
-        .filter(Message.session_id == session_id)
-        .order_by(Message.created_at.asc())
-        .all()
-    )
+    return db.query(Message).filter(Message.session_id == session_id).order_by(Message.created_at.asc()).all()
 
 
 def chunk_messages(messages: list[Message], chunk_size: int = 4) -> list[list[dict]]:
@@ -175,7 +170,7 @@ async def process_chunk_async(
     async with semaphore:
         try:
             # Use async add if available, otherwise run sync in thread
-            if hasattr(mem0, 'aadd'):
+            if hasattr(mem0, "aadd"):
                 result = await mem0.aadd(
                     chunk,
                     user_id=user_id,
@@ -245,8 +240,7 @@ async def process_session_async(
 
     # Process all chunks concurrently with semaphore limiting
     tasks = [
-        process_chunk_async(chunk, i, user_id, project_id, mem0, chunk_semaphore)
-        for i, chunk in enumerate(chunks)
+        process_chunk_async(chunk, i, user_id, project_id, mem0, chunk_semaphore) for i, chunk in enumerate(chunks)
     ]
     results = await asyncio.gather(*tasks)
 
@@ -358,8 +352,7 @@ async def run_parallel(
                 return idx, None
 
             stats = await process_session_async(
-                session, messages, mem0, chunk_semaphore,
-                dry_run=dry_run, verbose=verbose
+                session, messages, mem0, chunk_semaphore, dry_run=dry_run, verbose=verbose
             )
             return idx, stats
 
@@ -370,10 +363,7 @@ async def run_parallel(
         batch_sessions = sessions[batch_start:batch_end]
 
         # Create tasks for this batch
-        tasks = [
-            process_one_session(batch_start + i, session)
-            for i, session in enumerate(batch_sessions)
-        ]
+        tasks = [process_one_session(batch_start + i, session) for i, session in enumerate(batch_sessions)]
 
         # Wait for batch to complete
         results = await asyncio.gather(*tasks)
@@ -439,9 +429,7 @@ async def run_parallel(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Backfill graph memory from existing chat history"
-    )
+    parser = argparse.ArgumentParser(description="Backfill graph memory from existing chat history")
     parser.add_argument(
         "--apply",
         action="store_true",
@@ -560,10 +548,7 @@ def main():
         # Use async processing if parallel > 1
         if args.parallel > 1:
             total_stats = asyncio.run(
-                run_parallel(
-                    sessions, db, ROOK, dry_run, args.verbose,
-                    args.parallel, processed_ids, progress
-                )
+                run_parallel(sessions, db, ROOK, dry_run, args.verbose, args.parallel, processed_ids, progress)
             )
         else:
             # Original sequential processing
@@ -598,11 +583,7 @@ def main():
                 if len(user_display) > 25:
                     user_display = user_display[:22] + "..."
 
-                stats = process_session(
-                    session, messages, ROOK,
-                    dry_run=dry_run,
-                    verbose=args.verbose
-                )
+                stats = process_session(session, messages, ROOK, dry_run=dry_run, verbose=args.verbose)
 
                 # Update totals
                 total_stats["sessions_processed"] += 1

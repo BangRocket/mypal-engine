@@ -194,20 +194,16 @@ def main():
     parser = argparse.ArgumentParser(
         description="Database migration management",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__
+        epilog=__doc__,
     )
     parser.add_argument(
         "command",
         nargs="?",
         default="upgrade",
         choices=["upgrade", "status", "create", "rollback", "stamp", "heads", "history", "reset"],
-        help="Migration command (default: upgrade)"
+        help="Migration command (default: upgrade)",
     )
-    parser.add_argument(
-        "args",
-        nargs="*",
-        help="Additional arguments (message for create, steps for rollback)"
-    )
+    parser.add_argument("args", nargs="*", help="Additional arguments (message for create, steps for rollback)")
 
     args = parser.parse_args()
 

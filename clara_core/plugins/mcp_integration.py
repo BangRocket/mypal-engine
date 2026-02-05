@@ -80,9 +80,7 @@ class MCPPlugin:
 
         logger.info("MCP plugin initialized")
 
-    def _register_mcp_tools(
-        self, registry: "PluginRegistry", api: "PluginAPI"
-    ) -> None:
+    def _register_mcp_tools(self, registry: "PluginRegistry", api: "PluginAPI") -> None:
         """Register all MCP tools as plugin tools.
 
         MCP tools are automatically added to the `group:mcp` policy group
@@ -113,6 +111,7 @@ class MCPPlugin:
                     # Call the tool via MCP manager
                     result = await self._mcp_manager.call_tool(tn, args)
                     return result
+
                 return mcp_tool_handler
 
             handler = make_handler(tool_name)
@@ -120,10 +119,7 @@ class MCPPlugin:
             # Register tool with namespaced name
             tool_def = ToolDef(
                 name=tool_name,
-                description=(
-                    f"{mcp_tool.description} (from MCP server: "
-                    f"{tool_name.split('__')[0]})"
-                ),
+                description=(f"{mcp_tool.description} (from MCP server: " f"{tool_name.split('__')[0]})"),
                 parameters=mcp_tool.input_schema,
                 handler=handler,
                 platforms=["discord"],  # MCP tools available on Discord
@@ -143,9 +139,7 @@ class MCPPlugin:
 
         logger.info(f"Registered {len(all_tools)} MCP tools")
 
-    def _register_mcp_hooks(
-        self, registry: "PluginRegistry", api: "PluginAPI"
-    ) -> None:
+    def _register_mcp_hooks(self, registry: "PluginRegistry", api: "PluginAPI") -> None:
         """Register MCP lifecycle hooks.
 
         Args:
@@ -239,9 +233,7 @@ def get_mcp_plugin() -> MCPPlugin:
     return _mcp_plugin
 
 
-async def register_mcp_plugin(
-    registry: "PluginRegistry", api: "PluginAPI"
-) -> None:
+async def register_mcp_plugin(registry: "PluginRegistry", api: "PluginAPI") -> None:
     """Register MCP plugin with the registry.
 
     This is the entry point for MCP integration.

@@ -43,6 +43,7 @@ CHECK_INTERVAL = int(os.getenv("CLARA_EMAIL_CHECK_INTERVAL", "60"))
 @dataclass
 class EmailInfo:
     """Represents an email message."""
+
     uid: str
     from_addr: str
     subject: str
@@ -54,19 +55,19 @@ class EmailInfo:
 
 class EmailMonitor:
     """Monitors an IMAP inbox for new messages."""
-    
+
     def __init__(self):
         self.seen_uids: set[str] = set()
         self.initialized = False
         self.last_check: datetime | None = None
         self.last_error: str | None = None
-    
+
     def _connect(self) -> imaplib.IMAP4_SSL:
         """Create IMAP connection."""
         mail = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT)
         mail.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
         return mail
-    
+
     def _decode_header_value(self, value: str) -> str:
         """Decode email header (handles encoded words)."""
         if not value:
@@ -75,11 +76,11 @@ class EmailMonitor:
         result = []
         for part, charset in decoded_parts:
             if isinstance(part, bytes):
-                result.append(part.decode(charset or 'utf-8', errors='replace'))
+                result.append(part.decode(charset or "utf-8", errors="replace"))
             else:
                 result.append(part)
-        return ''.join(result)
-    
+        return "".join(result)
+
     def _get_email_preview(self, msg) -> str:
         """Extract a text preview from email body."""
         preview = ""
@@ -89,7 +90,7 @@ class EmailMonitor:
                     try:
                         payload = part.get_payload(decode=True)
                         if payload:
-                            preview = payload.decode('utf-8', errors='replace')[:200]
+                            preview = payload.decode("utf-8", errors="replace")[:200]
                             break
                     except Exception:
                         pass
@@ -97,118 +98,117 @@ class EmailMonitor:
             try:
                 payload = msg.get_payload(decode=True)
                 if payload:
-                    preview = payload.decode('utf-8', errors='replace')[:200]
+                    preview = payload.decode("utf-8", errors="replace")[:200]
             except Exception:
                 pass
-        return preview.strip().replace('\n', ' ')[:150] + "..." if len(preview) > 150 else preview.strip()
-    
+        return preview.strip().replace("\n", " ")[:150] + "..." if len(preview) > 150 else preview.strip()
+
     def check_emails(self, unseen_only: bool = True) -> tuple[list[EmailInfo], str | None]:
         """
         Check inbox for emails.
-        
+
         Args:
             unseen_only: If True, only return unseen messages
-            
+
         Returns:
             tuple: (list of EmailInfo, error message or None)
         """
         try:
             mail = self._connect()
             mail.select("INBOX")
-            
+
             # Search for messages
             search_criteria = "UNSEEN" if unseen_only else "ALL"
             status, data = mail.search(None, search_criteria)
-            
+
             if status != "OK":
                 mail.logout()
                 return [], f"Search failed: {status}"
-            
+
             emails = []
             message_nums = data[0].split()
-            
+
             for num in message_nums[-10:]:  # Limit to last 10
                 status, msg_data = mail.fetch(num, "(UID RFC822.HEADER)")
                 if status != "OK":
                     continue
-                    
+
                 # Get UID
                 uid_match = None
                 for response_part in msg_data:
                     if isinstance(response_part, tuple):
                         uid_part = response_part[0].decode()
                         if "UID" in uid_part:
-                            match = re.search(r'UID (\d+)', uid_part)
+                            match = re.search(r"UID (\d+)", uid_part)
                             if match:
                                 uid_match = match.group(1)
-                        
+
                         # Parse headers
                         msg = email.message_from_bytes(response_part[1])
                         from_addr = self._decode_header_value(msg.get("From", ""))
                         subject = self._decode_header_value(msg.get("Subject", "(No Subject)"))
                         date = msg.get("Date", "")
-                        
-                        emails.append(EmailInfo(
-                            uid=uid_match or str(num.decode()),
-                            from_addr=from_addr,
-                            subject=subject,
-                            date=date
-                        ))
-            
+
+                        emails.append(
+                            EmailInfo(
+                                uid=uid_match or str(num.decode()), from_addr=from_addr, subject=subject, date=date
+                            )
+                        )
+
             mail.logout()
             self.last_check = datetime.now(UTC)
             self.last_error = None
             return emails, None
-            
+
         except Exception as e:
             self.last_error = str(e)
             return [], str(e)
-    
+
     def get_new_emails(self) -> tuple[list[EmailInfo], str | None]:
         """
         Check for new emails since last check.
-        
+
         Returns emails that haven't been seen before.
         """
         emails, error = self.check_emails(unseen_only=True)
-        
+
         if error:
             return [], error
-        
+
         if not self.initialized:
             # First run - just record what's there, don't notify
             self.seen_uids = {e.uid for e in emails}
             self.initialized = True
             return [], None
-        
+
         # Find new emails
         new_emails = [e for e in emails if e.uid not in self.seen_uids]
-        
+
         # Update seen set
         self.seen_uids.update(e.uid for e in emails)
-        
+
         return new_emails, None
-    
+
     def get_all_emails(self, limit: int = 10) -> tuple[list[EmailInfo], str | None]:
         """Get all recent emails (for on-demand check)."""
         try:
             mail = self._connect()
             mail.select("INBOX")
-            
+
             status, data = mail.search(None, "ALL")
             if status != "OK":
                 mail.logout()
                 return [], f"Search failed: {status}"
-            
+
             emails = []
             message_nums = data[0].split()
-            
+
             # Get last N messages
             for num in message_nums[-limit:]:
                 status, msg_data = mail.fetch(num, "(UID FLAGS RFC822.HEADER)")
                 if status != "OK":
                     continue
-                
+
                 for response_part in msg_data:
                     if isinstance(response_part, tuple):
                         # Check flags for seen status
@@ -216,23 +216,19 @@ class EmailMonitor:
                         is_seen = "\\Seen" in flags_part
 
                         # Get UID
-                        uid_match = re.search(r'UID (\d+)', flags_part)
+                        uid_match = re.search(r"UID (\d+)", flags_part)
                         uid = uid_match.group(1) if uid_match else str(num.decode())
-                        
+
                         # Parse headers
                         msg = email.message_from_bytes(response_part[1])
                         from_addr = self._decode_header_value(msg.get("From", ""))
                         subject = self._decode_header_value(msg.get("Subject", "(No Subject)"))
                         date = msg.get("Date", "")
-                        
-                        emails.append(EmailInfo(
-                            uid=uid,
-                            from_addr=from_addr,
-                            subject=subject,
-                            date=date,
-                            is_read=is_seen
-                        ))
-            
+
+                        emails.append(
+                            EmailInfo(uid=uid, from_addr=from_addr, subject=subject, date=date, is_read=is_seen)
+                        )
+
             mail.logout()
             self.last_check = datetime.now(UTC)
             return emails, None
@@ -275,6 +271,7 @@ class EmailMonitor:
 
             if since_days:
                 from datetime import timedelta
+
                 since_date = (datetime.now(UTC) - timedelta(days=since_days)).strftime("%d-%b-%Y")
                 criteria.append(f'SINCE "{since_date}"')
 
@@ -305,7 +302,7 @@ class EmailMonitor:
                         flags_part = response_part[0].decode()
                         is_seen = "\\Seen" in flags_part
 
-                        uid_match = re.search(r'UID (\d+)', flags_part)
+                        uid_match = re.search(r"UID (\d+)", flags_part)
                         uid = uid_match.group(1) if uid_match else str(num.decode())
 
                         msg = email.message_from_bytes(response_part[1])
@@ -313,13 +310,11 @@ class EmailMonitor:
                         subject_parsed = self._decode_header_value(msg.get("Subject", "(No Subject)"))
                         date = msg.get("Date", "")
 
-                        emails.append(EmailInfo(
-                            uid=uid,
-                            from_addr=from_addr_parsed,
-                            subject=subject_parsed,
-                            date=date,
-                            is_read=is_seen
-                        ))
+                        emails.append(
+                            EmailInfo(
+                                uid=uid, from_addr=from_addr_parsed, subject=subject_parsed, date=date, is_read=is_seen
+                            )
+                        )
 
             mail.logout()
             return emails, None
@@ -349,12 +344,7 @@ class EmailMonitor:
 
                     mail.logout()
                     return EmailInfo(
-                        uid=uid,
-                        from_addr=from_addr,
-                        subject=subject,
-                        date=date,
-                        body=body,
-                        is_read=True
+                        uid=uid, from_addr=from_addr, subject=subject, date=date, body=body, is_read=True
                     ), None
 
             mail.logout()
@@ -372,7 +362,7 @@ class EmailMonitor:
                     try:
                         payload = part.get_payload(decode=True)
                         if payload:
-                            body = payload.decode('utf-8', errors='replace')
+                            body = payload.decode("utf-8", errors="replace")
                             break
                     except Exception:
                         pass
@@ -380,7 +370,7 @@ class EmailMonitor:
             try:
                 payload = msg.get_payload(decode=True)
                 if payload:
-                    body = payload.decode('utf-8', errors='replace')
+                    body = payload.decode("utf-8", errors="replace")
             except Exception:
                 pass
         return body.strip()
@@ -456,38 +446,34 @@ Respond with a JSON object (no markdown, just raw JSON):
 If you do respond, write as {BOT_NAME} - be helpful, friendly, and concise. Sign off naturally."""
 
     try:
-        result = llm([{"role": "user", "content": prompt}])
+        from clara_core.llm.messages import UserMessage
+
+        result = llm([UserMessage(content=prompt)])
 
         # Parse JSON from response
         # Try to extract JSON if wrapped in markdown
         json_str = result.strip()
         if json_str.startswith("```"):
-            json_str = re.sub(r'^```(?:json)?\n?', '', json_str)
-            json_str = re.sub(r'\n?```$', '', json_str)
+            json_str = re.sub(r"^```(?:json)?\n?", "", json_str)
+            json_str = re.sub(r"\n?```$", "", json_str)
 
         parsed = json.loads(json_str)
         return {
             "should_respond": parsed.get("should_respond", False),
             "reason": parsed.get("reason", ""),
-            "response": parsed.get("response", "")
+            "response": parsed.get("response", ""),
         }
 
     except Exception as e:
         print(f"[email] Error evaluating email: {e}")
-        return {
-            "should_respond": False,
-            "reason": f"Error evaluating: {e}",
-            "response": ""
-        }
+        return {"should_respond": False, "reason": f"Error evaluating: {e}", "response": ""}
 
 
 # SMTP timeout in seconds (prevents blocking the event loop indefinitely)
 SMTP_TIMEOUT = int(os.getenv("CLARA_SMTP_TIMEOUT", "30"))
 
 
-def _send_email_sync(
-    to_addr: str, subject: str, body: str, is_reply: bool = False
-) -> tuple[bool, str]:
+def _send_email_sync(to_addr: str, subject: str, body: str, is_reply: bool = False) -> tuple[bool, str]:
     """Synchronous email sending (runs in thread executor).
 
     Args:
@@ -526,9 +512,7 @@ def _send_email_sync(
         return False, str(e)
 
 
-async def send_email_smtp(
-    to_addr: str, subject: str, body: str, timeout: float | None = None
-) -> tuple[bool, str]:
+async def send_email_smtp(to_addr: str, subject: str, body: str, timeout: float | None = None) -> tuple[bool, str]:
     """Send an email asynchronously with timeout.
 
     Runs SMTP operations in a thread executor to avoid blocking the event loop.
@@ -578,16 +562,16 @@ EMAIL_TOOLS = [
                 "properties": {
                     "unread_only": {
                         "type": "boolean",
-                        "description": "If true, only show unread emails. Default is false (show all recent)."
+                        "description": "If true, only show unread emails. Default is false (show all recent).",
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "Maximum number of emails to return (default: 10, max: 25)"
-                    }
+                        "description": "Maximum number of emails to return (default: 10, max: 25)",
+                    },
                 },
-                "required": []
-            }
-        }
+                "required": [],
+            },
+        },
     },
     {
         "type": "function",
@@ -597,23 +581,14 @@ EMAIL_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "to": {
-                        "type": "string",
-                        "description": "Recipient email address"
-                    },
-                    "subject": {
-                        "type": "string",
-                        "description": "Email subject line"
-                    },
-                    "body": {
-                        "type": "string",
-                        "description": "Email body text"
-                    }
+                    "to": {"type": "string", "description": "Recipient email address"},
+                    "subject": {"type": "string", "description": "Email subject line"},
+                    "body": {"type": "string", "description": "Email body text"},
                 },
-                "required": ["to", "subject", "body"]
-            }
-        }
-    }
+                "required": ["to", "subject", "body"],
+            },
+        },
+    },
 ]
 
 
@@ -627,18 +602,18 @@ async def handle_email_tool(tool_name: str, arguments: dict) -> str:
     if tool_name == "check_email":
         unread_only = arguments.get("unread_only", False)
         limit = min(arguments.get("limit", 10), 25)
-        
+
         if unread_only:
             emails, error = monitor.check_emails(unseen_only=True)
         else:
             emails, error = monitor.get_all_emails(limit=limit)
-        
+
         if error:
             return f"Error checking email: {error}"
-        
+
         if not emails:
             return "No emails found." if not unread_only else "No unread emails."
-        
+
         # Format results
         lines = [f"Found {len(emails)} email(s):\n"]
         for i, e in enumerate(emails, 1):
@@ -651,35 +626,35 @@ async def handle_email_tool(tool_name: str, arguments: dict) -> str:
             lines.append("")
 
         return "\n".join(lines)
-    
+
     elif tool_name == "send_email":
         to_addr = arguments.get("to", "")
         subject = arguments.get("subject", "")
         body = arguments.get("body", "")
-        
+
         if not to_addr or not subject or not body:
             return "Error: to, subject, and body are all required"
-        
+
         try:
             # SMTP settings for Titan
             smtp_server = os.getenv("CLARA_SMTP_SERVER", "smtp.titan.email")
             smtp_port = int(os.getenv("CLARA_SMTP_PORT", "465"))
-            
+
             msg = MIMEMultipart()
             msg["From"] = EMAIL_ADDRESS
             msg["To"] = to_addr
             msg["Subject"] = subject
             msg.attach(MIMEText(body, "plain"))
-            
+
             with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
                 server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
                 server.send_message(msg)
-            
+
             return f"Email sent successfully to {to_addr}"
-            
+
         except Exception as e:
             return f"Error sending email: {str(e)}"
-    
+
     return f"Unknown email tool: {tool_name}"
 
 
@@ -754,15 +729,13 @@ async def email_check_loop(bot):
                         # Extract reply-to address (use From if no Reply-To)
                         reply_to = full_email.from_addr
                         # Handle "Name <email>" format
-                        email_match = re.search(r'<([^>]+)>', reply_to)
+                        email_match = re.search(r"<([^>]+)>", reply_to)
                         if email_match:
                             reply_to = email_match.group(1)
 
                         # Send the response
                         success, send_result = send_email_response(
-                            to_addr=reply_to,
-                            subject=full_email.subject,
-                            body=evaluation["response"]
+                            to_addr=reply_to, subject=full_email.subject, body=evaluation["response"]
                         )
 
                         if success:
@@ -788,7 +761,9 @@ async def email_check_loop(bot):
                         print(f"[email] Clara decided not to respond: {evaluation['reason']}")
                         if user:
                             # Truncate body preview
-                            body_preview = full_email.body[:500] + "..." if len(full_email.body) > 500 else full_email.body
+                            body_preview = (
+                                full_email.body[:500] + "..." if len(full_email.body) > 500 else full_email.body
+                            )
                             await user.send(
                                 f"📬 **New Email** *(no response needed)*\n"
                                 f"**From:** {full_email.from_addr}\n"
