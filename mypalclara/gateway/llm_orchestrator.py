@@ -301,7 +301,10 @@ class LLMOrchestrator:
         working_messages.append(
             {
                 "role": "user",
-                "content": "You've reached the maximum number of tool calls. Please summarize what you've accomplished.",
+                "content": (
+                    "You've reached the maximum number of tool calls. "
+                    "Please summarize what you've accomplished."
+                ),
             }
         )
 
@@ -372,46 +375,22 @@ class LLMOrchestrator:
         tier: str | None,
         loop: asyncio.AbstractEventLoop,
     ) -> dict[str, Any]:
-        """Call LLM with native API tool calling.
+        """Call LLM with unified tool calling.
+
+        Uses the unified LLM interface which handles all providers
+        (OpenRouter, NanoGPT, OpenAI, Anthropic) with a single code path.
 
         Returns dict with content and optional tool_calls.
         """
-        from clara_core import (
-            ModelTier,
-            anthropic_to_openai_response,
-            make_llm_with_tools,
-            make_llm_with_tools_anthropic,
-        )
+        from clara_core import ModelTier, make_llm_with_tools_unified
 
-        provider = os.getenv("LLM_PROVIDER", "openrouter").lower()
         model_tier = ModelTier(tier) if tier else None
 
         def call():
-            if provider == "anthropic":
-                llm = make_llm_with_tools_anthropic(tools, tier=model_tier)
-                response = llm(messages)
-                return anthropic_to_openai_response(response)
-            else:
-                llm = make_llm_with_tools(tools, tier=model_tier)
-                completion = llm(messages)
-                msg = completion.choices[0].message
-                return {
-                    "content": msg.content,
-                    "role": "assistant",
-                    "tool_calls": [
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments,
-                            },
-                        }
-                        for tc in (msg.tool_calls or [])
-                    ]
-                    if msg.tool_calls
-                    else None,
-                }
+            llm = make_llm_with_tools_unified(tools, tier=model_tier)
+            response = llm(messages)
+            # ToolResponse.to_openai_dict() returns standardized format
+            return response.to_openai_dict()
 
         return await loop.run_in_executor(LLM_EXECUTOR, call)
 
@@ -543,7 +522,8 @@ class LLMOrchestrator:
                 "- CRITICAL: When sending a file, do NOT include the file content in your response text. "
                 "Just describe what the file contains briefly (e.g., 'Here is the config file you requested'). "
                 "The file attachment will contain the actual content.\n"
-                "- Do NOT ask for permission before sending files. If a file send is relevant to the request, just do it.\n\n"
+                "- Do NOT ask for permission before sending files. "
+                "If a file send is relevant, just do it.\n\n"
                 "FILE STORAGE:\n"
                 "- `save_to_local` saves files persistently for later retrieval\n"
                 "- `send_local_file` sends a previously saved file to Discord\n"

@@ -4,13 +4,12 @@ import json
 import os
 from typing import Dict, List, Optional
 
-from openai import OpenAI
-
 # Pre-import OpenAI resources to avoid deadlock when used in concurrent contexts.
 # The OpenAI client lazy-loads these modules, which can cause import deadlocks
 # when multiple threads try to import simultaneously.
 import openai.resources.chat  # noqa: F401
 import openai.resources.embeddings  # noqa: F401
+from openai import OpenAI
 
 from clara_core.memory.llm.base import LLMBase, OpenAIConfig
 

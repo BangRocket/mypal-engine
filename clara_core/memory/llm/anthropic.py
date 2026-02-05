@@ -4,13 +4,12 @@ IMPORTANT: This implementation includes anthropic_base_url support for
 proxy servers like clewdr. This is a CRITICAL feature that must be preserved.
 """
 
-import json
 import os
 from typing import Dict, List, Optional
 
 from anthropic import Anthropic
 
-from clara_core.memory.llm.base import LLMBase, AnthropicConfig
+from clara_core.memory.llm.base import AnthropicConfig, LLMBase
 
 
 class AnthropicLLM(LLMBase):

@@ -58,7 +58,6 @@ class ClaraConfig:
     tool_api_key: str = ""
     tool_base_url: str = ""
     tool_model: str = ""
-    tool_format: str = "openai"
 
     # User config
     user_id: str = "demo-user"
@@ -155,7 +154,6 @@ class ClaraConfig:
             tool_api_key=os.getenv("TOOL_API_KEY", ""),
             tool_base_url=os.getenv("TOOL_BASE_URL", ""),
             tool_model=os.getenv("TOOL_MODEL", ""),
-            tool_format=os.getenv("TOOL_FORMAT", "openai").lower(),
             # User config
             user_id=os.getenv("USER_ID", "demo-user"),
             default_project=os.getenv("DEFAULT_PROJECT", "Default Project"),

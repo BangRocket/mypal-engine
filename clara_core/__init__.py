@@ -32,6 +32,7 @@ from clara_core.config import get_config, init_platform
 from clara_core.llm import (
     DEFAULT_TIER,
     ModelTier,
+    ToolResponse,
     anthropic_to_openai_response,
     generate_tool_description,
     get_current_tier,
@@ -42,6 +43,7 @@ from clara_core.llm import (
     make_llm_with_tools,
     make_llm_with_tools_anthropic,
     make_llm_with_tools_langchain,
+    make_llm_with_tools_unified,
     make_llm_with_xml_tools,
     make_llm_with_xml_tools_streaming,
 )
@@ -69,10 +71,12 @@ __all__ = [
     "make_llm_with_tools",
     "make_llm_with_tools_anthropic",
     "make_llm_with_tools_langchain",
+    "make_llm_with_tools_unified",
     "make_llm_with_xml_tools",
     "make_llm_with_xml_tools_streaming",
     "anthropic_to_openai_response",
     "generate_tool_description",
+    "ToolResponse",
     # Model tiers
     "ModelTier",
     "get_model_for_tier",
