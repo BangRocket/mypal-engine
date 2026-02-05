@@ -4,29 +4,34 @@ Guidance for Claude Code working with this repository.
 
 ## Project Overview
 
-MyPalClara is a personal AI assistant (Clara) with session management, persistent memory (Rook), and multi-platform support. Primary interface is Discord, with gateway support for Teams, Slack, Telegram, Matrix, Signal, and WhatsApp.
+MyPalClara is a personal AI assistant (Clara) with session management, persistent memory (Rook), and multi-platform support. Uses a gateway architecture with platform adapters for Discord, Teams, Slack, Telegram, Matrix, Signal, and WhatsApp.
 
 ## Quick Reference
 
 ```bash
 # Development
 poetry install                    # Install dependencies
-poetry run python discord_bot.py  # Run Discord bot
 poetry run ruff check . && poetry run ruff format .  # Lint + format
 
-# Daemon mode (Unix)
-poetry run python discord_bot.py --daemon
-poetry run python discord_bot.py --status
-poetry run python discord_bot.py --stop
+# Run gateway with all adapters
+poetry run python -m mypalclara.gateway start
 
-# Docker
-docker-compose --profile discord up
-docker-compose --profile discord --profile postgres up
+# Run specific adapter only
+poetry run python -m mypalclara.gateway start --adapter discord
+
+# Gateway daemon management
+poetry run python -m mypalclara.gateway status
+poetry run python -m mypalclara.gateway stop
+poetry run python -m mypalclara.gateway restart
 
 # Database
 poetry run python scripts/migrate.py           # Run migrations
 poetry run python scripts/migrate.py status    # Check status
-poetry run python clear_dbs.py                 # Clear memory data
+poetry run python scripts/clear_dbs.py         # Clear memory data
+
+# Docker
+docker-compose --profile discord up
+docker-compose --profile discord --profile postgres up
 ```
 
 ## Versioning
@@ -43,26 +48,28 @@ git config core.hooksPath .githooks  # Enable hooks (run once)
 
 ## Architecture
 
-### Core Files
-| File | Purpose |
+### Core Modules
+| Path | Purpose |
 |------|---------|
-| `discord_bot.py` | Discord bot with streaming, reply chains, image support |
-| `memory_manager.py` | Session handling, Rook integration, prompt building |
-| `llm_backends.py` | LLM abstraction (OpenRouter, NanoGPT, OpenAI, Anthropic) |
-| `models.py` | SQLAlchemy models (Project, Session, Message, etc.) |
-| `db.py` | Database setup (SQLite dev, PostgreSQL production) |
+| `clara_core/memory_manager.py` | Session handling, Rook integration, prompt building |
+| `clara_core/llm.py` | LLM abstraction (OpenRouter, NanoGPT, OpenAI, Anthropic) |
+| `db/models.py` | SQLAlchemy models (Project, Session, Message, etc.) |
+| `db/connection.py` | Database setup (SQLite dev, PostgreSQL production) |
 
-### Subsystems
+### Directory Structure
 | Directory | Purpose |
 |-----------|---------|
+| `mypalclara/gateway/` | WebSocket gateway for platform adapters |
+| `adapters/` | Platform adapters (Discord, Teams, Slack, etc.) |
 | `clara_core/memory/` | Rook memory system (Qdrant/pgvector, embeddings) |
 | `clara_core/mcp/` | MCP plugin system (servers, tools, OAuth) |
 | `clara_core/email/` | Email monitoring and alerts |
 | `clara_core/core_tools/` | Tool implementations including MCP management |
-| `gateway/` | WebSocket gateway for platform adapters |
-| `adapters/` | Platform adapters (Discord, Teams, Slack, etc.) |
+| `db/` | Database models, migrations, connection |
 | `sandbox/` | Code execution (Docker, Incus containers/VMs) |
 | `storage/` | Local file storage |
+| `tools/` | Tool loader infrastructure |
+| `config/` | Configuration modules |
 
 ### Memory System (Rook)
 - **User memories**: Persistent facts/preferences per user
@@ -74,7 +81,7 @@ git config core.hooksPath .githooks  # Enable hooks (run once)
 WebSocket server for platform adapters with streaming support.
 
 ```bash
-poetry run python -m gateway --host 127.0.0.1 --port 18789
+poetry run python -m mypalclara.gateway --host 127.0.0.1 --port 18789
 ```
 
 | Platform | Streaming | Notes |
@@ -174,7 +181,7 @@ TAVILY_API_KEY=...                # Web search in sandbox
 
 ## Key Patterns
 
-- Global `MemoryManager` instance initialized at bot startup
+- Gateway-first architecture: all adapters connect via `mypalclara.gateway`
 - `LLM_PROVIDER=anthropic` uses native SDK with native tool calling
 - Sandbox auto-selects Docker or Incus based on availability
 - MCP tools use namespaced names: `{server}__{tool}`

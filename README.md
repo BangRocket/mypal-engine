@@ -81,7 +81,7 @@ cp .env.example .env
 poetry run python discord_bot.py
 
 # Or run via gateway (recommended for multi-platform)
-poetry run python -m gateway start
+poetry run python -m mypalclara.gateway start
 
 # With Docker
 docker-compose --profile discord up
@@ -222,19 +222,19 @@ The gateway provides a central message processing hub for platform adapters.
 
 ```bash
 # Foreground (development)
-poetry run python -m gateway --host 127.0.0.1 --port 18789
+poetry run python -m mypalclara.gateway --host 127.0.0.1 --port 18789
 
 # Daemon mode with all enabled adapters
-poetry run python -m gateway start
-poetry run python -m gateway status
-poetry run python -m gateway stop
+poetry run python -m mypalclara.gateway start
+poetry run python -m mypalclara.gateway status
+poetry run python -m mypalclara.gateway stop
 
 # Start with specific adapter only
-poetry run python -m gateway start --adapter discord
+poetry run python -m mypalclara.gateway start --adapter discord
 
 # Manage individual adapters
-poetry run python -m gateway adapter discord status
-poetry run python -m gateway adapter discord restart
+poetry run python -m mypalclara.gateway adapter discord status
+poetry run python -m mypalclara.gateway adapter discord restart
 ```
 
 ### Hooks
@@ -473,7 +473,7 @@ zip -r ../clara-teams-app.zip *
 poetry run python -m adapters.teams
 
 # Via gateway
-poetry run python -m gateway start --adapter teams
+poetry run python -m mypalclara.gateway start --adapter teams
 ```
 
 ### Troubleshooting

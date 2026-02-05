@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from gateway.events import Event, EventEmitter, EventType
-from gateway.hooks import (
+from mypalclara.gateway.events import Event, EventEmitter, EventType
+from mypalclara.gateway.hooks import (
     Hook,
     HookManager,
     HookType,

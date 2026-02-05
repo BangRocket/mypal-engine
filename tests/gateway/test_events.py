@@ -5,7 +5,7 @@ from datetime import datetime
 
 import pytest
 
-from gateway.events import (
+from mypalclara.gateway.events import (
     Event,
     EventEmitter,
     EventType,

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from gateway.session import NodeConnection, NodeRegistry, SessionManager, UserSession
+from mypalclara.gateway.session import NodeConnection, NodeRegistry, SessionManager, UserSession
 
 
 @pytest.fixture

@@ -76,7 +76,7 @@ CLARA_GATEWAY_SECRET=optional-shared-secret
 **Usage:**
 ```bash
 # Run gateway (separate from Discord bot)
-poetry run python -m gateway
+poetry run python -m mypalclara.gateway
 ```
 
 ### Hooks System
