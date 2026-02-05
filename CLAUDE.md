@@ -14,7 +14,26 @@ Uses CalVer format: `YYYY.WW.N` (Year.Week.Build)
 - `2026.04.2` = Second build of week 4, 2026
 - `2026.05.1` = First build of week 5, 2026
 
-**Auto-bump:** Version is automatically bumped after each commit via git hook.
+**Auto-bump:** Version is automatically bumped via git hook, but only for significant commits using conventional commit prefixes.
+
+### Commit Types That Bump Version
+| Prefix | Description | Bumps? |
+|--------|-------------|--------|
+| `feat:` | New feature | Yes |
+| `fix:` | Bug fix | Yes |
+| `perf:` | Performance improvement | Yes |
+| `breaking:` | Breaking change | Yes |
+| `chore:` | Maintenance, dependencies | No |
+| `docs:` | Documentation only | No |
+| `style:` | Formatting, no code change | No |
+| `refactor:` | Code restructuring | No |
+| `test:` | Adding/fixing tests | No |
+| `ci:` | CI/CD changes | No |
+| `build:` | Build system changes | No |
+
+### Override Tags
+- `[bump]` - Force version bump for any commit type
+- `[skip-version]` - Skip version bump for any commit type
 
 ```bash
 # Install git hooks (run once after cloning)
@@ -25,8 +44,13 @@ python scripts/bump_version.py          # Bump version
 python scripts/bump_version.py --dry    # Preview without changing
 python scripts/bump_version.py --show   # Show current version
 
-# Skip auto-bump for a specific commit
-git commit -m "message [skip-version]"
+# Examples
+git commit -m "feat: add user authentication"      # Bumps version
+git commit -m "fix: resolve login bug"             # Bumps version
+git commit -m "chore: update dependencies"         # No bump
+git commit -m "docs: update README"                # No bump
+git commit -m "refactor: simplify code [bump]"     # Force bump
+git commit -m "feat: add feature [skip-version]"   # Skip bump
 ```
 
 Version is stored in `VERSION` file and synced to `pyproject.toml`. Bot displays version on startup.
