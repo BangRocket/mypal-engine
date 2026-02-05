@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from gateway.protocol import ChannelInfo, MessageRequest, UserInfo
-from gateway.router import MessageRouter, RequestStatus
+from mypalclara.gateway.protocol import ChannelInfo, MessageRequest, UserInfo
+from mypalclara.gateway.router import MessageRouter, RequestStatus
 
 
 @pytest.fixture

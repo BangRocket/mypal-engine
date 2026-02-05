@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from gateway.scheduler import (
+from mypalclara.gateway.scheduler import (
     CronParser,
     ScheduledTask,
     Scheduler,

@@ -1,0 +1,136 @@
+# Clara Gateway Adapter Configuration
+#
+# This file configures which platform adapters the gateway daemon will manage.
+# Adapters are spawned as subprocesses and supervised for automatic restart.
+#
+# Environment variables can be referenced using ${VAR_NAME} syntax.
+# Missing environment variables will be replaced with empty strings.
+
+adapters:
+  # Discord adapter - connects to Discord via py-cord
+  discord:
+    enabled: true
+    module: adapters.discord
+    env:
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
+      CLARA_GATEWAY_URL: ws://127.0.0.1:18789
+    restart_policy: always
+    restart_delay: 5
+    max_restarts: 10
+    reset_window: 300
+
+  # CLI adapter - interactive command line interface
+  cli:
+    enabled: false  # CLI is typically run manually, not as a daemon
+    module: adapters.cli
+    env:
+      CLARA_GATEWAY_URL: ws://127.0.0.1:18789
+      CLI_USER_ID: cli-user
+    restart_policy: never
+    restart_delay: 0
+
+  # Microsoft Teams adapter - connects to Teams via Bot Framework SDK
+  # Requires Azure Bot registration. See CLAUDE.md for setup instructions.
+  teams:
+    enabled: false  # Enable once TEAMS_APP_ID and TEAMS_APP_PASSWORD are configured
+    module: adapters.teams
+    env:
+      TEAMS_APP_ID: ${TEAMS_APP_ID}
+      TEAMS_APP_PASSWORD: ${TEAMS_APP_PASSWORD}
+      TEAMS_PORT: ${TEAMS_PORT:-3978}
+      CLARA_GATEWAY_URL: ws://127.0.0.1:18789
+    restart_policy: always
+    restart_delay: 5
+    max_restarts: 10
+    reset_window: 300
+
+  # Telegram adapter - connects to Telegram via python-telegram-bot
+  telegram:
+    enabled: false  # Enable once TELEGRAM_BOT_TOKEN is configured
+    module: adapters.telegram
+    env:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_WEBHOOK_URL: ${TELEGRAM_WEBHOOK_URL:-}
+      TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:-}
+      CLARA_GATEWAY_URL: ws://127.0.0.1:18789
+    restart_policy: always
+    restart_delay: 5
+    max_restarts: 10
+    reset_window: 300
+
+  # Slack adapter - connects to Slack via Bolt SDK with Socket Mode
+  slack:
+    enabled: false  # Enable once SLACK_BOT_TOKEN and SLACK_APP_TOKEN are configured
+    module: adapters.slack
+    env:
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
+      SLACK_APP_TOKEN: ${SLACK_APP_TOKEN}
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
+      CLARA_GATEWAY_URL: ws://127.0.0.1:18789
+    restart_policy: always
+    restart_delay: 5
+    max_restarts: 10
+    reset_window: 300
+
+  # WhatsApp adapter - connects to WhatsApp via Meta Cloud API
+  # Requires Meta Developer account and WhatsApp Business API access.
+  whatsapp:
+    enabled: false  # Enable once WhatsApp credentials are configured
+    module: adapters.whatsapp
+    env:
+      WHATSAPP_TOKEN: ${WHATSAPP_TOKEN}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+      WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN}
+      WHATSAPP_WEBHOOK_PORT: ${WHATSAPP_WEBHOOK_PORT:-8080}
+      CLARA_GATEWAY_URL: ws://127.0.0.1:18789
+    restart_policy: always
+    restart_delay: 5
+    max_restarts: 10
+    reset_window: 300
+
+  # Signal adapter - connects to Signal via signald bridge
+  # Requires signald daemon running. See https://signald.org/
+  signal:
+    enabled: false  # Enable once signald is running and configured
+    module: adapters.signal
+    env:
+      SIGNALD_SOCKET_PATH: ${SIGNALD_SOCKET_PATH:-/var/run/signald/signald.sock}
+      SIGNAL_PHONE_NUMBER: ${SIGNAL_PHONE_NUMBER}
+      CLARA_GATEWAY_URL: ws://127.0.0.1:18789
+    restart_policy: always
+    restart_delay: 5
+    max_restarts: 10
+    reset_window: 300
+
+  # Matrix adapter - connects to Matrix homeservers via matrix-nio with E2EE
+  # Works with any Matrix homeserver (matrix.org, Element, self-hosted, etc.)
+  matrix:
+    enabled: false  # Enable once Matrix credentials are configured
+    module: adapters.matrix
+    env:
+      MATRIX_HOMESERVER: ${MATRIX_HOMESERVER}
+      MATRIX_USER_ID: ${MATRIX_USER_ID}
+      MATRIX_ACCESS_TOKEN: ${MATRIX_ACCESS_TOKEN:-}
+      MATRIX_PASSWORD: ${MATRIX_PASSWORD:-}
+      MATRIX_DEVICE_ID: ${MATRIX_DEVICE_ID:-}
+      MATRIX_STORE_PATH: ${MATRIX_STORE_PATH:-.matrix_store}
+      CLARA_GATEWAY_URL: ws://127.0.0.1:18789
+    restart_policy: always
+    restart_delay: 5
+    max_restarts: 10
+    reset_window: 300
+
+# Notes:
+#
+# restart_policy options:
+#   - always: Restart whenever the adapter exits (default)
+#   - on_failure: Only restart if exit code is non-zero
+#   - never: Never automatically restart
+#
+# restart_delay: Seconds to wait before restarting (default: 5)
+#
+# max_restarts: Maximum restart attempts within reset_window (default: 10)
+#   If exceeded, adapter enters "failed" state and stops restarting.
+#
+# reset_window: Seconds after which restart count resets (default: 300)
+#   If adapter runs successfully for this long, restart count resets to 0.
