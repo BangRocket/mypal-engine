@@ -41,6 +41,7 @@ from clara_core.llm import (
     make_llm_streaming,
     make_llm_with_tools,
     make_llm_with_tools_anthropic,
+    make_llm_with_tools_langchain,
     make_llm_with_xml_tools,
     make_llm_with_xml_tools_streaming,
 )
@@ -67,6 +68,7 @@ __all__ = [
     "make_llm_streaming",
     "make_llm_with_tools",
     "make_llm_with_tools_anthropic",
+    "make_llm_with_tools_langchain",
     "make_llm_with_xml_tools",
     "make_llm_with_xml_tools_streaming",
     "anthropic_to_openai_response",

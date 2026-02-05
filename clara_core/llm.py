@@ -26,6 +26,7 @@ from openai import OpenAI
 
 if TYPE_CHECKING:
     import anthropic.types
+    from langchain_core.language_models import BaseChatModel
     from openai.types.chat import ChatCompletion
 
 # Model tier type
@@ -921,6 +922,260 @@ def anthropic_to_openai_response(msg: anthropic.types.Message) -> dict:
         result["tool_calls"] = tool_calls
 
     return result
+
+
+# ============== LangChain-based Tool Calling ==============
+
+# Cached LangChain chat models
+_langchain_models: dict[str, "BaseChatModel"] = {}
+
+
+def _get_langchain_chat_model(
+    provider: str | None = None,
+    tier: ModelTier | None = None,
+) -> "BaseChatModel":
+    """Get or create a LangChain chat model for the specified provider.
+
+    Uses LangChain's ChatOpenAI for OpenAI-compatible endpoints (OpenRouter, NanoGPT,
+    custom OpenAI) and ChatAnthropic for native Anthropic.
+
+    Args:
+        provider: LLM provider. If None, uses LLM_PROVIDER env var.
+        tier: Optional model tier.
+
+    Returns:
+        LangChain BaseChatModel instance
+    """
+    from langchain_anthropic import ChatAnthropic
+    from langchain_openai import ChatOpenAI
+
+    if provider is None:
+        provider = os.getenv("LLM_PROVIDER", "openrouter").lower()
+
+    # Get model for tier
+    model = _get_tool_model(tier)
+
+    # Cache key based on provider and model
+    cache_key = f"{provider}:{model}"
+    if cache_key in _langchain_models:
+        return _langchain_models[cache_key]
+
+    if provider == "anthropic":
+        api_key = os.getenv("TOOL_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+        base_url = os.getenv("TOOL_BASE_URL") or os.getenv("ANTHROPIC_BASE_URL")
+
+        kwargs: dict = {
+            "model": model,
+            "api_key": api_key,
+            "max_tokens": 4096,
+        }
+        if base_url:
+            kwargs["base_url"] = base_url
+
+        # Add default headers for CF Access
+        cf_headers = _get_cf_access_headers()
+        if cf_headers:
+            kwargs["default_headers"] = cf_headers
+
+        chat_model = ChatAnthropic(**kwargs)
+
+    else:
+        # OpenAI-compatible providers (openrouter, nanogpt, openai)
+        if provider == "openrouter":
+            api_key = os.getenv("TOOL_API_KEY") or os.getenv("OPENROUTER_API_KEY")
+            base_url = os.getenv("TOOL_BASE_URL") or "https://openrouter.ai/api/v1"
+            site = os.getenv("OPENROUTER_SITE", "http://localhost:3000")
+            title = os.getenv("OPENROUTER_TITLE", "MyPalClara")
+            default_headers = {
+                "HTTP-Referer": site,
+                "X-Title": title,
+            }
+        elif provider == "nanogpt":
+            api_key = os.getenv("TOOL_API_KEY") or os.getenv("NANOGPT_API_KEY")
+            base_url = os.getenv("TOOL_BASE_URL") or "https://nano-gpt.com/api/v1"
+            default_headers = None
+        else:  # openai / custom
+            api_key = os.getenv("TOOL_API_KEY") or os.getenv("CUSTOM_OPENAI_API_KEY")
+            base_url = os.getenv("TOOL_BASE_URL") or os.getenv(
+                "CUSTOM_OPENAI_BASE_URL", "https://api.openai.com/v1"
+            )
+            default_headers = _get_cf_access_headers()
+
+        kwargs = {
+            "model": model,
+            "api_key": api_key,
+            "base_url": base_url,
+        }
+        if default_headers:
+            kwargs["default_headers"] = default_headers
+
+        chat_model = ChatOpenAI(**kwargs)
+
+    _langchain_models[cache_key] = chat_model
+    return chat_model
+
+
+def _convert_tools_for_langchain(tools: list[dict] | None) -> list:
+    """Convert OpenAI-format tools to LangChain tool format.
+
+    LangChain accepts tools in various formats. We use the function dict format
+    which is compatible with OpenAI's tool format.
+
+    Args:
+        tools: List of tool definitions in OpenAI format
+
+    Returns:
+        List of tools ready for LangChain bind_tools()
+    """
+    if not tools:
+        return []
+
+    # LangChain's ChatOpenAI.bind_tools() accepts OpenAI format directly
+    # Just need to extract the function definition
+    langchain_tools = []
+    for tool in tools:
+        if tool.get("type") == "function" and "function" in tool:
+            func = tool["function"]
+            langchain_tools.append({
+                "type": "function",
+                "function": {
+                    "name": func.get("name"),
+                    "description": func.get("description", ""),
+                    "parameters": func.get("parameters", {"type": "object", "properties": {}}),
+                },
+            })
+        else:
+            langchain_tools.append(tool)
+
+    return langchain_tools
+
+
+def _langchain_response_to_dict(response) -> dict:
+    """Convert LangChain AIMessage response to our standard dict format.
+
+    Args:
+        response: LangChain AIMessage
+
+    Returns:
+        Dict with content, role, and optional tool_calls in OpenAI format
+    """
+    result = {
+        "content": response.content if isinstance(response.content, str) else "",
+        "role": "assistant",
+    }
+
+    # Handle multimodal content (list of content blocks)
+    if isinstance(response.content, list):
+        text_parts = []
+        for block in response.content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                text_parts.append(block.get("text", ""))
+            elif isinstance(block, str):
+                text_parts.append(block)
+        result["content"] = "".join(text_parts)
+
+    # Convert tool_calls to OpenAI format
+    if response.tool_calls:
+        tool_calls = []
+        for tc in response.tool_calls:
+            tool_calls.append({
+                "id": tc.get("id", f"call_{len(tool_calls)}"),
+                "type": "function",
+                "function": {
+                    "name": tc["name"],
+                    "arguments": json.dumps(tc["args"]) if isinstance(tc["args"], dict) else tc["args"],
+                },
+            })
+        result["tool_calls"] = tool_calls
+
+    return result
+
+
+def make_llm_with_tools_langchain(
+    tools: list[dict] | None = None,
+    tier: ModelTier | None = None,
+) -> Callable[[list[dict]], dict]:
+    """Return a function(messages) -> dict that supports tool calling via LangChain.
+
+    Uses LangChain's bind_tools() for unified tool calling across all providers.
+    This is the recommended approach for tool calling as it handles format conversion
+    automatically for each provider.
+
+    Tool calls never use "low" tier - they use the base model at minimum.
+
+    Args:
+        tools: List of tool definitions in OpenAI format
+        tier: Optional model tier ("high", "mid", "low").
+              "low" tier is bumped to use the base model.
+
+    Returns:
+        Function that calls the LLM with tool support.
+        Returns dict with:
+        - content: Text content
+        - role: "assistant"
+        - tool_calls: List of tool calls in OpenAI format (if any)
+    """
+    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+
+    provider = os.getenv("LLM_PROVIDER", "openrouter").lower()
+    chat_model = _get_langchain_chat_model(provider, tier)
+
+    # Bind tools to the model
+    langchain_tools = _convert_tools_for_langchain(tools)
+    if langchain_tools:
+        chat_model_with_tools = chat_model.bind_tools(langchain_tools)
+    else:
+        chat_model_with_tools = chat_model
+
+    def llm(messages: list[dict]) -> dict:
+        # Convert messages to LangChain format
+        lc_messages = []
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content", "")
+
+            if role == "system":
+                lc_messages.append(SystemMessage(content=content))
+            elif role == "user":
+                # Handle multimodal content
+                if isinstance(content, list):
+                    lc_messages.append(HumanMessage(content=content))
+                else:
+                    lc_messages.append(HumanMessage(content=content))
+            elif role == "assistant":
+                # Handle assistant with tool_calls
+                if msg.get("tool_calls"):
+                    # LangChain needs tool_calls in a specific format
+                    ai_msg = AIMessage(
+                        content=content or "",
+                        tool_calls=[
+                            {
+                                "id": tc["id"],
+                                "name": tc["function"]["name"],
+                                "args": json.loads(tc["function"]["arguments"])
+                                if isinstance(tc["function"]["arguments"], str)
+                                else tc["function"]["arguments"],
+                            }
+                            for tc in msg["tool_calls"]
+                        ],
+                    )
+                    lc_messages.append(ai_msg)
+                else:
+                    lc_messages.append(AIMessage(content=content))
+            elif role == "tool":
+                lc_messages.append(
+                    ToolMessage(
+                        content=content,
+                        tool_call_id=msg.get("tool_call_id", ""),
+                    )
+                )
+
+        # Call the model
+        response = chat_model_with_tools.invoke(lc_messages)
+
+        return _langchain_response_to_dict(response)
+
+    return llm
 
 
 # ============== XML-based Tool Calling (OpenClaw-style) ==============
