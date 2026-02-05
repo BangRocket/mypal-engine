@@ -127,7 +127,7 @@ poetry run python scripts/migrate.py reset
 - `discord_bot.py` - Discord bot with multi-user support, reply chains, and streaming responses
 - `discord_monitor.py` - Web dashboard for monitoring Discord bot status and activity
 - `memory_manager.py` - Core orchestrator: session handling, Rook integration, prompt building with Clara's persona
-- `llm_backends.py` - LLM provider abstraction (OpenRouter, NanoGPT, custom OpenAI, native Anthropic) - both streaming and non-streaming
+- `clara_core/llm/` - Unified LLM provider architecture (modular, supports OpenRouter, NanoGPT, OpenAI, Anthropic)
 - `clara_core/memory/` - Rook memory system (Qdrant/pgvector for vectors, OpenAI embeddings)
 - `models.py` - SQLAlchemy models: Project, Session, Message, ChannelSummary
 - `db.py` - Database setup (SQLite for dev, PostgreSQL for production)
@@ -477,6 +477,34 @@ When using `TOOL_CALL_MODE=xml`:
 - Function calls are parsed from the LLM response text using XML tags
 - Format: `<function_calls><invoke name="tool_name"><parameter name="arg">value</parameter></invoke></function_calls>`
 
+**Unified Tool Calling (Recommended for New Code):**
+The `make_llm_with_tools_unified()` function provides a standardized interface for all providers:
+
+```python
+from clara_core import make_llm_with_tools_unified, ToolResponse
+
+# Create unified tool-calling LLM
+llm = make_llm_with_tools_unified(tools, tier="mid")
+
+# Call returns standardized ToolResponse
+response: ToolResponse = llm(messages)
+
+if response.has_tool_calls:
+    for call in response.tool_calls:
+        print(f"Tool: {call.name}, Args: {call.arguments}")
+else:
+    print(response.content)
+
+# Convert to OpenAI dict format if needed
+openai_dict = response.to_openai_dict()
+```
+
+Benefits:
+- Works with all providers (OpenRouter, NanoGPT, OpenAI, Anthropic)
+- Returns standardized `ToolResponse` object (not provider-specific types)
+- No provider-specific branching in calling code
+- Handles format conversion internally
+
 To enable Docker sandbox + web search:
 ```bash
 # Install Docker and start the daemon
@@ -788,7 +816,12 @@ Admin operations require one of:
 ## Key Patterns
 
 - Discord bot uses global `MemoryManager` instance initialized at startup with LLM callable
-- LLM backends support OpenAI-compatible API (via OpenAI SDK) and native Anthropic SDK
+- **Unified LLM architecture** in `clara_core/llm/`:
+  - `LLMConfig` dataclass for configuration (supports tiers, env loading)
+  - `LLMProvider` abstract interface with `LangChainProvider`, `DirectAnthropicProvider`, `DirectOpenAIProvider`
+  - `ProviderRegistry` for provider caching and factory pattern
+  - `ToolCall`/`ToolResponse` dataclasses for standardized tool handling
+  - Backward compatibility via `make_llm()`, `make_llm_streaming()`, etc.
 - `LLM_PROVIDER=anthropic` uses native Anthropic SDK with native tool calling (recommended for clewdr)
 - Sandbox system auto-selects between Docker and Incus based on availability
 - Rook (Clara's memory system) is in `clara_core/memory/`

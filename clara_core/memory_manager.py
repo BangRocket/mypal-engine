@@ -81,7 +81,12 @@ def _format_message_timestamp(dt: datetime | None) -> str:
 
 
 def _generate_memories_from_profile() -> dict | None:
-    """Generate structured memories from user_profile.txt using LLM extraction."""
+    """Generate structured memories from user_profile.txt using LLM extraction.
+
+    DEPRECATED: This function is disabled by default (SKIP_PROFILE_LOAD=true).
+    The bootstrap_memory system is legacy code from early development.
+    """
+    logger.warning("_generate_memories_from_profile is deprecated and will be removed")
     if not USER_PROFILE_PATH.exists():
         logger.warning("No user_profile.txt found, cannot generate memories")
         return None
@@ -109,6 +114,9 @@ def _generate_memories_from_profile() -> dict | None:
 def load_initial_profile(user_id: str) -> None:
     """Load initial user profile into Rook once on first run.
 
+    DEPRECATED: This function is disabled by default (SKIP_PROFILE_LOAD=true).
+    The bootstrap_memory system is legacy code from early development.
+
     Uses the bootstrap pipeline:
     1. If generated/*.json files exist, load from them
     2. Apply structured memories to Rook with graph-friendly grouping
@@ -120,6 +128,8 @@ def load_initial_profile(user_id: str) -> None:
         logger.debug("Profile loading disabled (SKIP_PROFILE_LOAD=true)")
         return
 
+    logger.warning("load_initial_profile is deprecated and will be removed")
+
     if ROOK is None:
         logger.warning("Skipping profile load - mem0 not available")
         return
@@ -128,7 +138,7 @@ def load_initial_profile(user_id: str) -> None:
         logger.debug("Profile already loaded (flag exists), skipping")
         return
 
-    from src.bootstrap_memory import (
+    from scripts.bootstrap_memory import (
         apply_to_mem0,
         load_existing_memories,
     )

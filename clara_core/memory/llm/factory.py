@@ -1,9 +1,15 @@
-"""Factory for creating LLM instances."""
+"""Factory for creating LLM instances.
+
+Supports both legacy providers (openai, anthropic) and the new unified
+provider that uses clara_core.llm for consistent behavior across all
+LLM operations.
+"""
 
 import importlib
 from typing import Dict, Optional, Union
 
-from clara_core.memory.llm.base import BaseLlmConfig, OpenAIConfig, AnthropicConfig
+from clara_core.memory.llm.base import AnthropicConfig, BaseLlmConfig, OpenAIConfig
+from clara_core.memory.llm.unified import UnifiedLLMConfig
 
 
 def load_class(class_type):
@@ -14,21 +20,23 @@ def load_class(class_type):
 
 
 class LlmFactory:
-    """Factory for creating LLM instances."""
+    """Factory for creating LLM instances.
 
-    # Provider mappings with their config classes (only providers Clara uses)
+    Supports:
+    - "unified": Uses clara_core.llm providers (recommended)
+    - "openai": Legacy OpenAI-compatible implementation
+    - "anthropic": Legacy Anthropic implementation
+    """
+
+    # Provider mappings with their config classes
     provider_to_class = {
+        "unified": ("clara_core.memory.llm.unified.UnifiedLLM", UnifiedLLMConfig),
         "openai": ("clara_core.memory.llm.openai.OpenAILLM", OpenAIConfig),
         "anthropic": ("clara_core.memory.llm.anthropic.AnthropicLLM", AnthropicConfig),
     }
 
     @classmethod
-    def create(
-        cls,
-        provider_name: str,
-        config: Optional[Union[BaseLlmConfig, Dict]] = None,
-        **kwargs
-    ):
+    def create(cls, provider_name: str, config: Optional[Union[BaseLlmConfig, Dict]] = None, **kwargs):
         """Create an LLM instance.
 
         Args:
@@ -55,8 +63,11 @@ class LlmFactory:
             config.update(kwargs)
             config = config_class(**config)
         elif isinstance(config, BaseLlmConfig):
+            # If already correct type, use directly
+            if isinstance(config, config_class):
+                pass
             # Convert base config to provider-specific config if needed
-            if config_class != BaseLlmConfig:
+            elif config_class != BaseLlmConfig:
                 config_dict = {
                     "model": config.model,
                     "temperature": config.temperature,
@@ -67,6 +78,11 @@ class LlmFactory:
                     "enable_vision": config.enable_vision,
                     "vision_details": config.vision_details,
                 }
+                # Include provider for UnifiedLLMConfig
+                if hasattr(config, "provider"):
+                    config_dict["provider"] = config.provider
+                if hasattr(config, "base_url"):
+                    config_dict["base_url"] = config.base_url
                 config_dict.update(kwargs)
                 config = config_class(**config_dict)
 

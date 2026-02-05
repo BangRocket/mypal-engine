@@ -167,7 +167,11 @@ def _get_graph_store_config() -> dict | None:
 
 
 def _get_llm_config() -> dict | None:
-    """Build LLM config based on ROOK_PROVIDER."""
+    """Build LLM config based on ROOK_PROVIDER.
+
+    Uses the unified provider from clara_core.llm for consistent behavior
+    across all LLM operations (chat, memory, tools).
+    """
     if ROOK_PROVIDER not in PROVIDER_DEFAULTS:
         logger.warning(f"Unknown ROOK_PROVIDER={ROOK_PROVIDER} - LLM disabled")
         return None
@@ -183,31 +187,20 @@ def _get_llm_config() -> dict | None:
     # Get base URL: explicit ROOK_BASE_URL > provider's default URL
     base_url = ROOK_BASE_URL or provider_config["base_url"]
 
-    logger.info(f"Rook LLM Provider: {ROOK_PROVIDER}")
+    logger.info(f"Rook LLM Provider: {ROOK_PROVIDER} (via unified)")
     logger.info(f"Rook LLM Model: {ROOK_MODEL}")
     if base_url:
         logger.info(f"Rook LLM Base URL: {base_url}")
 
-    # Anthropic uses native SDK with anthropic_base_url
-    if ROOK_PROVIDER == "anthropic":
-        return {
-            "provider": "anthropic",
-            "config": {
-                "model": ROOK_MODEL,
-                "api_key": api_key,
-                "anthropic_base_url": base_url,  # CRITICAL: Proxy support for clewdr
-                "temperature": 0,
-                "max_tokens": 8000,
-            },
-        }
-
-    # All other providers use OpenAI-compatible endpoints
+    # Use unified provider for all backends
+    # This ensures consistent behavior with clara_core.llm
     return {
-        "provider": "openai",
+        "provider": "unified",
         "config": {
+            "provider": ROOK_PROVIDER,  # Actual provider (openrouter, anthropic, etc.)
             "model": ROOK_MODEL,
             "api_key": api_key,
-            "openai_base_url": base_url,
+            "base_url": base_url,
             "temperature": 0,
             "max_tokens": 8000,
         },
