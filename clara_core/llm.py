@@ -952,6 +952,7 @@ def make_llm_with_xml_tools(
     """
     from clara_core.plugins.xml_tools import (
         convert_to_openai_tool_calls,
+        extract_text_before_function_calls,
         parse_function_calls,
         tools_to_xml_from_dicts,
     )
@@ -972,8 +973,15 @@ def make_llm_with_xml_tools(
         # Parse function calls from response
         parsed_calls = parse_function_calls(response_text)
 
+        # If there are tool calls, extract only the text before them
+        # (don't include the XML tool call content in the message)
+        if parsed_calls:
+            content = extract_text_before_function_calls(response_text)
+        else:
+            content = response_text
+
         result = {
-            "content": response_text,
+            "content": content,
             "role": "assistant",
         }
 
