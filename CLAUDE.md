@@ -485,10 +485,11 @@ Example output with high tier:
 
 **For Claude proxies (like clewdr)**: Use `LLM_PROVIDER=anthropic` with `ANTHROPIC_BASE_URL` for native Anthropic SDK support. This uses native Claude tool calling without format conversion.
 
-**Tool Communication Mode (OpenClaw-style):**
+**Tool Communication Mode:**
 - `TOOL_CALL_MODE` - How tools are communicated to the LLM:
-  - `xml` (default): OpenClaw-style system prompt injection
-  - `native`: Uses API-native tool calling (OpenAI/Anthropic format)
+  - `langchain` (default): Uses LangChain's `bind_tools()` for unified tool calling across all providers
+  - `native`: Uses API-native tool calling (OpenAI/Anthropic format) directly
+  - `xml`: OpenClaw-style system prompt injection (works with any LLM, no native tool support needed)
 
 When using `TOOL_CALL_MODE=xml`:
 - Tools are serialized to XML and injected into the system prompt

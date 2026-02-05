@@ -66,8 +66,10 @@ DEFAULT_MODELS = {
         "low": "anthropic.claude-3-5-haiku-20241022-v1:0",
     },
     "azure": {
-        # Azure OpenAI uses deployment names, these are common defaults
-        # Users should set AZURE_MODEL_{HIGH,MID,LOW} for their deployments
+        # Azure OpenAI uses deployment names, not model names!
+        # These are reference model names only - they won't work without configuration.
+        # Users MUST set AZURE_DEPLOYMENT_NAME and optionally AZURE_MODEL_{HIGH,MID,LOW}
+        # to match their Azure Portal deployments.
         "high": "gpt-4o",
         "mid": "gpt-4o",
         "low": "gpt-4o-mini",

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -39,16 +42,24 @@ class ToolCall:
         """Create from OpenAI tool_call dict."""
         func = tc.get("function", {})
         args_str = func.get("arguments", "{}")
+        tool_name = func.get("name", "")
 
         # Parse arguments
         try:
             args = json.loads(args_str) if isinstance(args_str, str) else args_str
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            logger.warning(
+                "Failed to parse tool call arguments for %s: %s. "
+                "Raw arguments: %s",
+                tool_name,
+                str(e),
+                args_str[:200] if isinstance(args_str, str) else args_str,
+            )
             args = {}
 
         return cls(
             id=tc.get("id", ""),
-            name=func.get("name", ""),
+            name=tool_name,
             arguments=args,
             raw_arguments=args_str if isinstance(args_str, str) else None,
         )

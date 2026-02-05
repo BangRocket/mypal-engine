@@ -157,10 +157,10 @@ class LLMConfig:
             api_key = os.getenv("ANTHROPIC_API_KEY")
             base_url = os.getenv("ANTHROPIC_BASE_URL")
             extra_headers = _get_cf_access_headers()
-            # Override User-Agent for proxy compatibility
-            if base_url and extra_headers is None:
-                extra_headers = {}
-            if base_url and extra_headers is not None:
+            # Override User-Agent for proxy compatibility (e.g., clewdr)
+            if base_url:
+                if extra_headers is None:
+                    extra_headers = {}
                 extra_headers["User-Agent"] = "Clara/1.0"
 
         elif provider == "bedrock":

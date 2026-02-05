@@ -256,20 +256,25 @@ class DirectAnthropicProvider(LLMProvider):
     - Avoiding LangChain overhead
     """
 
-    _client = None
+    _clients: dict[str, Any] = {}
 
     def _get_client(self, config: "LLMConfig"):
-        """Get or create Anthropic client."""
+        """Get or create Anthropic client.
+
+        Caches clients by (api_key, base_url) to support multiple configurations.
+        """
         from anthropic import Anthropic
 
-        if self._client is None:
+        # Create cache key from relevant config fields
+        cache_key = f"{config.api_key}:{config.base_url}"
+        if cache_key not in self._clients:
             kwargs: dict[str, Any] = {"api_key": config.api_key}
             if config.base_url:
                 kwargs["base_url"] = config.base_url
             if config.extra_headers:
                 kwargs["default_headers"] = config.extra_headers
-            self._client = Anthropic(**kwargs)
-        return self._client
+            self._clients[cache_key] = Anthropic(**kwargs)
+        return self._clients[cache_key]
 
     def complete(
         self,
@@ -396,10 +401,13 @@ class DirectOpenAIProvider(LLMProvider):
     _clients: dict[str, Any] = {}
 
     def _get_client(self, config: "LLMConfig"):
-        """Get or create OpenAI client."""
+        """Get or create OpenAI client.
+
+        Caches clients by (api_key, base_url) to support multiple configurations.
+        """
         from openai import OpenAI
 
-        cache_key = f"{config.base_url}"
+        cache_key = f"{config.api_key}:{config.base_url}"
         if cache_key not in self._clients:
             kwargs: dict[str, Any] = {
                 "api_key": config.api_key,
