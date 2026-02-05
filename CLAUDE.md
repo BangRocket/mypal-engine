@@ -200,6 +200,25 @@ poetry run python -m gateway --host 127.0.0.1 --port 18789
 
 Uses native Anthropic SDK with native tool calling. Recommended for Claude proxies like clewdr.
 
+**Amazon Bedrock** (`LLM_PROVIDER=bedrock`):
+- `AWS_REGION` - AWS region (default: us-east-1)
+- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` - AWS credentials (or use IAM role)
+- `BEDROCK_MODEL` - Bedrock model ID (default: anthropic.claude-3-5-sonnet-20241022-v2:0)
+- `BEDROCK_MODEL_{HIGH,MID,LOW}` - Tier-specific model overrides
+
+Uses Claude models via Amazon Bedrock. Requires `langchain-aws` package: `pip install langchain-aws`.
+Supports IAM role authentication when running on AWS (EC2, Lambda, ECS).
+
+**Azure OpenAI** (`LLM_PROVIDER=azure`):
+- `AZURE_OPENAI_ENDPOINT` - Azure OpenAI endpoint URL (required)
+- `AZURE_OPENAI_API_KEY` - Azure API key (required)
+- `AZURE_DEPLOYMENT_NAME` - Deployment name in Azure (required)
+- `AZURE_API_VERSION` - API version (default: 2024-02-15-preview)
+- `AZURE_MODEL` - Model reference (default: gpt-4o)
+- `AZURE_MODEL_{HIGH,MID,LOW}` - Tier-specific model overrides
+
+Uses Azure OpenAI Service. Deployment names map to models configured in Azure Portal.
+
 ### Model Tiers (Discord Bot)
 The Discord bot supports dynamic model selection via message prefixes:
 - `!high` or `!opus` → High tier (Opus-class, most capable)

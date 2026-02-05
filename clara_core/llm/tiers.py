@@ -59,6 +59,19 @@ DEFAULT_MODELS = {
         "mid": "claude-sonnet-4-5",
         "low": "claude-haiku-4-5",
     },
+    "bedrock": {
+        # Amazon Bedrock model IDs for Claude
+        "high": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "mid": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "low": "anthropic.claude-3-5-haiku-20241022-v1:0",
+    },
+    "azure": {
+        # Azure OpenAI uses deployment names, these are common defaults
+        # Users should set AZURE_MODEL_{HIGH,MID,LOW} for their deployments
+        "high": "gpt-4o",
+        "mid": "gpt-4o",
+        "low": "gpt-4o-mini",
+    },
 }
 
 
@@ -123,6 +136,22 @@ def get_model_for_tier(tier: ModelTierType, provider: str | None = None) -> str:
             return os.getenv("ANTHROPIC_MODEL", DEFAULT_MODELS["anthropic"]["mid"])
         return DEFAULT_MODELS["anthropic"].get(tier, DEFAULT_MODELS["anthropic"]["mid"])
 
+    elif provider == "bedrock":
+        tier_model = os.getenv(f"BEDROCK_MODEL_{tier_upper}")
+        if tier_model:
+            return tier_model
+        if tier == "mid":
+            return os.getenv("BEDROCK_MODEL", DEFAULT_MODELS["bedrock"]["mid"])
+        return DEFAULT_MODELS["bedrock"].get(tier, DEFAULT_MODELS["bedrock"]["mid"])
+
+    elif provider == "azure":
+        tier_model = os.getenv(f"AZURE_MODEL_{tier_upper}")
+        if tier_model:
+            return tier_model
+        if tier == "mid":
+            return os.getenv("AZURE_MODEL", DEFAULT_MODELS["azure"]["mid"])
+        return DEFAULT_MODELS["azure"].get(tier, DEFAULT_MODELS["azure"]["mid"])
+
     else:
         raise ValueError(f"Unknown provider: {provider}")
 
@@ -150,6 +179,10 @@ def get_base_model(provider: str | None = None) -> str:
         return os.getenv("CUSTOM_OPENAI_MODEL", DEFAULT_MODELS["openai"]["mid"])
     elif provider == "anthropic":
         return os.getenv("ANTHROPIC_MODEL", DEFAULT_MODELS["anthropic"]["mid"])
+    elif provider == "bedrock":
+        return os.getenv("BEDROCK_MODEL", DEFAULT_MODELS["bedrock"]["mid"])
+    elif provider == "azure":
+        return os.getenv("AZURE_MODEL", DEFAULT_MODELS["azure"]["mid"])
     else:
         raise ValueError(f"Unknown provider: {provider}")
 

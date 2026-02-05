@@ -25,6 +25,8 @@ class LLMConfig:
     - nanogpt: NanoGPT API
     - openai: Custom OpenAI-compatible endpoint
     - anthropic: Native Anthropic SDK (with base_url for clewdr proxy)
+    - bedrock: Amazon Bedrock (Claude models via AWS)
+    - azure: Azure OpenAI Service
 
     Attributes:
         provider: LLM provider name
@@ -35,6 +37,9 @@ class LLMConfig:
         temperature: Sampling temperature (0.0-2.0)
         tier: Model tier for tier-based selection
         extra_headers: Additional HTTP headers (e.g., Cloudflare Access)
+        aws_region: AWS region for Bedrock (default: us-east-1)
+        azure_deployment: Azure OpenAI deployment name
+        azure_api_version: Azure OpenAI API version
     """
 
     provider: str
@@ -50,6 +55,11 @@ class LLMConfig:
     top_p: float = 1.0
     top_k: int | None = None
     response_format: dict | None = None
+
+    # Provider-specific options
+    aws_region: str | None = None  # Bedrock
+    azure_deployment: str | None = None  # Azure OpenAI
+    azure_api_version: str | None = None  # Azure OpenAI
 
     @classmethod
     def from_env(
@@ -69,7 +79,8 @@ class LLMConfig:
             LLMConfig instance configured from environment.
 
         Environment Variables:
-            LLM_PROVIDER: Provider selection (openrouter, nanogpt, openai, anthropic)
+            LLM_PROVIDER: Provider selection
+                (openrouter, nanogpt, openai, anthropic, bedrock, azure)
             MODEL_TIER: Default tier (high, mid, low)
 
             OpenRouter:
@@ -86,6 +97,16 @@ class LLMConfig:
             Anthropic:
                 ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL
                 ANTHROPIC_MODEL, ANTHROPIC_MODEL_{HIGH,MID,LOW}
+
+            Amazon Bedrock:
+                AWS_REGION (default: us-east-1)
+                AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (or use IAM role)
+                BEDROCK_MODEL, BEDROCK_MODEL_{HIGH,MID,LOW}
+
+            Azure OpenAI:
+                AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY
+                AZURE_DEPLOYMENT_NAME, AZURE_API_VERSION (default: 2024-02-15-preview)
+                AZURE_MODEL, AZURE_MODEL_{HIGH,MID,LOW}
 
             Tool Overrides:
                 TOOL_API_KEY, TOOL_BASE_URL
@@ -142,6 +163,18 @@ class LLMConfig:
             if base_url and extra_headers is not None:
                 extra_headers["User-Agent"] = "Clara/1.0"
 
+        elif provider == "bedrock":
+            # Amazon Bedrock uses AWS credentials (env vars, IAM role, or profile)
+            # No API key needed - uses boto3 credential chain
+            api_key = None
+            base_url = None
+            extra_headers = None
+
+        elif provider == "azure":
+            api_key = os.getenv("AZURE_OPENAI_API_KEY")
+            base_url = os.getenv("AZURE_OPENAI_ENDPOINT")
+            extra_headers = None
+
         else:
             raise ValueError(f"Unknown provider: {provider}")
 
@@ -154,6 +187,18 @@ class LLMConfig:
             if tool_base_url:
                 base_url = tool_base_url
 
+        # Provider-specific config
+        aws_region = None
+        azure_deployment = None
+        azure_api_version = None
+
+        if provider == "bedrock":
+            aws_region = os.getenv("AWS_REGION", "us-east-1")
+
+        elif provider == "azure":
+            azure_deployment = os.getenv("AZURE_DEPLOYMENT_NAME")
+            azure_api_version = os.getenv("AZURE_API_VERSION", "2024-02-15-preview")
+
         return cls(
             provider=provider,
             model=model,
@@ -161,6 +206,9 @@ class LLMConfig:
             base_url=base_url,
             extra_headers=extra_headers,
             tier=effective_tier,
+            aws_region=aws_region,
+            azure_deployment=azure_deployment,
+            azure_api_version=azure_api_version,
         )
 
     def with_tier(self, tier: ModelTier) -> "LLMConfig":
@@ -185,6 +233,9 @@ class LLMConfig:
             extra_headers=self.extra_headers,
             top_p=self.top_p,
             top_k=self.top_k,
+            aws_region=self.aws_region,
+            azure_deployment=self.azure_deployment,
+            azure_api_version=self.azure_api_version,
         )
 
 

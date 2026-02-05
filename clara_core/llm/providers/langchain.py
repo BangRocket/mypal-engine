@@ -3,6 +3,8 @@
 Provides unified access to all supported LLM backends via LangChain:
 - ChatOpenAI for OpenRouter, NanoGPT, Custom OpenAI
 - ChatAnthropic for native Anthropic (with base_url for clewdr)
+- ChatBedrock for Amazon Bedrock (Claude models via AWS)
+- AzureChatOpenAI for Azure OpenAI Service
 
 Benefits:
 - Unified tool calling via bind_tools()
@@ -40,6 +42,8 @@ class LangChainProvider(LLMProvider):
     - nanogpt: ChatOpenAI with NanoGPT base URL
     - openai: ChatOpenAI with custom base URL
     - anthropic: ChatAnthropic with native SDK (base_url for clewdr)
+    - bedrock: ChatBedrock for Amazon Bedrock (requires langchain-aws)
+    - azure: AzureChatOpenAI for Azure OpenAI Service
     """
 
     def complete(
@@ -132,6 +136,10 @@ class LangChainProvider(LLMProvider):
 
         if config.provider == "anthropic":
             model = self._create_anthropic_model(config)
+        elif config.provider == "bedrock":
+            model = self._create_bedrock_model(config)
+        elif config.provider == "azure":
+            model = self._create_azure_model(config)
         else:
             model = self._create_openai_model(config)
 
@@ -174,6 +182,65 @@ class LangChainProvider(LLMProvider):
             kwargs["default_headers"] = config.extra_headers
 
         return ChatOpenAI(**kwargs)
+
+    def _create_bedrock_model(self, config: "LLMConfig") -> "BaseChatModel":
+        """Create a ChatBedrock model for Amazon Bedrock.
+
+        Requires langchain-aws package: pip install langchain-aws
+
+        Uses boto3 credential chain:
+        - Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+        - AWS credentials file (~/.aws/credentials)
+        - IAM role (for EC2, Lambda, etc.)
+        """
+        try:
+            from langchain_aws import ChatBedrock
+        except ImportError as e:
+            raise ImportError(
+                "Amazon Bedrock support requires langchain-aws. "
+                "Install it with: pip install langchain-aws"
+            ) from e
+
+        kwargs: dict[str, Any] = {
+            "model_id": config.model,
+            "model_kwargs": {
+                "temperature": config.temperature,
+                "max_tokens": config.max_tokens,
+            },
+        }
+
+        if config.aws_region:
+            kwargs["region_name"] = config.aws_region
+
+        return ChatBedrock(**kwargs)
+
+    def _create_azure_model(self, config: "LLMConfig") -> "BaseChatModel":
+        """Create an AzureChatOpenAI model for Azure OpenAI Service.
+
+        Requires:
+        - AZURE_OPENAI_ENDPOINT: Your Azure OpenAI endpoint
+        - AZURE_OPENAI_API_KEY: API key
+        - AZURE_DEPLOYMENT_NAME: Name of your deployment
+        - AZURE_API_VERSION: API version (default: 2024-02-15-preview)
+        """
+        from langchain_openai import AzureChatOpenAI
+
+        if not config.azure_deployment:
+            raise ValueError(
+                "Azure OpenAI requires AZURE_DEPLOYMENT_NAME environment variable"
+            )
+
+        kwargs: dict[str, Any] = {
+            "azure_deployment": config.azure_deployment,
+            "api_key": config.api_key,
+            "api_version": config.azure_api_version or "2024-02-15-preview",
+            "temperature": config.temperature,
+        }
+
+        if config.base_url:
+            kwargs["azure_endpoint"] = config.base_url
+
+        return AzureChatOpenAI(**kwargs)
 
 
 # Direct SDK providers for cases where LangChain overhead isn't needed
