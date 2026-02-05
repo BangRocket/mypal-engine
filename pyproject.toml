@@ -37,10 +37,10 @@ redis = "^5.0.0"  # Redis for memory embedding cache
 
 # LLM backends
 openai = "^1.42.0"
-anthropic = "^0.40.0"
+anthropic = "^0.69.0"  # Upgraded for langchain-anthropic compatibility
 huggingface_hub = "^0.26.0"
 langchain-openai = "^0.3.0"  # LangChain ChatOpenAI for unified tool calling
-langchain-anthropic = "^0.3.0"  # LangChain ChatAnthropic for native Anthropic tools
+langchain-anthropic = "^0.4.0"  # LangChain ChatAnthropic for native Anthropic tools (requires langchain-core 1.x)
 
 # General utils
 requests = "^2.32.5"
