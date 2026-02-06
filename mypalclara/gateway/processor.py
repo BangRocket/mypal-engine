@@ -369,6 +369,9 @@ class MessageProcessor:
             # Store in memory
             await self._store_exchange(request, full_text, context)
 
+            # Promote memories that were used in this response (FSRS feedback)
+            await self._promote_retrieved_memories(context)
+
             # Convert file paths to FileData with content
             file_data_list = await self._prepare_file_data(files)
 
@@ -769,6 +772,41 @@ class MessageProcessor:
             pass  # Emotional context module not available
         except Exception as e:
             logger.debug(f"Failed to track sentiment: {e}")
+
+    async def _promote_retrieved_memories(self, context: dict[str, Any]) -> None:
+        """Promote memories that were retrieved for this response.
+
+        Closes the FSRS feedback loop: memories used in responses
+        get stronger (higher retrieval_strength), unused ones naturally
+        decay over time.
+        """
+        user_id = context.get("user_id")
+        if not user_id or not self._memory_manager:
+            return
+
+        try:
+            loop = asyncio.get_event_loop()
+            memory_ids = await loop.run_in_executor(
+                BLOCKING_EXECUTOR,
+                lambda: self._memory_manager.get_last_retrieved_memory_ids(user_id),
+            )
+            if not memory_ids:
+                return
+
+            for memory_id in memory_ids:
+                await loop.run_in_executor(
+                    BLOCKING_EXECUTOR,
+                    lambda mid=memory_id: self._memory_manager.promote_memory(
+                        memory_id=mid,
+                        user_id=user_id,
+                        grade=3,  # Grade.GOOD
+                        signal_type="used_in_response",
+                    ),
+                )
+
+            logger.debug(f"Promoted {len(memory_ids)} memories for user {user_id}")
+        except Exception as e:
+            logger.warning(f"Failed to promote memories: {e}")
 
     def _get_tool_emoji(self, tool_name: str) -> str:
         """Get emoji for a tool.

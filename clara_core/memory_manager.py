@@ -643,11 +643,17 @@ class MemoryManager:
         # Build user memories: key first, then relevant (deduplicated)
         user_mems = list(key_mems)
         key_texts = {m.replace("[KEY] ", "") for m in key_mems}
+        seen_raw_texts = set(key_texts)  # Track raw texts for dedup across all sources
 
         for r in user_results:
             mem = r["memory"]
             if mem not in key_texts:
-                user_mems.append(mem)
+                seen_raw_texts.add(mem)
+                category = r.get("_category")
+                if category:
+                    user_mems.append(f"[{category}] {mem}")
+                else:
+                    user_mems.append(mem)
 
         proj_mems = [r["memory"] for r in proj_results]
 
@@ -677,12 +683,12 @@ class MemoryManager:
                         p_results = self._rank_results_with_fsrs_batch(p_search.get("results", []), user_id)
                         for r in p_results:
                             mem = r["memory"]
-                            if mem not in key_texts and mem not in user_mems:
+                            if mem not in seen_raw_texts:
+                                seen_raw_texts.add(mem)
                                 labeled_mem = f"[About {p_name}]: {mem}"
-                                if labeled_mem not in user_mems:
-                                    user_mems.append(labeled_mem)
-                                    if r.get("id") and r["id"] not in retrieved_ids:
-                                        retrieved_ids.append(r["id"])
+                                user_mems.append(labeled_mem)
+                                if r.get("id") and r["id"] not in retrieved_ids:
+                                    retrieved_ids.append(r["id"])
                     except Exception as e:
                         logger.warning(f"Error searching participant {p_name}: {e}")
 
@@ -693,10 +699,11 @@ class MemoryManager:
         for r in user_results:
             metadata = r.get("metadata", {})
             if metadata.get("contact_id"):
-                contact_name = metadata.get("contact_name", metadata.get("contact_id"))
-                mem_text = f"[About {contact_name}]: {r['memory']}"
-                if mem_text not in user_mems:
-                    user_mems.append(mem_text)
+                raw_mem = r["memory"]
+                if raw_mem not in seen_raw_texts:
+                    seen_raw_texts.add(raw_mem)
+                    contact_name = metadata.get("contact_name", metadata.get("contact_id"))
+                    user_mems.append(f"[About {contact_name}]: {raw_mem}")
 
         # Limit non-key memories to reduce token usage
         num_key = len(key_mems)
@@ -826,6 +833,10 @@ class MemoryManager:
                     logger.error(f"Error adding memories: {result.get('error')}")
                 else:
                     mem_results = result.get("results", [])
+
+                    # Post-ingestion validation via smart_ingest
+                    mem_results = self._validate_ingested_memories(mem_results, user_id)
+
                     mem_count = len(mem_results)
                     # Handle graph relations from add result
                     relations = result.get("relations", {})
@@ -921,6 +932,39 @@ class MemoryManager:
             },
         )
 
+    # Category keywords for memory classification
+    CATEGORY_KEYWORDS: ClassVar[dict[str, list[str]]] = {
+        "preferences": ["prefer", "like", "favorite", "love", "hate", "dislike", "enjoy", "want"],
+        "personal": ["my name", "i am", "i'm from", "my family", "my wife", "my husband", "birthday"],
+        "professional": ["work", "job", "career", "company", "project", "team", "meeting"],
+        "goals": ["want to", "plan to", "going to", "hope to", "goal", "dream", "aspire"],
+        "emotional": ["feel", "feeling", "mood", "happy", "sad", "anxious", "excited", "stressed"],
+        "temporal": ["yesterday", "today", "tomorrow", "last week", "next week", "recently"],
+    }
+
+    def _classify_memory(self, memory_text: str) -> str | None:
+        """Classify a memory into a category using keyword matching.
+
+        Falls back to None if no clear category matches.
+
+        Args:
+            memory_text: The memory content to classify
+
+        Returns:
+            Category string or None
+        """
+        text_lower = memory_text.lower()
+        scores: dict[str, int] = {}
+        for category, keywords in self.CATEGORY_KEYWORDS.items():
+            score = sum(1 for kw in keywords if kw in text_lower)
+            if score > 0:
+                scores[category] = score
+
+        if not scores:
+            return None
+
+        return max(scores, key=scores.get)
+
     def _create_memory_dynamics_records(
         self,
         user_id: str,
@@ -963,6 +1007,10 @@ class MemoryManager:
                 )
 
                 if not existing:
+                    # Classify the memory content
+                    memory_text = r.get("memory", "")
+                    category = self._classify_memory(memory_text) if memory_text else None
+
                     # Create new dynamics record with default FSRS values
                     dynamics = MemoryDynamics(
                         memory_id=memory_id,
@@ -973,6 +1021,7 @@ class MemoryManager:
                         storage_strength=0.5,
                         is_key=False,
                         importance_weight=1.0,
+                        category=category,
                         last_accessed_at=now,
                         access_count=1,  # Created = first access
                         created_at=now,
@@ -1787,10 +1836,16 @@ class MemoryManager:
                 # No FSRS data, just use semantic score
                 composite_score = semantic_score
 
+            # Attach category from dynamics if available
+            category = None
+            if memory_id and memory_id in dynamics_map:
+                category = dynamics_map[memory_id].category
+
             scored_results.append(
                 {
                     **r,
                     "_composite_score": composite_score,
+                    "_category": category,
                 }
             )
 
@@ -1801,11 +1856,87 @@ class MemoryManager:
 
     # ---------- Prediction Error Gating ----------
 
+    def _validate_ingested_memories(
+        self,
+        mem_results: list[dict],
+        user_id: str,
+    ) -> list[dict]:
+        """Validate newly ingested memories against existing ones.
+
+        Uses smart_ingest() as a post-ingestion check to detect duplicates
+        and contradictions that ROOK's built-in dedup may have missed.
+
+        Args:
+            mem_results: Results from ROOK.add()
+            user_id: User who owns the memories
+
+        Returns:
+            Filtered list of results (duplicates removed, contradictions superseded)
+        """
+        from clara_core.memory import ROOK
+
+        if not mem_results or ROOK is None:
+            return mem_results
+
+        # Collect all IDs from this batch to exclude from self-matching
+        batch_ids = [m.get("id") for m in mem_results if m.get("id")]
+
+        validated = []
+        for mem in mem_results:
+            memory_text = mem.get("memory", "")
+            memory_id = mem.get("id", "")
+            event = mem.get("event", "")
+
+            # Only validate newly added memories (not updates ROOK already handled)
+            if event != "ADD" or not memory_text:
+                validated.append(mem)
+                continue
+
+            decision, existing_id = self.smart_ingest(
+                content=memory_text,
+                user_id=user_id,
+                exclude_ids=batch_ids,
+            )
+
+            if decision == "skip":
+                # Near-duplicate of existing memory — delete the one ROOK just added
+                memory_logger.debug(f"Post-ingest: removing duplicate memory {memory_id}")
+                try:
+                    ROOK.delete(memory_id)
+                except Exception as e:
+                    memory_logger.warning(f"Failed to delete duplicate: {e}")
+                continue  # Don't include in validated list
+
+            elif decision == "supersede" and existing_id:
+                # Contradicts existing memory — record supersession and demote old
+                # (new memory already exists from ROOK.add, don't create another copy)
+                # Old memory stays in ROOK but gets demoted via FSRS, matching
+                # supersede_memory() behavior
+                memory_logger.info(f"Post-ingest: superseding {existing_id} with {memory_id}")
+                try:
+                    self._record_supersession(
+                        old_memory_id=existing_id,
+                        new_memory_id=memory_id,
+                        user_id=user_id,
+                        reason="post_ingest_contradiction",
+                    )
+                except Exception as e:
+                    memory_logger.warning(f"Failed to supersede: {e}")
+
+            validated.append(mem)
+
+        skipped = len(mem_results) - len(validated)
+        if skipped:
+            memory_logger.info(f"Post-ingestion validation: {skipped}/{len(mem_results)} " f"duplicates removed")
+
+        return validated
+
     def smart_ingest(
         self,
         content: str,
         user_id: str,
         metadata: dict | None = None,
+        exclude_ids: list[str] | None = None,
     ) -> tuple[str, str | None]:
         """Intelligently decide how to handle new information.
 
@@ -1819,6 +1950,8 @@ class MemoryManager:
             content: The new information
             user_id: User ID for memory lookup
             metadata: Optional metadata for the memory
+            exclude_ids: Memory IDs to exclude from search results
+                (e.g. to prevent a newly-added memory from matching itself)
 
         Returns:
             Tuple of (decision, existing_memory_id)
@@ -1847,6 +1980,11 @@ class MemoryManager:
             return "create", None
 
         results = existing.get("results", [])
+
+        # Filter out excluded IDs (e.g. the memory itself in post-ingestion validation)
+        if exclude_ids:
+            results = [r for r in results if r.get("id") not in exclude_ids]
+
         if not results:
             return "create", None
 
@@ -1904,6 +2042,42 @@ class MemoryManager:
         # Novel information
         return "create", None
 
+    def _record_supersession(
+        self,
+        old_memory_id: str,
+        new_memory_id: str,
+        user_id: str,
+        reason: str = "contradiction",
+    ) -> None:
+        """Record a supersession relationship and demote the old memory.
+
+        Args:
+            old_memory_id: ID of memory being superseded
+            new_memory_id: ID of memory that replaces it
+            user_id: User ID
+            reason: Why the supersession occurred
+        """
+        from db import SessionLocal
+        from db.models import MemorySupersession
+
+        db = SessionLocal()
+        try:
+            supersession = MemorySupersession(
+                old_memory_id=old_memory_id,
+                new_memory_id=new_memory_id,
+                user_id=user_id,
+                reason=reason,
+            )
+            db.add(supersession)
+            db.commit()
+        finally:
+            db.close()
+
+        # Demote old memory
+        self.demote_memory(old_memory_id, user_id, reason="superseded")
+
+        memory_logger.info(f"Recorded supersession: {old_memory_id} -> {new_memory_id}")
+
     def supersede_memory(
         self,
         old_memory_id: str,
@@ -1927,8 +2101,6 @@ class MemoryManager:
             New memory ID, or None on failure
         """
         from clara_core.memory import ROOK
-        from db import SessionLocal
-        from db.models import MemorySupersession
 
         if ROOK is None:
             return None
@@ -1950,24 +2122,8 @@ class MemoryManager:
                 memory_logger.warning("Failed to create new memory for supersession")
                 return None
 
-            # Record supersession
-            db = SessionLocal()
-            try:
-                supersession = MemorySupersession(
-                    old_memory_id=old_memory_id,
-                    new_memory_id=new_memory_id,
-                    user_id=user_id,
-                    reason=reason,
-                )
-                db.add(supersession)
-                db.commit()
-            finally:
-                db.close()
+            self._record_supersession(old_memory_id, new_memory_id, user_id, reason)
 
-            # Demote old memory
-            self.demote_memory(old_memory_id, user_id, reason="superseded")
-
-            memory_logger.info(f"Superseded memory {old_memory_id} with {new_memory_id}")
             return new_memory_id
 
         except Exception as e:
