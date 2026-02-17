@@ -511,6 +511,7 @@ async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] 
     if adapter_manager:
         await adapter_manager.stop()
 
+    await processor.shutdown()
     await scheduler.stop()
     await server.stop()
     logger.info("Gateway stopped")

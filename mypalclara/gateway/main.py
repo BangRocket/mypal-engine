@@ -116,6 +116,7 @@ async def main(host: str, port: int, hooks_dir: str, scheduler_dir: str) -> None
 
     # Cleanup
     logger.info("Shutting down gateway...")
+    await processor.shutdown()
     await scheduler.stop()
     await server.stop()
     logger.info("Gateway stopped")

@@ -84,6 +84,7 @@ class MessageProcessor:
         self._tool_executor: ToolExecutor | None = None
         self._llm_orchestrator: LLMOrchestrator | None = None
         self._summary_manager: ChannelSummaryManager | None = None
+        self._background_tasks: set[asyncio.Task] = set()
 
     async def initialize(self) -> None:
         """Initialize the processor with required resources.
@@ -110,6 +111,13 @@ class MessageProcessor:
 
         self._initialized = True
         logger.info("MessageProcessor initialized")
+
+    async def shutdown(self) -> None:
+        """Wait for all background memory tasks to complete."""
+        if self._background_tasks:
+            logger.info(f"Waiting for {len(self._background_tasks)} background memory tasks...")
+            await asyncio.gather(*self._background_tasks, return_exceptions=True)
+            logger.info("All background memory tasks completed")
 
     async def _init_memory_manager(self) -> None:
         """Initialize the memory manager."""
@@ -366,16 +374,13 @@ class MessageProcessor:
                     tool_count = event.get("tool_count", 0)
                     files = event.get("files", [])
 
-            # Store in memory
-            await self._store_exchange(request, full_text, context)
-
-            # Promote memories that were used in this response (FSRS feedback)
-            await self._promote_retrieved_memories(context)
+            # Store messages in DB (fast — must complete before response)
+            await self._store_messages_db(request, full_text, context)
 
             # Convert file paths to FileData with content
             file_data_list = await self._prepare_file_data(files)
 
-            # Send response end
+            # Send response end — user gets response immediately
             await self._send(
                 websocket,
                 ResponseEnd(
@@ -389,6 +394,13 @@ class MessageProcessor:
             )
 
             logger.info(f"Completed response {response_id} ({len(full_text)} chars, {tool_count} tools)")
+
+            # Fire-and-forget background memory operations
+            task = asyncio.create_task(
+                self._background_memory_ops(request, full_text, context),
+            )
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
 
         except asyncio.CancelledError:
             logger.info(f"Processing cancelled for {request.id}")
@@ -689,13 +701,13 @@ class MessageProcessor:
 
         return file_data_list
 
-    async def _store_exchange(
+    async def _store_messages_db(
         self,
         request: MessageRequest,
         response: str,
         context: dict[str, Any],
     ) -> None:
-        """Store the exchange in Clara's memory and database.
+        """Store user and assistant messages in the database (fast path).
 
         Args:
             request: The original request
@@ -707,10 +719,8 @@ class MessageProcessor:
 
         loop = asyncio.get_event_loop()
 
-        # Store messages in database for conversation history
         db_session_id = context.get("db_session_id")
         if db_session_id:
-            # Store user message
             user_content = context.get("user_content", request.content)
             await loop.run_in_executor(
                 BLOCKING_EXECUTOR,
@@ -721,7 +731,6 @@ class MessageProcessor:
                     user_content,
                 ),
             )
-            # Store assistant response
             await loop.run_in_executor(
                 BLOCKING_EXECUTOR,
                 lambda: self._store_message(
@@ -732,22 +741,41 @@ class MessageProcessor:
                 ),
             )
 
-        # Track sentiment for emotional context
-        await self._track_sentiment(request, context)
+    async def _background_memory_ops(
+        self,
+        request: MessageRequest,
+        response: str,
+        context: dict[str, Any],
+    ) -> None:
+        """Run memory operations in background (sentiment, mem0, FSRS promotion).
 
-        # Store in mem0 for semantic memory
+        Errors are logged but do not affect the user response.
+        """
         try:
-            await loop.run_in_executor(
-                BLOCKING_EXECUTOR,
-                lambda: self._memory_manager.add_to_memory(
-                    context["user_id"],
-                    request.content,
-                    response,
-                    is_dm=context["is_dm"],
-                ),
-            )
+            # Track sentiment for emotional context
+            await self._track_sentiment(request, context)
+
+            # Store in mem0 for semantic memory
+            loop = asyncio.get_event_loop()
+            try:
+                await loop.run_in_executor(
+                    BLOCKING_EXECUTOR,
+                    lambda: self._memory_manager.add_to_memory(
+                        context["user_id"],
+                        request.content,
+                        response,
+                        is_dm=context["is_dm"],
+                    ),
+                )
+            except Exception as e:
+                logger.warning(f"Failed to store in mem0: {e}")
+
+            # Promote memories that were used in this response (FSRS feedback)
+            await self._promote_retrieved_memories(context)
+
+            logger.debug(f"Background memory ops completed for {request.id}")
         except Exception as e:
-            logger.warning(f"Failed to store in mem0: {e}")
+            logger.warning(f"Background memory ops failed for {request.id}: {e}")
 
     async def _track_sentiment(
         self,
