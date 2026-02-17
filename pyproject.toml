@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "mypalclara"
-version = "2026.06.71"
+version = "2026.08.1"
 description = "MyPalClara - AI assistant with session management and memory"
 authors = ["Joshua Heidorn <heidornj@icloud.com>"]
 license = "PolyForm-Noncommercial-1.0.0"
@@ -49,6 +49,8 @@ imessage-reader = "^0.6.1"
 httpx = "^0.28.0"  # Async HTTP client for web search
 vaderSentiment = "^3.3.2"  # Sentiment analysis for emotional continuity
 pillow = "^11.0.0"  # Image processing for vision resizing
+python-docx = "^1.1.0"  # .docx document extraction
+pymupdf = "^1.25.0"  # .pdf document extraction
 
 # Discord bot
 py-cord = "^2.6.1"
@@ -77,6 +79,7 @@ alembic = "^1.18.1"
 # CLI interface
 prompt_toolkit = "^3.0.52"
 rich = "^14.0.0"
+typer = {extras = ["all"], version = ">=0.15.0"}
 
 # Gateway
 websockets = "^15.0"  # WebSocket server for gateway architecture
