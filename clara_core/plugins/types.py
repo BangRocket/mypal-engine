@@ -20,6 +20,7 @@ from typing import (
 
 if TYPE_CHECKING:
     from tools._base import ToolDef
+
     from .runtime import PluginRuntime
 
 

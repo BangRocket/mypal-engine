@@ -527,7 +527,7 @@ class ClaraMemory(MemoryBase):
                             )
                         else:
                             # Target not found, convert to ADD
-                            logger.info(f"UPDATE target not found, converting to ADD")
+                            logger.info("UPDATE target not found, converting to ADD")
                             add_meta = deepcopy(metadata)
                             add_meta["is_key"] = is_key_str
                             mem_id = self._create_memory(

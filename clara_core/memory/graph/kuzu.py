@@ -18,7 +18,6 @@ except ImportError:
     raise ImportError("rank_bm25 is not installed. Please install it using pip install rank-bm25")
 
 from clara_core.memory.embeddings.factory import EmbedderFactory
-from clara_core.memory.llm.factory import LlmFactory
 from clara_core.memory.graph.tools import (
     DELETE_MEMORY_TOOL_GRAPH,
     EXTRACT_ENTITIES_TOOL,
@@ -29,6 +28,7 @@ from clara_core.memory.graph.utils import (
     format_entities,
     get_delete_messages,
 )
+from clara_core.memory.llm.factory import LlmFactory
 
 if TYPE_CHECKING:
     from clara_core.memory.cache.graph_cache import GraphCache

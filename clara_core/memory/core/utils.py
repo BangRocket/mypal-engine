@@ -4,9 +4,9 @@ import hashlib
 import re
 
 from clara_core.memory.core.prompts import (
+    AGENT_MEMORY_EXTRACTION_PROMPT,
     FACT_RETRIEVAL_PROMPT,
     USER_MEMORY_EXTRACTION_PROMPT,
-    AGENT_MEMORY_EXTRACTION_PROMPT,
 )
 
 

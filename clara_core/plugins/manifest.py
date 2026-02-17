@@ -15,8 +15,8 @@ from typing import Any
 from .types import (
     Diagnostic,
     DiagnosticLevel,
-    PluginManifest,
     PluginKind,
+    PluginManifest,
 )
 
 logger = logging.getLogger(__name__)

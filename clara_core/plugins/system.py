@@ -14,15 +14,15 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     pass
 
+from .hooks import HookEvent
+from .loader import PluginLoader, PluginLoadOptions
+from .mcp_integration import create_mcp_plugin_record, get_mcp_plugin
+from .registry import PluginRegistry
 from .types import (
+    DiagnosticLevel,
     PluginAPI,
     PluginRecord,
-    DiagnosticLevel,
 )
-from .registry import PluginRegistry
-from .loader import PluginLoader, PluginLoadOptions
-from .mcp_integration import get_mcp_plugin, create_mcp_plugin_record
-from .hooks import HookEvent
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +112,7 @@ async def initialize_plugins(
             plugin_id_str = diag.plugin_id if diag.plugin_id else "system"
             logger.error(f"  [{plugin_id_str}] {diag.message}")
 
-    logger.info(f"Plugin system initialization complete")
+    logger.info("Plugin system initialization complete")
     logger.info(f"  Total plugins: {len(registry.plugins)}")
     logger.info(f"  Total tools: {len(registry.tools)}")
     logger.info(f"  Total hooks: {sum(len(h) for h in registry.hooks.values())}")

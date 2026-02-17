@@ -10,7 +10,8 @@ import logging
 from typing import TYPE_CHECKING, Any, Awaitable
 
 if TYPE_CHECKING:
-    from tools._base import ToolDef, ToolContext
+    from tools._base import ToolContext, ToolDef
+
     from ..plugins.registry import PluginRegistry
 
 logger = logging.getLogger(__name__)

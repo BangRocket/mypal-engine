@@ -4,12 +4,11 @@ import os
 import warnings
 from typing import Literal, Optional
 
-from openai import OpenAI
-
 # Pre-import OpenAI resources to avoid deadlock when used in concurrent contexts.
 # The OpenAI client lazy-loads these modules, which can cause import deadlocks
 # when multiple threads try to import simultaneously.
 import openai.resources.embeddings  # noqa: F401
+from openai import OpenAI
 
 from clara_core.memory.embeddings.base import BaseEmbedderConfig, EmbeddingBase
 

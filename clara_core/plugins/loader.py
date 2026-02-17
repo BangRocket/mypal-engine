@@ -16,23 +16,23 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .types import (
-        PluginManifest,
-        PluginRecord,
-        PluginContext,
-        Diagnostic,
-        PluginOrigin,
-    )
-    from .registry import PluginRegistry
     from .manifest import PluginManifestLoadResult
+    from .registry import PluginRegistry
+    from .types import (
+        Diagnostic,
+        PluginContext,
+        PluginManifest,
+        PluginOrigin,
+        PluginRecord,
+    )
 
-from .types import PluginKind, DiagnosticLevel, PluginOrigin
 from .manifest import (
     load_plugin_manifest,
     resolve_manifest_path,
     validate_plugin_config,
 )
 from .registry import PluginRegistry
+from .types import DiagnosticLevel, PluginKind, PluginOrigin
 
 logger = logging.getLogger(__name__)
 
@@ -374,8 +374,8 @@ class PluginLoader:
                 plugin_config = validated
 
         # Create plugin API
-        from .types import PluginAPI
         from .runtime import PluginRuntime
+        from .types import PluginAPI
 
         runtime = PluginRuntime(
             logger=logger,

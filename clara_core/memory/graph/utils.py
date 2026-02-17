@@ -2,7 +2,6 @@
 
 import re
 
-
 EXTRACT_RELATIONS_PROMPT = """
 You are an advanced algorithm designed to extract structured information from text to construct knowledge graphs. Your goal is to capture comprehensive and accurate information. Follow these key principles:
 

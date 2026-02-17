@@ -6,22 +6,21 @@ This module contains:
 - Prediction error gating for memory decisions
 """
 
+from clara_core.memory.dynamics.contradiction import (
+    ContradictionResult,
+    ContradictionType,
+    calculate_similarity,
+    detect_contradiction,
+)
 from clara_core.memory.dynamics.fsrs import (
-    Grade,
     FsrsParams,
+    Grade,
     MemoryState,
     ReviewResult,
+    calculate_memory_score,
+    infer_grade_from_signal,
     retrievability,
     review,
-    infer_grade_from_signal,
-    calculate_memory_score,
-)
-
-from clara_core.memory.dynamics.contradiction import (
-    ContradictionType,
-    ContradictionResult,
-    detect_contradiction,
-    calculate_similarity,
 )
 
 __all__ = [

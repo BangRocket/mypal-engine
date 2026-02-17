@@ -357,7 +357,7 @@ class MCPMetricsTracker:
                 # Find applicable rate limits (most specific first)
                 limits = (
                     db.query(MCPRateLimit)
-                    .filter(MCPRateLimit.enabled == True)
+                    .filter(MCPRateLimit.enabled.is_(True))
                     .filter((MCPRateLimit.user_id == user_id) | (MCPRateLimit.user_id.is_(None)))
                     .filter((MCPRateLimit.server_name == server_name) | (MCPRateLimit.server_name.is_(None)))
                     .filter((MCPRateLimit.tool_name == tool_name) | (MCPRateLimit.tool_name.is_(None)))

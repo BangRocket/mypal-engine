@@ -67,7 +67,7 @@ class UserMCPContext:
                 # Find servers for this user or global servers
                 servers = (
                     db.query(MCPServer)
-                    .filter(MCPServer.enabled == True)
+                    .filter(MCPServer.enabled.is_(True))
                     .filter((MCPServer.user_id == self.user_id) | (MCPServer.user_id.is_(None)))
                     .all()
                 )

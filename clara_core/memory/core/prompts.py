@@ -2,7 +2,6 @@
 
 from datetime import datetime
 
-
 MEMORY_ANSWER_PROMPT = """
 You are an expert at answering questions based on the provided memories. Your task is to provide accurate and concise answers to the questions by leveraging the information given in the memories.
 

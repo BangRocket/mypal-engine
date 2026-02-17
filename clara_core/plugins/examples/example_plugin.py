@@ -11,7 +11,7 @@ from clara_core.plugins import (
     PluginAPI,
     PluginContext,
 )
-from tools._base import ToolDef
+from tools._base import ToolContext, ToolDef
 
 
 def register(api: PluginAPI):

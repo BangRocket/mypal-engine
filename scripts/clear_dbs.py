@@ -22,7 +22,7 @@ USER_ID = os.getenv("USER_ID", "demo-user")
 
 def clear_databases(user_id: str, skip_confirm: bool = False):
     """Clear all mem0 data for a user."""
-    from clara_core.memory.config import ROOK, QDRANT_DATA_DIR
+    from clara_core.memory.config import QDRANT_DATA_DIR, ROOK
 
     if ROOK is None:
         print("Error: mem0 is not initialized")

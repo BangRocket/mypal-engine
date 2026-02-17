@@ -79,8 +79,9 @@ class PostgresHistoryManager(HistoryManager):
         role: Optional[str] = None,
     ) -> None:
         """Add a history record to PostgreSQL."""
-        from db.models import MemoryHistory, utcnow
         from datetime import datetime
+
+        from db.models import MemoryHistory, utcnow
 
         session = self._session_factory()
         try:
