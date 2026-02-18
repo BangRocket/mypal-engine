@@ -585,40 +585,6 @@ class ClaraMemory(MemoryBase):
 
         return added_entities
 
-    def get(self, memory_id):
-        """Retrieve a memory by ID.
-
-        Args:
-            memory_id: ID of the memory
-
-        Returns:
-            Memory item dict or None
-        """
-        memory = self.vector_store.get(vector_id=memory_id)
-        if not memory:
-            return None
-
-        promoted_keys = ["user_id", "agent_id", "run_id", "actor_id", "role"]
-        core_keys = {"data", "hash", "created_at", "updated_at", "id", *promoted_keys}
-
-        result = ClaraMemoryItem(
-            id=memory.id,
-            memory=memory.payload.get("data", ""),
-            hash=memory.payload.get("hash"),
-            created_at=memory.payload.get("created_at"),
-            updated_at=memory.payload.get("updated_at"),
-        ).model_dump()
-
-        for key in promoted_keys:
-            if key in memory.payload:
-                result[key] = memory.payload[key]
-
-        additional_metadata = {k: v for k, v in memory.payload.items() if k not in core_keys}
-        if additional_metadata:
-            result["metadata"] = additional_metadata
-
-        return result
-
     def get_all(
         self,
         *,
@@ -776,20 +742,6 @@ class ClaraMemory(MemoryBase):
 
         return results
 
-    def update(self, memory_id, data):
-        """Update a memory by ID.
-
-        Args:
-            memory_id: ID of the memory
-            data: New content
-
-        Returns:
-            dict: Success message
-        """
-        existing_embeddings = {data: self.embedding_model.embed(data, "update")}
-        self._update_memory(memory_id, data, existing_embeddings)
-        return {"message": "Memory updated successfully!"}
-
     def delete(self, memory_id):
         """Delete a memory by ID.
 
@@ -827,7 +779,7 @@ class ClaraMemory(MemoryBase):
             filters["run_id"] = run_id
 
         if not filters:
-            raise ValueError("At least one filter required. Use reset() to delete all memories.")
+            raise ValueError("At least one filter (user_id, agent_id, run_id) is required.")
 
         memories = self.vector_store.list(filters=filters)[0]
         for memory in memories:
@@ -853,20 +805,6 @@ class ClaraMemory(MemoryBase):
         if not self.db:
             return []
         return self.db.get_history(memory_id)
-
-    def feedback(self, memory_id, feedback: str):
-        """Send feedback about a memory.
-
-        Args:
-            memory_id: ID of the memory
-            feedback: "POSITIVE" or "NEGATIVE"
-
-        Returns:
-            dict: Success message
-        """
-        # Simple feedback logging - can be extended for active learning
-        logger.info(f"Feedback for {memory_id}: {feedback}")
-        return {"message": f"Feedback '{feedback}' recorded for memory {memory_id}"}
 
     def _create_memory(self, data, existing_embeddings, metadata=None, timestamp=None):
         """Create a new memory entry."""
@@ -1007,32 +945,6 @@ class ClaraMemory(MemoryBase):
             )
 
         return memory_id
-
-    def reset(self):
-        """Reset the memory store."""
-        logger.warning("Resetting all memories")
-
-        # Reset history using the manager's reset method
-        if self.db:
-            try:
-                self.db.reset()
-            except Exception as e:
-                logger.warning(f"Failed to reset history: {e}")
-                # Re-initialize history manager
-                try:
-                    self.db = get_history_manager(self.config.history_db_path)
-                except Exception as e2:
-                    logger.warning(f"Memory history disabled after reset: {e2}")
-                    self.db = None
-
-        if hasattr(self.vector_store, "reset"):
-            self.vector_store = VectorStoreFactory.reset(self.vector_store)
-        else:
-            logger.warning("Vector store does not support reset")
-            self.vector_store.delete_col()
-            self.vector_store = VectorStoreFactory.create(
-                self.config.vector_store.provider, self.config.vector_store.config
-            )
 
 
 # Simplified config classes (for internal use - full config in config.py)
