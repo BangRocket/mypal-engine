@@ -17,8 +17,7 @@ uvicorn = {extras = ["standard"], version = "^0.38.0"}
 # Database
 sqlalchemy = "^2.0"
 
-# Memory system - using vendored mem0 with fixes (vendor/mem0)
-# Dependencies needed by the vendored mem0:
+# Rook memory system dependencies
 pydantic = "^2.0"  # Config validation
 qdrant-client = "^1.7.0"  # Vector store for local dev
 neo4j = "^5.0"  # Graph database driver

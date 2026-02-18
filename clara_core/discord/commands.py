@@ -1234,9 +1234,9 @@ class ClaraCommands(commands.Cog):
 
         try:
             # Get memory stats from mem0
-            from clara_core.memory import Memory
+            from clara_core.memory import ClaraMemory
 
-            m = Memory()
+            m = ClaraMemory()
             user_id = str(ctx.author.id)
 
             # Count memories
@@ -1263,9 +1263,9 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
-            from clara_core.memory import Memory
+            from clara_core.memory import ClaraMemory
 
-            m = Memory()
+            m = ClaraMemory()
             user_id = str(ctx.author.id)
 
             results = m.search(query, user_id=user_id, limit=10)
@@ -1309,9 +1309,9 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
-            from clara_core.memory import Memory
+            from clara_core.memory import ClaraMemory
 
-            m = Memory()
+            m = ClaraMemory()
             user_id = str(ctx.author.id)
 
             m.delete_all(user_id=user_id)

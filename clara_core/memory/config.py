@@ -3,7 +3,7 @@
 This module provides configuration and initialization for Clara's memory system.
 The memory system is called "Rook" internally.
 
-Environment variables use ROOK_* prefix with MEM0_* fallback for compatibility.
+Environment variables use ROOK_* prefix with MEM0_* as deprecated fallback.
 """
 
 from __future__ import annotations
@@ -23,8 +23,15 @@ logger = logging.getLogger("clara.rook.config")
 
 
 def _get_env(rook_key: str, mem0_key: str, default: str | None = None) -> str | None:
-    """Get env var with ROOK_* preferred, MEM0_* as fallback."""
-    return os.getenv(rook_key) or os.getenv(mem0_key, default)
+    """Get env var with ROOK_* preferred, MEM0_* as deprecated fallback."""
+    rook_val = os.getenv(rook_key)
+    if rook_val:
+        return rook_val
+    mem0_val = os.getenv(mem0_key)
+    if mem0_val:
+        logger.warning(f"{mem0_key} is deprecated, use {rook_key} instead")
+        return mem0_val
+    return default
 
 
 # Rook has its own independent provider config (separate from chat LLM)
@@ -35,12 +42,6 @@ ROOK_MODEL = _get_env("ROOK_MODEL", "MEM0_MODEL", "openai/gpt-4o-mini")
 # Optional overrides - if not set, uses the provider's default key/url
 ROOK_API_KEY = _get_env("ROOK_API_KEY", "MEM0_API_KEY")
 ROOK_BASE_URL = _get_env("ROOK_BASE_URL", "MEM0_BASE_URL")
-
-# Backward compatibility aliases
-MEM0_PROVIDER = ROOK_PROVIDER
-MEM0_MODEL = ROOK_MODEL
-MEM0_API_KEY = ROOK_API_KEY
-MEM0_BASE_URL = ROOK_BASE_URL
 
 # OpenAI API for embeddings (always required)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -69,33 +70,6 @@ PROVIDER_DEFAULTS = {
     },
 }
 
-# IMPORTANT: The vendored mem0 auto-detects these env vars and overrides our config!
-# We must save and clear them before initialization, then restore after.
-_saved_env_vars = {}
-_env_vars_to_clear = [
-    "OPENROUTER_API_KEY",
-    "OPENAI_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "ROOK_API_KEY",
-    "MEM0_API_KEY",  # Legacy fallback
-]
-
-
-def _clear_rook_env_vars():
-    """Clear env vars that might cause auto-detection issues."""
-    for var in _env_vars_to_clear:
-        if var in os.environ:
-            _saved_env_vars[var] = os.environ.pop(var)
-            logger.debug(f"Temporarily cleared {var} to prevent auto-detection")
-
-
-def _restore_env_vars():
-    """Restore cleared env vars after initialization."""
-    for var, value in _saved_env_vars.items():
-        os.environ[var] = value
-        logger.debug(f"Restored {var}")
-
-
 # Store memory data in a local directory
 BASE_DATA_DIR = Path(os.getenv("DATA_DIR", str(Path(__file__).parent.parent.parent)))
 QDRANT_DATA_DIR = BASE_DATA_DIR / "qdrant_data"
@@ -103,8 +77,6 @@ QDRANT_DATA_DIR = BASE_DATA_DIR / "qdrant_data"
 # PostgreSQL with pgvector for production (optional)
 # ROOK_DATABASE_URL preferred, MEM0_DATABASE_URL as fallback
 ROOK_DATABASE_URL = _get_env("ROOK_DATABASE_URL", "MEM0_DATABASE_URL")
-MEM0_DATABASE_URL = ROOK_DATABASE_URL  # Backward compatibility alias
-
 # Self-hosted Qdrant (takes priority over pgvector and local Qdrant)
 QDRANT_URL = os.getenv("QDRANT_URL")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
@@ -215,7 +187,6 @@ graph_store_config = _get_graph_store_config()
 
 # Collection name
 ROOK_COLLECTION_NAME = _get_env("ROOK_COLLECTION_NAME", "MEM0_COLLECTION_NAME", "clara_memories")
-MEM0_COLLECTION_NAME = ROOK_COLLECTION_NAME  # Backward compatibility alias
 
 
 # Embedding dimensions for text-embedding-3-small
@@ -332,7 +303,6 @@ def _init_rook() -> ClaraMemory | None:
         return None
 
     try:
-        _clear_rook_env_vars()
         memory = ClaraMemory.from_config(config)
         logger.info("Rook initialized successfully")
         return memory
@@ -340,14 +310,7 @@ def _init_rook() -> ClaraMemory | None:
         logger.error(f"Failed to initialize Rook: {e}")
         logger.warning("App will run without memory features")
         return None
-    finally:
-        _restore_env_vars()
 
 
 # Initialize at module load
 ROOK = _init_rook()
-
-
-# Backward compatibility aliases
-MEM0 = ROOK  # Legacy name
-Memory = ClaraMemory
