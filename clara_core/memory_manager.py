@@ -1141,6 +1141,7 @@ class MemoryManager:
         emotional_context: list[dict] | None = None,
         recurring_topics: list[dict] | None = None,
         graph_relations: list[dict] | None = None,
+        tools: list[dict] | None = None,
     ) -> list[Message]:
         """Build the full prompt for the LLM.
 
@@ -1153,21 +1154,28 @@ class MemoryManager:
             emotional_context: Optional emotional context from recent sessions
             recurring_topics: Optional recurring topic patterns from fetch_topic_recurrence
             graph_relations: Optional list of entity relationships from graph memory
+            tools: Optional list of tool schema dicts for WORM capability inventory
 
         Returns:
             List of typed Messages ready for LLM
         """
-        system_base = PERSONALITY
+        from clara_core.security.worm_persona import build_worm_persona
+
+        system_base = build_worm_persona(PERSONALITY, tools)
 
         # Build context sections
         context_parts = []
 
         if user_mems:
-            user_block = "\n".join(f"- {m}" for m in user_mems)
+            from clara_core.security.sandboxing import wrap_untrusted
+
+            user_block = "\n".join(f"- {wrap_untrusted(m, 'memory')}" for m in user_mems)
             context_parts.append(f"USER MEMORIES:\n{user_block}")
 
         if proj_mems:
-            proj_block = "\n".join(f"- {m}" for m in proj_mems)
+            from clara_core.security.sandboxing import wrap_untrusted
+
+            proj_block = "\n".join(f"- {wrap_untrusted(m, 'memory')}" for m in proj_mems)
             context_parts.append(f"PROJECT MEMORIES:\n{proj_block}")
 
         # Add graph relations (entity relationships)

@@ -144,10 +144,6 @@ class LLMOrchestrator:
             working_messages = self._add_images_to_messages(working_messages, images)
             logger.info(f"[{request_id}] Added {len(images)} image(s) to context")
 
-        # Add tool instruction
-        tool_instruction = self._build_tool_instruction()
-        working_messages.insert(0, tool_instruction)
-
         # Log system prompt content summary on first iteration
         system_msgs = [m for m in working_messages if isinstance(m, SystemMessage)]
         if system_msgs:
@@ -173,7 +169,7 @@ class LLMOrchestrator:
             if not tool_response.has_tool_calls:
                 # No tools - return final response
                 content = tool_response.content or ""
-                messages_for_llm = [m for m in working_messages if m is not tool_instruction]
+                messages_for_llm = working_messages
 
                 # Check if auto-continue might be needed
                 might_auto_continue = AUTO_CONTINUE_ENABLED and auto_continue_count < AUTO_CONTINUE_MAX
@@ -517,42 +513,6 @@ class LLMOrchestrator:
 
         if current_chunk:
             yield " ".join(current_chunk)
-
-    def _build_tool_instruction(self) -> SystemMessage:
-        """Build the tool instruction system message."""
-        return SystemMessage(
-            content=(
-                "TOOL USAGE GUIDELINES:\n\n"
-                "FILE SENDING (Discord):\n"
-                "- Use `send_discord_file` to create and send files directly to Discord chat\n"
-                "- This is the PRIMARY tool for sharing code, documents, configs, or any text content\n"
-                "- Do NOT use write_file or save_to_local for sending files - use send_discord_file\n"
-                "- For very large outputs, save to a file and send it instead of pasting in chat\n"
-                "- CRITICAL: When sending a file, do NOT include the file content in your response text. "
-                "Just describe what the file contains briefly (e.g., 'Here is the config file you requested'). "
-                "The file attachment will contain the actual content.\n"
-                "- Do NOT ask for permission before sending files. "
-                "If a file send is relevant, just do it.\n\n"
-                "FILE STORAGE:\n"
-                "- `save_to_local` saves files persistently for later retrieval\n"
-                "- `send_local_file` sends a previously saved file to Discord\n"
-                "- `list_local_files`, `read_local_file`, `delete_local_file` for file management\n\n"
-                "CODE EXECUTION:\n"
-                "- `execute_python` for Python code execution and calculations\n"
-                "- `run_shell` for shell commands\n"
-                "- `install_package` to install Python packages\n"
-                "- Use these for any math, data analysis, or computational tasks\n\n"
-                "OTHER CAPABILITIES:\n"
-                "- Image vision: Users can send images and you can analyze them\n"
-                "- Web search: `web_search` for current information\n"
-                "- GitHub: `github_*` tools for repos, issues, PRs, workflows\n"
-                "- S3 storage: `s3_save`, `s3_list`, `s3_read`, `s3_delete` for cloud storage\n\n"
-                "GENERAL: Be proactive with tools. Do NOT ask for permission before using them - "
-                "if a tool is relevant to the user's request, just use it.\n\n"
-                "IMPORTANT: Your personality and context is defined in subsequent system messages. "
-                "Follow those guidelines for tone, style, and behavior."
-            ),
-        )
 
     def _truncate_output(self, output: str) -> str:
         """Truncate tool output if too long."""

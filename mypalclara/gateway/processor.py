@@ -298,9 +298,6 @@ class MessageProcessor:
         )
 
         try:
-            # Build context and process
-            context = await self._build_context(request)
-
             # Get adapter capabilities for tool filtering
             adapter_capabilities: list[str] = []
             node = await server.node_registry.get_node_by_websocket(websocket)
@@ -312,6 +309,9 @@ class MessageProcessor:
                 if self._tool_executor
                 else []
             )
+
+            # Build context and process (tools passed for WORM capability inventory)
+            context = await self._build_context(request, tools=tools)
 
             # Extract images from attachments
             images = [att for att in request.attachments if att.type == "image"]
@@ -409,11 +409,16 @@ class MessageProcessor:
             logger.exception(f"Error processing {request.id}: {e}")
             raise
 
-    async def _build_context(self, request: MessageRequest) -> dict[str, Any]:
+    async def _build_context(
+        self,
+        request: MessageRequest,
+        tools: list[dict] | None = None,
+    ) -> dict[str, Any]:
         """Build context for the LLM including memories and prompt.
 
         Args:
             request: The message request
+            tools: Optional tool schemas for WORM capability inventory
 
         Returns:
             Context dict with messages, user_id, project_id, etc.
@@ -498,7 +503,7 @@ class MessageProcessor:
         # Get session summary if available
         session_summary = db_session.session_summary if db_session else None
 
-        # Build base prompt with Clara's persona
+        # Build base prompt with Clara's persona (includes WORM security + capability inventory)
         messages = self._memory_manager.build_prompt(
             user_mems,
             proj_mems,
@@ -508,6 +513,7 @@ class MessageProcessor:
             graph_relations=graph_relations,
             emotional_context=emotional_context,
             recurring_topics=recurring_topics,
+            tools=tools,
         )
 
         # Add gateway context
