@@ -17,7 +17,8 @@ try:
 except ImportError:
     raise ImportError("rank_bm25 is not installed. Please install it using pip install rank-bm25")
 
-from clara_core.memory.embeddings.factory import EmbedderFactory
+from clara_core.memory.embeddings.base import BaseEmbedderConfig
+from clara_core.memory.embeddings.openai import OpenAIEmbedding
 from clara_core.memory.graph.tools import (
     DELETE_MEMORY_TOOL_GRAPH,
     EXTRACT_ENTITIES_TOOL,
@@ -52,10 +53,10 @@ class MemoryGraph:
         self.config = config
 
         # Initialize embedder first to get embedding dimensions
-        self.embedding_model = EmbedderFactory.create(
-            config.embedder.provider,
-            config.embedder.config,
-        )
+        embedder_conf = config.embedder.config
+        if isinstance(embedder_conf, dict):
+            embedder_conf = BaseEmbedderConfig(**embedder_conf)
+        self.embedding_model = OpenAIEmbedding(embedder_conf)
         self.embedding_dims = getattr(self.embedding_model.config, "embedding_dims", 1536)
 
         # Initialize Kuzu database

@@ -60,7 +60,6 @@ from clara_core.memory.core.utils import (
     parse_messages,
     remove_code_blocks,
 )
-from clara_core.memory.embeddings.factory import EmbedderFactory
 
 # Factories
 from clara_core.memory.vector.factory import VectorStoreFactory
@@ -105,7 +104,6 @@ __all__ = [
     "NEO4J_PASSWORD",
     # Factories
     "VectorStoreFactory",
-    "EmbedderFactory",
     # Utilities
     "parse_messages",
     "remove_code_blocks",

@@ -78,17 +78,17 @@ def time_operation(func, *args, **kwargs) -> tuple[float, any]:
 
 def benchmark_embedding(iterations: int, text: str = "Hello, how are you today?") -> BenchmarkResult:
     """Benchmark embedding generation."""
-    from clara_core.memory.embeddings.factory import EmbedderFactory
+    from clara_core.memory.embeddings.base import BaseEmbedderConfig
+    from clara_core.memory.embeddings.openai import OpenAIEmbedding
 
     result = BenchmarkResult(operation="embedding")
 
     # Create embedder (with or without cache based on env)
-    embedder = EmbedderFactory.create(
-        "openai",
-        config={
-            "model": "text-embedding-3-small",
-            "api_key": os.getenv("OPENAI_API_KEY"),
-        },
+    embedder = OpenAIEmbedding(
+        BaseEmbedderConfig(
+            model="text-embedding-3-small",
+            api_key=os.getenv("OPENAI_API_KEY"),
+        )
     )
 
     for i in range(iterations):
@@ -102,16 +102,16 @@ def benchmark_embedding(iterations: int, text: str = "Hello, how are you today?"
 
 def benchmark_embedding_cache_hit(iterations: int) -> BenchmarkResult:
     """Benchmark embedding with guaranteed cache hits."""
-    from clara_core.memory.embeddings.factory import EmbedderFactory
+    from clara_core.memory.embeddings.base import BaseEmbedderConfig
+    from clara_core.memory.embeddings.openai import OpenAIEmbedding
 
     result = BenchmarkResult(operation="embedding_cache_hit")
 
-    embedder = EmbedderFactory.create(
-        "openai",
-        config={
-            "model": "text-embedding-3-small",
-            "api_key": os.getenv("OPENAI_API_KEY"),
-        },
+    embedder = OpenAIEmbedding(
+        BaseEmbedderConfig(
+            model="text-embedding-3-small",
+            api_key=os.getenv("OPENAI_API_KEY"),
+        )
     )
 
     # Same text every time to guarantee cache hits after first

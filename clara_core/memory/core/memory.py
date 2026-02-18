@@ -29,7 +29,9 @@ from clara_core.memory.core.utils import (
     parse_vision_messages,
     remove_code_blocks,
 )
-from clara_core.memory.embeddings.factory import EmbedderFactory
+from clara_core.memory.embeddings.base import BaseEmbedderConfig
+from clara_core.memory.embeddings.cached import CachedEmbedding
+from clara_core.memory.embeddings.openai import OpenAIEmbedding
 from clara_core.memory.llm.unified import UnifiedLLM, UnifiedLLMConfig
 from clara_core.memory.vector.factory import VectorStoreFactory
 
@@ -170,11 +172,15 @@ class ClaraMemory(MemoryBase):
         self.retrieval_criteria = getattr(config, "retrieval_criteria", None)
 
         # Initialize embedding model
-        self.embedding_model = EmbedderFactory.create(
-            self.config.embedder.provider,
-            self.config.embedder.config,
-            self.config.vector_store.config,
-        )
+        embedder_conf = self.config.embedder.config
+        if isinstance(embedder_conf, dict):
+            embedder_conf = BaseEmbedderConfig(**embedder_conf)
+        self.embedding_model = OpenAIEmbedding(embedder_conf)
+
+        # Wrap with cache if configured
+        enable_cache = os.getenv("MEMORY_EMBEDDING_CACHE", "true").lower() == "true"
+        if enable_cache and os.getenv("REDIS_URL"):
+            self.embedding_model = CachedEmbedding(self.embedding_model, enabled=True)
 
         # Initialize vector store
         self.vector_store = VectorStoreFactory.create(
