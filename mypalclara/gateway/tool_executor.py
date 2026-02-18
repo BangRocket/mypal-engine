@@ -29,6 +29,8 @@ class ToolExecutor:
 
     def __init__(self) -> None:
         """Initialize the executor."""
+        from clara_core.security.circuit_breaker import CircuitBreaker
+
         self._initialized = False
         self._sandbox_manager: Any = None
         self._file_manager: Any = None
@@ -36,6 +38,7 @@ class ToolExecutor:
         self._tool_registry: Any = None
         self._mcp_initialized = False
         self._modular_initialized = False
+        self._circuit_breaker = CircuitBreaker()
 
     async def initialize(self) -> None:
         """Initialize tool systems.
@@ -466,6 +469,12 @@ class ToolExecutor:
         if not self._initialized:
             return "Error: Tool executor not initialized"
 
+        # Circuit breaker pre-check
+        allowed, reason = self._circuit_breaker.can_execute(tool_name)
+        if not allowed:
+            logger.warning(f"Circuit breaker blocked {tool_name}: {reason}")
+            return f"Tool temporarily unavailable: {reason}"
+
         start_time = time.time()
         logger.debug(f"Executing {tool_name}")
 
@@ -480,10 +489,16 @@ class ToolExecutor:
             )
             duration = time.time() - start_time
             logger.debug(f"{tool_name} completed in {duration:.2f}s")
+            self._circuit_breaker.record_success(tool_name)
             return result
         except Exception as e:
             logger.exception(f"Tool {tool_name} failed: {e}")
+            self._circuit_breaker.record_failure(tool_name, str(e))
             return f"Error: {e}"
+
+    def get_tool_health(self) -> dict[str, Any]:
+        """Return circuit breaker health status for all tracked tools."""
+        return self._circuit_breaker.get_health_summary()
 
     async def _route_tool(
         self,
