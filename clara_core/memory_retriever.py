@@ -281,7 +281,9 @@ class MemoryRetriever:
                     p_name = participant_futures[future]
                     try:
                         p_search = future.result()
-                        p_results = self._dynamics_manager.rank_results_with_fsrs_batch(p_search.get("results", []), user_id)
+                        p_results = self._dynamics_manager.rank_results_with_fsrs_batch(
+                            p_search.get("results", []), user_id
+                        )
                         for r in p_results:
                             mem = r["memory"]
                             if mem not in seen_raw_texts:
