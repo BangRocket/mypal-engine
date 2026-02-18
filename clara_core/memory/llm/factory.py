@@ -1,14 +1,13 @@
 """Factory for creating LLM instances.
 
-Supports both legacy providers (openai, anthropic) and the new unified
-provider that uses clara_core.llm for consistent behavior across all
-LLM operations.
+Uses the unified provider that delegates to clara_core.llm for consistent
+behavior across all LLM operations.
 """
 
 import importlib
 from typing import Dict, Optional, Union
 
-from clara_core.memory.llm.base import AnthropicConfig, BaseLlmConfig, OpenAIConfig
+from clara_core.memory.llm.base import BaseLlmConfig
 from clara_core.memory.llm.unified import UnifiedLLMConfig
 
 
@@ -24,15 +23,11 @@ class LlmFactory:
 
     Supports:
     - "unified": Uses clara_core.llm providers (recommended)
-    - "openai": Legacy OpenAI-compatible implementation
-    - "anthropic": Legacy Anthropic implementation
     """
 
     # Provider mappings with their config classes
     provider_to_class = {
         "unified": ("clara_core.memory.llm.unified.UnifiedLLM", UnifiedLLMConfig),
-        "openai": ("clara_core.memory.llm.openai.OpenAILLM", OpenAIConfig),
-        "anthropic": ("clara_core.memory.llm.anthropic.AnthropicLLM", AnthropicConfig),
     }
 
     @classmethod
@@ -40,7 +35,7 @@ class LlmFactory:
         """Create an LLM instance.
 
         Args:
-            provider_name: The provider name (openai, anthropic)
+            provider_name: The provider name (e.g., "unified")
             config: Configuration object or dict
             **kwargs: Additional configuration parameters
 

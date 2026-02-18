@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Union
-
-import httpx
+from typing import Any, Dict, Optional
 
 
 class BaseLlmConfig:
@@ -22,7 +20,6 @@ class BaseLlmConfig:
         base_url: Optional[str] = None,
         enable_vision: bool = False,
         vision_details: Optional[str] = "auto",
-        http_client_proxies: Optional[Union[Dict, str]] = None,
         response_format: Optional[Dict] = None,
     ):
         """Initialize LLM configuration.
@@ -37,7 +34,6 @@ class BaseLlmConfig:
             base_url: Base URL for API
             enable_vision: Enable vision/image processing
             vision_details: Vision detail level
-            http_client_proxies: Proxy settings
             response_format: Response format configuration
         """
         self.model = model
@@ -49,79 +45,11 @@ class BaseLlmConfig:
         self.base_url = base_url
         self.enable_vision = enable_vision
         self.vision_details = vision_details
-        self.http_client = httpx.Client(proxies=http_client_proxies) if http_client_proxies else None
         self.response_format = response_format
 
     def get(self, key, default=None):
         """Get a config attribute by key."""
         return getattr(self, key, default)
-
-
-class OpenAIConfig(BaseLlmConfig):
-    """Configuration for OpenAI LLM."""
-
-    def __init__(
-        self,
-        model: str = "gpt-4o-mini",
-        temperature: float = 0.0,
-        max_tokens: int = 3000,
-        top_p: float = 1.0,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        openai_base_url: Optional[str] = None,  # Alias for base_url
-        enable_vision: bool = False,
-        vision_details: Optional[str] = "auto",
-        http_client_proxies: Optional[Union[Dict, str]] = None,
-        response_format: Optional[Dict] = None,
-        **kwargs,  # Accept extra kwargs
-    ):
-        super().__init__(
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            top_p=top_p,
-            api_key=api_key,
-            base_url=base_url or openai_base_url,
-            enable_vision=enable_vision,
-            vision_details=vision_details,
-            http_client_proxies=http_client_proxies,
-            response_format=response_format,
-        )
-
-
-class AnthropicConfig(BaseLlmConfig):
-    """Configuration for Anthropic LLM.
-
-    IMPORTANT: Includes anthropic_base_url support for proxy servers like clewdr.
-    """
-
-    def __init__(
-        self,
-        model: str = "claude-sonnet-4-5",
-        temperature: float = 0.0,
-        max_tokens: int = 4096,
-        top_p: float = 1.0,
-        top_k: Optional[int] = None,
-        api_key: Optional[str] = None,
-        anthropic_base_url: Optional[str] = None,  # CRITICAL: Proxy support for clewdr
-        enable_vision: bool = False,
-        vision_details: Optional[str] = "auto",
-        http_client_proxies: Optional[Union[Dict, str]] = None,
-        **kwargs,  # Accept extra kwargs
-    ):
-        super().__init__(
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            top_p=top_p,
-            top_k=top_k,
-            api_key=api_key,
-            enable_vision=enable_vision,
-            vision_details=vision_details,
-            http_client_proxies=http_client_proxies,
-        )
-        # CRITICAL: Custom attribute for proxy support (clewdr, etc.)
-        self.anthropic_base_url = anthropic_base_url
 
 
 class LLMBase(ABC):
