@@ -26,7 +26,7 @@ from clara_core.memory.graph.utils import (
     get_delete_messages,
     sanitize_relationship_for_cypher,
 )
-from clara_core.memory.llm.factory import LlmFactory
+from clara_core.memory.llm.unified import UnifiedLLM, UnifiedLLMConfig
 
 if TYPE_CHECKING:
     from clara_core.memory.cache.graph_cache import GraphCache
@@ -80,7 +80,9 @@ class MemoryGraph:
             llm_config = config.llm.config
 
         self.llm_provider = llm_provider
-        self.llm = LlmFactory.create(llm_provider, llm_config)
+        if isinstance(llm_config, dict):
+            llm_config = UnifiedLLMConfig(**llm_config)
+        self.llm = UnifiedLLM(llm_config)
 
         # Similarity threshold for node matching
         self.threshold = getattr(config.graph_store, "threshold", 0.7)

@@ -30,7 +30,7 @@ from clara_core.memory.core.utils import (
     remove_code_blocks,
 )
 from clara_core.memory.embeddings.factory import EmbedderFactory
-from clara_core.memory.llm.factory import LlmFactory
+from clara_core.memory.llm.unified import UnifiedLLM, UnifiedLLMConfig
 from clara_core.memory.vector.factory import VectorStoreFactory
 
 # Suppress SWIG deprecation warnings globally
@@ -182,7 +182,10 @@ class ClaraMemory(MemoryBase):
         )
 
         # Initialize LLM
-        self.llm = LlmFactory.create(self.config.llm.provider, self.config.llm.config)
+        llm_conf = self.config.llm.config
+        if isinstance(llm_conf, dict):
+            llm_conf = UnifiedLLMConfig(**llm_conf)
+        self.llm = UnifiedLLM(llm_conf)
 
         # Initialize history database (optional - for memory change tracking)
         # Uses PostgreSQL if DATABASE_URL is set, otherwise SQLite

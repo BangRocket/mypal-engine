@@ -61,7 +61,6 @@ from clara_core.memory.core.utils import (
     remove_code_blocks,
 )
 from clara_core.memory.embeddings.factory import EmbedderFactory
-from clara_core.memory.llm.factory import LlmFactory
 
 # Factories
 from clara_core.memory.vector.factory import VectorStoreFactory
@@ -72,11 +71,10 @@ Memory = ClaraMemory
 # Re-export MemoryManager for convenience (actual implementation in memory_manager.py)
 # This allows: from clara_core.memory import MemoryManager
 try:
-    from clara_core.memory_manager import MemoryManager, load_initial_profile
+    from clara_core.memory_manager import MemoryManager
 except ImportError:
     # Module may not be available in all contexts
     MemoryManager = None
-    load_initial_profile = None
 
 __all__ = [
     # Core
@@ -108,7 +106,6 @@ __all__ = [
     # Factories
     "VectorStoreFactory",
     "EmbedderFactory",
-    "LlmFactory",
     # Utilities
     "parse_messages",
     "remove_code_blocks",
@@ -116,5 +113,4 @@ __all__ = [
     # Backward compatibility
     "Memory",
     "MemoryManager",
-    "load_initial_profile",
 ]
