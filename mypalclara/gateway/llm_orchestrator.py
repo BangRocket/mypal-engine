@@ -282,6 +282,11 @@ class LLMOrchestrator:
                 if len(output) > MAX_TOOL_RESULT_CHARS:
                     output = self._truncate_output(output)
 
+                # Sandbox tool output before adding to messages
+                from clara_core.security.sandboxing import wrap_untrusted
+
+                output = wrap_untrusted(output, f"tool_{tc.name}")
+
                 # Add tool result to messages
                 working_messages.append(tc.to_result_message(output))
 

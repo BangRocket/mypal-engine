@@ -559,12 +559,13 @@ class MessageProcessor:
         if not attachments:
             return ""
 
+        from clara_core.security.sandboxing import wrap_untrusted
+
         text_parts = []
         for att in attachments:
             if att.type == "text" and att.content:
-                text_parts.append(
-                    f"--- Attached file: {att.filename} ---\n{att.content}\n--- End of {att.filename} ---"
-                )
+                content = wrap_untrusted(att.content, "attachment")
+                text_parts.append(f"--- Attached file: {att.filename} ---\n{content}\n--- End of {att.filename} ---")
 
         return "\n\n".join(text_parts)
 
