@@ -539,6 +539,10 @@ class MessageProcessor:
                 if role == "assistant":
                     chain_messages.append(AssistantMessage(content=content))
                 else:
+                    # Prefix with display name in group chats
+                    user_name = msg.get("user_name")
+                    if user_name and not is_dm:
+                        content = f"[{user_name}]: {content}"
                     chain_messages.append(UserMessage(content=content))
 
             # Insert before the current message
