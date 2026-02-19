@@ -7,36 +7,11 @@ class MemoryBase(ABC):
     """Base class for all memory implementations."""
 
     @abstractmethod
-    def get(self, memory_id):
-        """Retrieve a memory by ID.
-
-        Args:
-            memory_id (str): ID of the memory to retrieve.
-
-        Returns:
-            dict: Retrieved memory.
-        """
-        pass
-
-    @abstractmethod
     def get_all(self):
         """List all memories.
 
         Returns:
             list: List of all memories.
-        """
-        pass
-
-    @abstractmethod
-    def update(self, memory_id, data):
-        """Update a memory by ID.
-
-        Args:
-            memory_id (str): ID of the memory to update.
-            data (str): New content to update the memory with.
-
-        Returns:
-            dict: Success message indicating the memory was updated.
         """
         pass
 
