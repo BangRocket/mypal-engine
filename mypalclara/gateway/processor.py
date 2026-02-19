@@ -72,14 +72,20 @@ TARGET_CLASSIFIER_ENABLED = os.getenv("TARGET_CLASSIFIER", "true").lower() == "t
 
 TARGET_CLASSIFICATION_PROMPT = """You are a message routing classifier for a group chat. {bot_name} is an AI assistant in this channel.
 
-Recent channel messages:
+Recent channel messages (most recent last):
 {context}
 
 New message from {user_name}: {message}
 
-Is this new message directed at {bot_name}, or is it directed at someone else or the group in general?
+Decide if this message is directed at or relevant to {bot_name}.
 
-Respond with exactly one word: CLARA, OTHER, or AMBIGUOUS"""
+Key signals:
+- If {bot_name} was recently active in the conversation, new messages are likely continuing that thread
+- If the message is a response to something {bot_name} said, it's for {bot_name}
+- If the message is clearly between other people with no connection to {bot_name}, it's OTHER
+- When in doubt and {bot_name} is an active participant, lean toward CLARA
+
+Respond with exactly one word: CLARA or OTHER"""
 
 
 class MessageProcessor:
@@ -1141,10 +1147,9 @@ class MessageProcessor:
         if bot_name_lower in content_lower:
             return "CLARA"
 
-        # Rule: Reply to Clara's message (last reply_chain entry is assistant)
+        # Rule: Reply to Clara's message (any assistant entry in reply chain)
         if request.reply_chain:
-            last_msg = request.reply_chain[-1]
-            if last_msg.get("role") == "assistant":
+            if any(msg.get("role") == "assistant" for msg in request.reply_chain):
                 return "CLARA"
 
         # Layer 2: LLM classifier
@@ -1157,10 +1162,14 @@ class MessageProcessor:
             lambda: self._get_channel_context(context_id, limit=10),
         )
 
+        # Rule: Clara is an active participant (spoke in last 5 channel messages)
+        recent_5 = channel_msgs[-5:] if len(channel_msgs) >= 5 else channel_msgs
+        clara_active = any(msg.role == "assistant" for msg in recent_5)
+
         # Build context string
         context_lines = []
         for msg in channel_msgs:
-            role_label = "Clara" if msg.role == "assistant" else (msg.user_id or "user")
+            role_label = BOT_NAME if msg.role == "assistant" else (msg.user_id or "user")
             content_preview = msg.content[:200] if msg.content else ""
             context_lines.append(f"[{role_label}]: {content_preview}")
 
@@ -1188,7 +1197,8 @@ class MessageProcessor:
             elif "OTHER" in result:
                 return "OTHER"
             else:
-                return "AMBIGUOUS"
+                # Unrecognized response — if Clara is active, assume it's for her
+                return "CLARA" if clara_active else "OTHER"
 
         except Exception as e:
             logger.warning(f"Target classification failed: {e}, defaulting to CLARA")

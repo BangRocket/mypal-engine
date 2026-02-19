@@ -170,8 +170,8 @@ class TestTargetClassifierLLM:
         assert result == "OTHER"
 
     @pytest.mark.asyncio
-    async def test_llm_returns_ambiguous(self, processor):
-        """LLM returning AMBIGUOUS skips processing."""
+    async def test_unrecognized_response_without_active_clara_returns_other(self, processor):
+        """Unrecognized LLM response defaults to OTHER when Clara isn't active."""
         request = make_request(content="that's interesting")
 
         with (
@@ -180,12 +180,36 @@ class TestTargetClassifierLLM:
             patch("clara_core.make_llm") as mock_make_llm,
             patch("clara_core.ModelTier"),
         ):
-            mock_llm = MagicMock(return_value="AMBIGUOUS")
+            mock_llm = MagicMock(return_value="MAYBE")
             mock_make_llm.return_value = mock_llm
 
             result = await processor._classify_target(request)
 
-        assert result == "AMBIGUOUS"
+        assert result == "OTHER"
+
+    @pytest.mark.asyncio
+    async def test_unrecognized_response_with_active_clara_returns_clara(self, processor):
+        """Unrecognized LLM response defaults to CLARA when she's an active participant."""
+        request = make_request(content="that's interesting")
+
+        # Mock a channel context where Clara recently spoke
+        mock_msg = MagicMock()
+        mock_msg.role = "assistant"
+        mock_msg.user_id = None
+        mock_msg.content = "I think so too!"
+
+        with (
+            patch("config.bot.BOT_NAME", "Clara"),
+            patch.object(processor, "_get_channel_context", return_value=[mock_msg]),
+            patch("clara_core.make_llm") as mock_make_llm,
+            patch("clara_core.ModelTier"),
+        ):
+            mock_llm = MagicMock(return_value="MAYBE")
+            mock_make_llm.return_value = mock_llm
+
+            result = await processor._classify_target(request)
+
+        assert result == "CLARA"
 
     @pytest.mark.asyncio
     async def test_llm_failure_defaults_to_clara(self, processor):
