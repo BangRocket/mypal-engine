@@ -39,8 +39,6 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 from sqlalchemy import text
 
-load_dotenv()
-
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -49,20 +47,59 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configuration (ROOK_* preferred, MEM0_* as deprecated fallback)
-ROOK_DATABASE_URL = os.getenv("ROOK_DATABASE_URL") or os.getenv("MEM0_DATABASE_URL")
-QDRANT_URL = os.getenv("QDRANT_URL")
-QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
-COLLECTION_NAME = os.getenv("ROOK_COLLECTION_NAME") or os.getenv("MEM0_COLLECTION_NAME", "clara_memories")
+# Module-level config (populated by _load_config)
+ROOK_DATABASE_URL: str | None = None
+QDRANT_URL: str | None = None
+QDRANT_API_KEY: str | None = None
+COLLECTION_NAME: str = "clara_memories"
 CHECKPOINT_FILE = Path("migration_checkpoint.json")
+
+
+def _load_config(env_file: str | None = None) -> None:
+    """Load configuration from .env file and environment variables."""
+    global ROOK_DATABASE_URL, QDRANT_URL, QDRANT_API_KEY, COLLECTION_NAME
+
+    # Load .env file
+    env_path = Path(env_file) if env_file else None
+    if env_path and not env_path.exists():
+        logger.error(f"Env file not found: {env_path}")
+        sys.exit(1)
+
+    loaded = load_dotenv(dotenv_path=env_path, override=True)
+    if env_path:
+        logger.info(f"Loaded env from: {env_path}")
+    elif loaded:
+        logger.info("Loaded env from: .env")
+
+    # Read config (ROOK_* preferred, MEM0_* as deprecated fallback)
+    ROOK_DATABASE_URL = os.getenv("ROOK_DATABASE_URL") or os.getenv("MEM0_DATABASE_URL")
+    QDRANT_URL = os.getenv("QDRANT_URL")
+    QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
+    COLLECTION_NAME = os.getenv("ROOK_COLLECTION_NAME") or os.getenv("MEM0_COLLECTION_NAME", "clara_memories")
+
+    # Log what we found
+    if ROOK_DATABASE_URL:
+        # Mask password in URL for logging
+        masked = ROOK_DATABASE_URL
+        if "@" in masked:
+            pre, post = masked.split("@", 1)
+            if ":" in pre:
+                scheme_user = pre.rsplit(":", 1)[0]
+                masked = f"{scheme_user}:****@{post}"
+        logger.info(f"Source (pgvector): {masked}")
+    else:
+        logger.error("ROOK_DATABASE_URL not set (checked ROOK_DATABASE_URL, MEM0_DATABASE_URL)")
+
+    if QDRANT_URL:
+        logger.info(f"Target (Qdrant):   {QDRANT_URL}")
+    else:
+        logger.error("QDRANT_URL not set")
+
+    logger.info(f"Collection:        {COLLECTION_NAME}")
 
 
 def get_pgvector_connection():
     """Get SQLAlchemy connection to pgvector database."""
-    if not ROOK_DATABASE_URL:
-        logger.error("ROOK_DATABASE_URL not set (or MEM0_DATABASE_URL)")
-        sys.exit(1)
-
     from sqlalchemy import create_engine
 
     url = ROOK_DATABASE_URL
@@ -75,10 +112,6 @@ def get_pgvector_connection():
 
 def get_qdrant_client() -> QdrantClient:
     """Get Qdrant client."""
-    if not QDRANT_URL:
-        logger.error("QDRANT_URL not set")
-        sys.exit(1)
-
     kwargs = {"url": QDRANT_URL}
     if QDRANT_API_KEY:
         kwargs["api_key"] = QDRANT_API_KEY
@@ -296,6 +329,12 @@ def verify_migration(
 def main():
     parser = argparse.ArgumentParser(description="Migrate pgvector to Qdrant")
     parser.add_argument(
+        "--env-file",
+        type=str,
+        default=None,
+        help="Path to .env file (default: auto-detect .env in current dir)",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Count records without migrating",
@@ -323,6 +362,12 @@ def main():
         help="Vector dimensions (default: 1536 for OpenAI)",
     )
     args = parser.parse_args()
+
+    # Load config from .env
+    _load_config(args.env_file)
+
+    if not ROOK_DATABASE_URL or not QDRANT_URL:
+        sys.exit(1)
 
     # Get connections
     engine = get_pgvector_connection()
