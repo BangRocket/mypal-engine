@@ -13,6 +13,7 @@ import asyncio
 import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from clara_core.llm.messages import AssistantMessage, SystemMessage, UserMessage
@@ -521,7 +522,8 @@ class MessageProcessor:
         )
 
         # Add gateway context
-        gateway_context = self._build_gateway_context(request, is_dm, participants)
+        last_message_at = recent_msgs[-1].created_at if recent_msgs else None
+        gateway_context = self._build_gateway_context(request, is_dm, participants, last_message_at)
         messages.insert(1, SystemMessage(content=gateway_context))
 
         # Add fired intentions as reminders
@@ -532,10 +534,33 @@ class MessageProcessor:
 
         # Add reply chain if present
         if request.reply_chain:
+            from datetime import UTC
+            from zoneinfo import ZoneInfo
+
+            tz_name = os.getenv("DEFAULT_TIMEZONE", "America/New_York")
+            try:
+                chain_tz = ZoneInfo(tz_name)
+            except Exception:
+                chain_tz = UTC
+
             chain_messages: list[LLMMessage] = []
             for msg in request.reply_chain:
                 role = msg.get("role", "user")
                 content = msg.get("content", "")
+
+                # Format timestamp prefix for user messages
+                ts_prefix = ""
+                ts_raw = msg.get("timestamp")
+                if ts_raw and role == "user":
+                    try:
+                        dt = datetime.fromisoformat(ts_raw)
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=UTC)
+                        local_dt = dt.astimezone(chain_tz)
+                        ts_prefix = f"[{local_dt.strftime('%-I:%M %p')}] "
+                    except (ValueError, TypeError):
+                        pass
+
                 if role == "assistant":
                     chain_messages.append(AssistantMessage(content=content))
                 else:
@@ -543,7 +568,7 @@ class MessageProcessor:
                     user_name = msg.get("user_name")
                     if user_name and not is_dm:
                         content = f"[{user_name}]: {content}"
-                    chain_messages.append(UserMessage(content=content))
+                    chain_messages.append(UserMessage(content=f"{ts_prefix}{content}"))
 
             # Insert before the current message
             messages = messages[:-1] + chain_messages + [messages[-1]]
@@ -622,6 +647,7 @@ class MessageProcessor:
         request: MessageRequest,
         is_dm: bool,
         participants: list[dict[str, str]] | None = None,
+        last_message_at: datetime | None = None,
     ) -> str:
         """Build gateway-specific context information.
 
@@ -629,17 +655,45 @@ class MessageProcessor:
             request: The message request
             is_dm: Whether this is a DM
             participants: List of participants in the conversation
+            last_message_at: Timestamp of the most recent prior message
 
         Returns:
             Context string
         """
         from datetime import UTC, datetime
+        from zoneinfo import ZoneInfo
 
+        tz_name = os.getenv("DEFAULT_TIMEZONE", "America/New_York")
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            tz = UTC
+            tz_name = "UTC"
+
+        now = datetime.now(tz)
         parts = [
             "## Current Context",
-            f"- Current time: {datetime.now(UTC).strftime('%A, %B %d, %Y at %H:%M UTC')}",
+            f"- Current time: {now.strftime('%A, %B %d, %Y at %-I:%M %p')} ({tz_name})",
             f"- Platform: {request.metadata.get('platform', 'unknown')}",
         ]
+
+        # Elapsed time since last message
+        if last_message_at:
+            last_dt = last_message_at
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=UTC)
+            delta = now - last_dt.astimezone(tz)
+            total_seconds = int(delta.total_seconds())
+            if total_seconds >= 86400:
+                days = total_seconds // 86400
+                parts.append(f"- Last message: {days} day{'s' if days != 1 else ''} ago")
+            elif total_seconds >= 3600:
+                hours = total_seconds // 3600
+                parts.append(f"- Last message: {hours} hour{'s' if hours != 1 else ''} ago")
+            elif total_seconds >= 120:
+                minutes = total_seconds // 60
+                parts.append(f"- Last message: {minutes} minutes ago")
+            # Under 2 minutes — don't bother, it's live conversation
 
         if is_dm:
             parts.append("- Conversation: Private DM")

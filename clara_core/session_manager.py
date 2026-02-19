@@ -156,6 +156,7 @@ class SessionManager:
 
     def update_thread_summary(self, db: "OrmSession", thread: "Session") -> str:
         """Generate/update summary for a thread."""
+        from clara_core.memory_manager import _format_message_timestamp
         from db.models import Message
 
         all_msgs = db.query(Message).filter_by(session_id=thread.id).order_by(Message.created_at.asc()).all()
@@ -163,14 +164,20 @@ class SessionManager:
         if not all_msgs:
             return ""
 
-        conversation = "\n".join(
-            f"{m.role.upper()}: {m.content[:500]}" for m in all_msgs[-THREAD_SUMMARY_MAX_MESSAGES:]
-        )
+        # Include timestamps so summaries have temporal context
+        lines = []
+        for m in all_msgs[-THREAD_SUMMARY_MAX_MESSAGES:]:
+            ts = _format_message_timestamp(getattr(m, "created_at", None))
+            prefix = f"[{ts}] " if ts else ""
+            lines.append(f"{prefix}{m.role.upper()}: {m.content[:500]}")
+        conversation = "\n".join(lines)
 
         summary_prompt = [
             SystemMessage(
                 content="Summarize this conversation in 2-3 sentences. "
-                "Focus on key topics, decisions, and important context.",
+                "Focus on key topics, decisions, and important context. "
+                "Include when things happened (e.g. 'yesterday evening', 'this morning') "
+                "based on the timestamps.",
             ),
             UserMessage(content=conversation),
         ]
