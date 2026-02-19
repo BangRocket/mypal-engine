@@ -58,10 +58,10 @@ def _get_version() -> str:
 
 def _print_startup_info(host: str, port: int, adapters: list[str] | None, no_adapters: bool = False) -> None:
     """Print the startup banner and configuration info."""
-    from config.bot import BOT_NAME, PERSONALITY_SOURCE
+    from config.bot import BOT_NAME
 
     print_banner(_get_version())
-    print(f"  {_C.info('Persona')}  {_C.bold(BOT_NAME)} {_C.dim(f'({PERSONALITY_SOURCE})')}")
+    print(f"  {_C.info('Persona')}  {_C.bold(BOT_NAME)}")
     print(f"  {_C.info('Gateway')}  {_C.bold(f'{host}:{port}')}")
     if adapters:
         print(f"  {_C.info('Adapters')} {', '.join(adapters)}")
