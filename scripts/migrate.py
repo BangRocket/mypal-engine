@@ -10,6 +10,8 @@ Usage:
     poetry run python scripts/migrate.py rollback 2         # Rollback 2 migrations
     poetry run python scripts/migrate.py stamp <revision>   # Mark revision as current (skip running)
     poetry run python scripts/migrate.py stamp head         # Mark head as current
+    poetry run python scripts/migrate.py force-stamp        # Clear stale revision, stamp head
+    poetry run python scripts/migrate.py force-stamp <rev>  # Clear stale revision, stamp specific
     poetry run python scripts/migrate.py heads              # Show current heads
     poetry run python scripts/migrate.py history            # Show migration history
     poetry run python scripts/migrate.py reset              # Reset to initial (DANGEROUS)
@@ -179,6 +181,29 @@ def stamp_revision(revision: str):
     print(f"Database now at: {new_current}")
 
 
+def force_stamp(revision: str = "head"):
+    """Clear alembic_version table and stamp fresh.
+
+    Use when the DB is stamped with a revision that doesn't exist in the
+    current migration files (e.g., after switching branches).
+    """
+    engine = get_engine()
+    with engine.connect() as conn:
+        result = conn.execute(text("SELECT version_num FROM alembic_version"))
+        old = [row[0] for row in result]
+        if old:
+            print(f"Clearing stale revision(s): {old}")
+        conn.execute(text("DELETE FROM alembic_version"))
+        conn.commit()
+
+    cfg = get_alembic_config()
+    print(f"Stamping as: {revision}")
+    command.stamp(cfg, revision)
+
+    new_current = get_current_revision()
+    print(f"Database now at: {new_current}")
+
+
 def show_heads():
     """Show current head revisions."""
     cfg = get_alembic_config()
@@ -214,7 +239,7 @@ def main():
         "command",
         nargs="?",
         default="upgrade",
-        choices=["upgrade", "status", "create", "rollback", "stamp", "heads", "history", "reset"],
+        choices=["upgrade", "status", "create", "rollback", "stamp", "force-stamp", "heads", "history", "reset"],
         help="Migration command (default: upgrade)",
     )
     parser.add_argument("args", nargs="*", help="Additional arguments (message for create, steps for rollback)")
@@ -242,6 +267,9 @@ def main():
                 print("       migrate.py stamp head")
                 sys.exit(1)
             stamp_revision(args.args[0])
+        elif args.command == "force-stamp":
+            revision = args.args[0] if args.args else "head"
+            force_stamp(revision)
         elif args.command == "heads":
             show_heads()
         elif args.command == "history":
