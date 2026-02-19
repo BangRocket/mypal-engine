@@ -1183,9 +1183,7 @@ class MessageProcessor:
         if request.content:
             message_parts.append(request.content[:500])
         if request.attachments:
-            att_desc = ", ".join(
-                f"{att.filename} ({att.type})" for att in request.attachments
-            )
+            att_desc = ", ".join(f"{att.filename} ({att.type})" for att in request.attachments)
             message_parts.append(f"[Attachments: {att_desc}]")
         message_str = " ".join(message_parts) if message_parts else "(empty message)"
 

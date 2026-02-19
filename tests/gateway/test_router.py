@@ -315,18 +315,14 @@ class TestDebounce:
     async def test_mention_skips_debounce(self, debounce_router, mock_websocket):
         """Mentions should skip debounce and acquire immediately."""
         req = make_request("req-1", content="@Clara help")
-        acquired, position = await debounce_router.submit(
-            req, mock_websocket, "node-1", is_mention=True
-        )
+        acquired, position = await debounce_router.submit(req, mock_websocket, "node-1", is_mention=True)
 
         assert acquired is True
         assert position == 0
         assert await debounce_router.get_request_status("req-1") == RequestStatus.ACTIVE
 
     @pytest.mark.asyncio
-    async def test_debounce_during_active_request_queues_normally(
-        self, debounce_router, mock_websocket
-    ):
+    async def test_debounce_during_active_request_queues_normally(self, debounce_router, mock_websocket):
         """Messages arriving while channel is busy should queue, not debounce."""
         # First request acquires via mention (skip debounce)
         req1 = make_request("req-1", content="first")
@@ -364,9 +360,7 @@ class TestDebounce:
         assert consolidated.request.tier_override == "high"
 
     @pytest.mark.asyncio
-    async def test_consolidated_marks_folded_requests_completed(
-        self, debounce_router, mock_websocket
-    ):
+    async def test_consolidated_marks_folded_requests_completed(self, debounce_router, mock_websocket):
         """Folded request IDs should be marked as completed."""
         callback = AsyncMock()
         debounce_router.set_debounce_callback(callback)

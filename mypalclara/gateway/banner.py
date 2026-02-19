@@ -76,9 +76,7 @@ def compose_banner(version: str) -> str:
         # Banner/text part
         banner_idx = i - banner_start
         if 0 <= banner_idx < len(banner):
-            color_idx = int(
-                banner_idx / max(len(banner) - 1, 1) * (len(GRADIENT) - 1)
-            )
+            color_idx = int(banner_idx / max(len(banner) - 1, 1) * (len(GRADIENT) - 1))
             b_colored = f"{GRADIENT[color_idx]}{banner[banner_idx]}{RESET}"
         elif banner_idx == len(banner) + 1:
             b_colored = f"  {DIM}v{version} • Your AI companion{RESET}"

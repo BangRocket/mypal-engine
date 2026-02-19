@@ -238,9 +238,7 @@ class MessageRouter:
                     old_task = self._debounce_tasks.get(channel_id)
                     if old_task and not old_task.done():
                         old_task.cancel()
-                    self._debounce_tasks[channel_id] = asyncio.create_task(
-                        self._debounce_expire(channel_id)
-                    )
+                    self._debounce_tasks[channel_id] = asyncio.create_task(self._debounce_expire(channel_id))
                     logger.debug(
                         f"Request {request.id} appended to debounce for channel {channel_id} "
                         f"({len(self._debounce_requests[channel_id])} pending)"
@@ -250,9 +248,7 @@ class MessageRouter:
                     # First message — start debounce window
                     self._debounce_requests[channel_id] = [queued]
                     self._requests[request.id] = RequestStatus.DEBOUNCE
-                    self._debounce_tasks[channel_id] = asyncio.create_task(
-                        self._debounce_expire(channel_id)
-                    )
+                    self._debounce_tasks[channel_id] = asyncio.create_task(self._debounce_expire(channel_id))
                     logger.debug(f"Request {request.id} started debounce for channel {channel_id}")
                     return False, 0
 
