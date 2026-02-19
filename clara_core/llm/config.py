@@ -55,7 +55,9 @@ class LLMConfig:
     top_p: float = 1.0
     top_k: int | None = None
     response_format: dict | None = None
-    tool_choice: str | dict | None = None  # "required", "auto", "none", or {"type": "function", "function": {"name": "..."}}
+    tool_choice: str | dict | None = (
+        None  # "required", "auto", "none", or {"type": "function", "function": {"name": "..."}}
+    )
 
     # Provider-specific options
     aws_region: str | None = None  # Bedrock
