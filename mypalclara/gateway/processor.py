@@ -67,6 +67,20 @@ IMPORTANT: Consider the conversation context. A short reply like "yes" or "ok" i
 
 Respond with only one word: LOW, MID, or HIGH"""
 
+# Target classifier — determines if a group message is directed at Clara
+TARGET_CLASSIFIER_ENABLED = os.getenv("TARGET_CLASSIFIER", "true").lower() == "true"
+
+TARGET_CLASSIFICATION_PROMPT = """You are a message routing classifier for a group chat. {bot_name} is an AI assistant in this channel.
+
+Recent channel messages:
+{context}
+
+New message from {user_name}: {message}
+
+Is this new message directed at {bot_name}, or is it directed at someone else or the group in general?
+
+Respond with exactly one word: CLARA, OTHER, or AMBIGUOUS"""
+
 
 class MessageProcessor:
     """Processes messages through the Clara pipeline.
@@ -323,6 +337,23 @@ class MessageProcessor:
         response_id = f"resp-{uuid.uuid4().hex[:8]}"
 
         logger.info(f"Processing message {request.id} from {request.user.id}: " f"{request.content[:50]}...")
+
+        # Target classification — skip messages not directed at Clara
+        is_dm = request.channel.type == "dm"
+        is_mention = request.metadata.get("is_mention", False)
+        if TARGET_CLASSIFIER_ENABLED and not is_dm and not is_mention:
+            target = await self._classify_target(request)
+            if target != "CLARA":
+                logger.info(f"Skipping {request.id} — classified as {target}, not directed at Clara")
+                await self._send(
+                    websocket,
+                    ResponseEnd(
+                        id=response_id,
+                        request_id=request.id,
+                        full_text="",
+                    ),
+                )
+                return
 
         # Determine model tier
         tier = request.tier_override
@@ -1077,3 +1108,88 @@ class MessageProcessor:
         except Exception as e:
             logger.warning(f"Tier classification failed: {e}, defaulting to mid")
             return "mid"
+
+    async def _classify_target(self, request: MessageRequest) -> str:
+        """Classify whether a group channel message is directed at Clara.
+
+        Uses a two-layer approach:
+        - Layer 1: Deterministic rules (free, instant)
+        - Layer 2: LLM classifier fallback (cheap, ~100ms)
+
+        Args:
+            request: The message request
+
+        Returns:
+            "CLARA", "OTHER", or "AMBIGUOUS"
+        """
+        from config.bot import BOT_NAME
+
+        content_lower = request.content.lower()
+        bot_name_lower = BOT_NAME.lower()
+
+        # Layer 1: Deterministic rules
+
+        # Rule: DM — always Clara
+        if request.channel.type == "dm":
+            return "CLARA"
+
+        # Rule: Explicit @mention
+        if request.metadata.get("is_mention", False):
+            return "CLARA"
+
+        # Rule: Bot name appears in message
+        if bot_name_lower in content_lower:
+            return "CLARA"
+
+        # Rule: Reply to Clara's message (last reply_chain entry is assistant)
+        if request.reply_chain:
+            last_msg = request.reply_chain[-1]
+            if last_msg.get("role") == "assistant":
+                return "CLARA"
+
+        # Layer 2: LLM classifier
+        loop = asyncio.get_event_loop()
+
+        # Fetch recent channel messages for context (lightweight — 10 messages)
+        context_id = f"channel-{request.channel.id}"
+        channel_msgs = await loop.run_in_executor(
+            BLOCKING_EXECUTOR,
+            lambda: self._get_channel_context(context_id, limit=10),
+        )
+
+        # Build context string
+        context_lines = []
+        for msg in channel_msgs:
+            role_label = "Clara" if msg.role == "assistant" else (msg.user_id or "user")
+            content_preview = msg.content[:200] if msg.content else ""
+            context_lines.append(f"[{role_label}]: {content_preview}")
+
+        context_str = "\n".join(context_lines) if context_lines else "(no prior messages)"
+
+        prompt = TARGET_CLASSIFICATION_PROMPT.format(
+            bot_name=BOT_NAME,
+            context=context_str,
+            user_name=request.user.display_name or request.user.name or request.user.id,
+            message=request.content[:500],
+        )
+
+        try:
+            from clara_core import ModelTier, make_llm
+
+            def classify():
+                llm = make_llm(tier=ModelTier.LOW)
+                response = llm([{"role": "user", "content": prompt}])
+                return response.strip().upper()
+
+            result = await loop.run_in_executor(BLOCKING_EXECUTOR, classify)
+
+            if "CLARA" in result:
+                return "CLARA"
+            elif "OTHER" in result:
+                return "OTHER"
+            else:
+                return "AMBIGUOUS"
+
+        except Exception as e:
+            logger.warning(f"Target classification failed: {e}, defaulting to CLARA")
+            return "CLARA"
