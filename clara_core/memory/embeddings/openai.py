@@ -58,6 +58,10 @@ class OpenAIEmbedding(EmbeddingBase):
             list: The embedding vector.
         """
         text = text.replace("\n", " ")
+        # Normalize case for embeddings so "OpenBC" and "openbc" produce
+        # identical vectors. Stored memory text preserves original case —
+        # only the embedding vector is affected.
+        text = text.lower()
         return (
             self.client.embeddings.create(input=[text], model=self.config.model, dimensions=self.config.embedding_dims)
             .data[0]
