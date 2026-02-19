@@ -663,11 +663,9 @@ class AdapterManager:
                 match = log_pattern.match(clean_line)
                 if match:
                     level_str = match.group(2).upper()
-                    original_logger = match.group(3)
                     message = match.group(4)
                     level = getattr(logging, level_str, logging.INFO)
-                    # Include original logger name in message for context
-                    adapter_logger.log(level, f"[{original_logger}] {message}")
+                    adapter_logger.log(level, message)
                 else:
                     # Non-log output (like "[logging] Initializing...")
                     adapter_logger.info(clean_line)
