@@ -6,12 +6,15 @@ Handles:
 - Cancellation support
 - Batch processing for active mode
 - Message deduplication
+- Debounce for rapid-fire messages
 """
 
 from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -29,6 +32,15 @@ logger = get_logger("gateway.router")
 DEDUP_WINDOW_SECONDS = 30  # Time window to check for duplicates
 DEDUP_MAX_ENTRIES = 1000  # Maximum entries in dedup cache
 
+# Debounce settings
+DEBOUNCE_SECONDS = float(os.getenv("MESSAGE_DEBOUNCE_SECONDS", "2.0"))
+
+# Type alias for the debounce-ready callback
+DebounceCallback = Callable[
+    [str, "QueuedRequest"],  # channel_id, consolidated_request
+    Coroutine[Any, Any, None],
+]
+
 
 class RequestStatus(str, Enum):
     """Status of a message request."""
@@ -39,6 +51,7 @@ class RequestStatus(str, Enum):
     COMPLETED = "completed"
     CANCELLED = "cancelled"
     FAILED = "failed"
+    DEBOUNCE = "debounce"
 
 
 @dataclass
@@ -106,6 +119,18 @@ class MessageRouter:
         self._seen_messages: dict[str, datetime] = {}
         # Lock for dedup cache
         self._dedup_lock = asyncio.Lock()
+        # Debounce state
+        self._debounce_tasks: dict[str, asyncio.Task[None]] = {}  # channel_id -> sleep task
+        self._debounce_requests: dict[str, list[QueuedRequest]] = {}  # channel_id -> pending
+        self._on_debounce_ready: DebounceCallback | None = None
+
+    def set_debounce_callback(self, callback: DebounceCallback) -> None:
+        """Register a callback for when debounce timers expire.
+
+        Args:
+            callback: Async function(channel_id, consolidated_request) called when ready.
+        """
+        self._on_debounce_ready = callback
 
     def _compute_fingerprint(self, request: MessageRequest) -> str:
         """Compute a fingerprint for deduplication.
@@ -156,6 +181,7 @@ class MessageRouter:
         node_id: str,
         is_batchable: bool = False,
         skip_dedup: bool = False,
+        is_mention: bool = False,
     ) -> tuple[bool, int]:
         """Submit a request for processing.
 
@@ -165,12 +191,14 @@ class MessageRouter:
             node_id: Originating node ID
             is_batchable: Whether this can be batched with other requests
             skip_dedup: Skip deduplication check (for retries)
+            is_mention: Whether the message is a direct mention (skips debounce)
 
         Returns:
             Tuple of (acquired_immediately, queue_position)
             If acquired is True, caller should process immediately.
             If False, queue_position indicates position in queue (1-indexed).
             If (False, -1), the message was rejected as a duplicate.
+            If (False, 0), the message is being debounced.
         """
         # Check for duplicates first
         if not skip_dedup and await self.is_duplicate(request):
@@ -181,16 +209,52 @@ class MessageRouter:
         async with self._lock:
             self._requests[request.id] = RequestStatus.PENDING
 
+            queued = QueuedRequest(
+                request=request,
+                websocket=websocket,
+                node_id=node_id,
+                is_batchable=is_batchable,
+            )
+
             if channel_id not in self._active:
-                # No active request, start immediately
-                self._active[channel_id] = ActiveRequest(
-                    request=request,
-                    websocket=websocket,
-                    node_id=node_id,
-                )
-                self._requests[request.id] = RequestStatus.ACTIVE
-                logger.debug(f"Request {request.id} acquired channel {channel_id}")
-                return True, 0
+                # Channel is free — debounce or acquire immediately
+                if is_mention or DEBOUNCE_SECONDS <= 0:
+                    # Mentions skip debounce; disabled debounce = immediate
+                    self._active[channel_id] = ActiveRequest(
+                        request=request,
+                        websocket=websocket,
+                        node_id=node_id,
+                    )
+                    self._requests[request.id] = RequestStatus.ACTIVE
+                    logger.debug(f"Request {request.id} acquired channel {channel_id}")
+                    return True, 0
+
+                # Start or extend debounce
+                if channel_id in self._debounce_requests:
+                    # Already debouncing — append and reset timer
+                    self._debounce_requests[channel_id].append(queued)
+                    self._requests[request.id] = RequestStatus.DEBOUNCE
+                    # Cancel old timer, start new one
+                    old_task = self._debounce_tasks.get(channel_id)
+                    if old_task and not old_task.done():
+                        old_task.cancel()
+                    self._debounce_tasks[channel_id] = asyncio.create_task(
+                        self._debounce_expire(channel_id)
+                    )
+                    logger.debug(
+                        f"Request {request.id} appended to debounce for channel {channel_id} "
+                        f"({len(self._debounce_requests[channel_id])} pending)"
+                    )
+                    return False, 0
+                else:
+                    # First message — start debounce window
+                    self._debounce_requests[channel_id] = [queued]
+                    self._requests[request.id] = RequestStatus.DEBOUNCE
+                    self._debounce_tasks[channel_id] = asyncio.create_task(
+                        self._debounce_expire(channel_id)
+                    )
+                    logger.debug(f"Request {request.id} started debounce for channel {channel_id}")
+                    return False, 0
 
             # Channel is busy, queue the request
             if channel_id not in self._queues:
@@ -198,19 +262,84 @@ class MessageRouter:
 
             queue = self._queues[channel_id]
             position = len(queue) + 1
+            queued.position = position
 
-            queued = QueuedRequest(
-                request=request,
-                websocket=websocket,
-                node_id=node_id,
-                position=position,
-                is_batchable=is_batchable,
-            )
             queue.append(queued)
             self._requests[request.id] = RequestStatus.QUEUED
 
             logger.debug(f"Request {request.id} queued at position {position} for channel {channel_id}")
             return False, position
+
+    async def _debounce_expire(self, channel_id: str) -> None:
+        """Called when the debounce timer for a channel expires.
+
+        Consolidates pending requests and either activates them directly
+        or fires the callback so the server can process.
+        """
+        await asyncio.sleep(DEBOUNCE_SECONDS)
+
+        async with self._lock:
+            pending = self._debounce_requests.pop(channel_id, [])
+            self._debounce_tasks.pop(channel_id, None)
+
+            if not pending:
+                return
+
+            consolidated = self._consolidate_requests(pending)
+
+            # Mark the consolidated request as active
+            self._active[channel_id] = ActiveRequest(
+                request=consolidated.request,
+                websocket=consolidated.websocket,
+                node_id=consolidated.node_id,
+            )
+            self._requests[consolidated.request_id] = RequestStatus.ACTIVE
+            # Mark any other request IDs that got folded in as completed
+            for req in pending[1:]:
+                self._requests[req.request_id] = RequestStatus.COMPLETED
+
+            logger.debug(
+                f"Debounce expired for channel {channel_id}: "
+                f"consolidated {len(pending)} request(s) into {consolidated.request_id}"
+            )
+
+        # Fire callback outside the lock
+        if self._on_debounce_ready:
+            await self._on_debounce_ready(channel_id, consolidated)
+
+    @staticmethod
+    def _consolidate_requests(requests: list[QueuedRequest]) -> QueuedRequest:
+        """Consolidate multiple requests into a single request.
+
+        - Joins content with newlines
+        - Uses the latest request's reply_chain, attachments, metadata, tier_override
+        - Keeps the first request's ID (already acknowledged to the adapter)
+        """
+        first = requests[0]
+        latest = requests[-1]
+
+        # Build consolidated content
+        contents = [r.request.content for r in requests if r.request.content.strip()]
+        merged_content = "\n".join(contents)
+
+        # Build consolidated request using first's ID + latest's metadata
+        consolidated = first.request.model_copy(
+            update={
+                "content": merged_content,
+                "reply_chain": latest.request.reply_chain,
+                "attachments": latest.request.attachments,
+                "metadata": latest.request.metadata,
+                "tier_override": latest.request.tier_override,
+            }
+        )
+
+        return QueuedRequest(
+            request=consolidated,
+            websocket=latest.websocket,
+            node_id=latest.node_id,
+            queued_at=first.queued_at,
+            is_batchable=first.is_batchable,
+        )
 
     async def complete(self, request_id: str) -> QueuedRequest | None:
         """Mark a request as complete and return the next queued request.
@@ -368,6 +497,16 @@ class MessageRouter:
             had_active = False
             num_queued = 0
 
+            # Cancel debounce timer + pending requests
+            if channel_id in self._debounce_tasks:
+                task = self._debounce_tasks.pop(channel_id)
+                if not task.done():
+                    task.cancel()
+            if channel_id in self._debounce_requests:
+                for req in self._debounce_requests.pop(channel_id):
+                    self._requests[req.request_id] = RequestStatus.CANCELLED
+                    num_queued += 1
+
             # Cancel active request
             if channel_id in self._active:
                 active = self._active[channel_id]
@@ -380,7 +519,7 @@ class MessageRouter:
             # Cancel queued requests
             if channel_id in self._queues:
                 queue = self._queues[channel_id]
-                num_queued = len(queue)
+                num_queued += len(queue)
                 for queued in queue:
                     self._requests[queued.request_id] = RequestStatus.CANCELLED
                 del self._queues[channel_id]
@@ -449,6 +588,7 @@ class MessageRouter:
             return {
                 "active_channels": len(self._active),
                 "total_queued": total_queued,
+                "debouncing_channels": len(self._debounce_requests),
                 "by_status": by_status,
             }
 

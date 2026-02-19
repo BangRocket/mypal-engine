@@ -80,6 +80,7 @@ class GatewayServer:
         self.node_registry = NodeRegistry()
         self.session_manager = SessionManager(self.node_registry)
         self.router = MessageRouter()
+        self.router.set_debounce_callback(self._on_debounce_ready)
 
         self._server: websockets.WebSocketServer | None = None
         self._started_at: datetime | None = None
@@ -242,7 +243,8 @@ class GatewayServer:
             return
 
         # Determine if request is batchable (active mode, not DM/mention)
-        is_batchable = msg.channel.type == "server" and not msg.metadata.get("is_mention", False)
+        is_mention = msg.metadata.get("is_mention", False)
+        is_batchable = msg.channel.type == "server" and not is_mention
 
         # Try to acquire channel
         acquired, position = await self.router.submit(
@@ -250,13 +252,17 @@ class GatewayServer:
             websocket=websocket,
             node_id=node.node_id,
             is_batchable=is_batchable,
+            is_mention=is_mention,
         )
 
         if acquired:
             # Process immediately
             await self._process_request(websocket, node.node_id, msg)
+        elif position == 0:
+            # Debouncing — router will callback via _on_debounce_ready when timer expires
+            pass
         else:
-            # Notify about queue position
+            # Notify about queue position (position > 0 means queued, -1 means rejected)
             await self._send(
                 websocket,
                 StatusMessage(
@@ -312,6 +318,23 @@ class GatewayServer:
                     next_request.node_id,
                     next_request.request,
                 )
+
+    async def _on_debounce_ready(
+        self,
+        channel_id: str,
+        consolidated: Any,
+    ) -> None:
+        """Called by the router when a debounce timer expires.
+
+        Args:
+            channel_id: The channel whose debounce expired
+            consolidated: The consolidated QueuedRequest
+        """
+        await self._process_request(
+            consolidated.websocket,
+            consolidated.node_id,
+            consolidated.request,
+        )
 
     async def _handle_cancel(
         self,

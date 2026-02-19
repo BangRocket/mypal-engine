@@ -1,17 +1,19 @@
 """Tests for gateway message router."""
 
 import asyncio
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+import mypalclara.gateway.router as router_module
 from mypalclara.gateway.protocol import ChannelInfo, MessageRequest, UserInfo
-from mypalclara.gateway.router import MessageRouter, RequestStatus
+from mypalclara.gateway.router import DEBOUNCE_SECONDS, MessageRouter, RequestStatus
 
 
 @pytest.fixture
-def router():
-    """Create a fresh message router."""
+def router(monkeypatch):
+    """Create a fresh message router with debounce disabled."""
+    monkeypatch.setattr(router_module, "DEBOUNCE_SECONDS", 0.0)
     return MessageRouter()
 
 
@@ -250,3 +252,174 @@ class TestBatchProcessing:
 
         # Should return empty because first queued is not batchable
         assert len(batch) == 0
+
+
+class TestDebounce:
+    """Tests for message debounce (rapid-fire consolidation)."""
+
+    @pytest.fixture
+    def debounce_router(self, monkeypatch):
+        """Create a router with a short debounce window for testing."""
+        monkeypatch.setattr(router_module, "DEBOUNCE_SECONDS", 0.1)
+        return MessageRouter()
+
+    @pytest.mark.asyncio
+    async def test_single_message_processes_after_delay(self, debounce_router, mock_websocket):
+        """A single message should be processed after the debounce window."""
+        callback = AsyncMock()
+        debounce_router.set_debounce_callback(callback)
+
+        req = make_request("req-1", content="hey clara")
+        acquired, position = await debounce_router.submit(req, mock_websocket, "node-1")
+
+        # Should not acquire immediately — debouncing
+        assert acquired is False
+        assert position == 0
+        assert await debounce_router.get_request_status("req-1") == RequestStatus.DEBOUNCE
+
+        # Wait for debounce to expire
+        await asyncio.sleep(0.2)
+
+        # Callback should have been called with the request
+        callback.assert_called_once()
+        call_args = callback.call_args
+        assert call_args[0][0] == "channel-1"  # channel_id
+        assert call_args[0][1].request.content == "hey clara"
+        assert await debounce_router.get_request_status("req-1") == RequestStatus.ACTIVE
+
+    @pytest.mark.asyncio
+    async def test_rapid_messages_consolidated(self, debounce_router, mock_websocket):
+        """Multiple rapid messages should be consolidated into one."""
+        callback = AsyncMock()
+        debounce_router.set_debounce_callback(callback)
+
+        req1 = make_request("req-1", content="hey")
+        req2 = make_request("req-2", content="can you help me")
+        req3 = make_request("req-3", content="with python?")
+
+        await debounce_router.submit(req1, mock_websocket, "node-1")
+        await debounce_router.submit(req2, mock_websocket, "node-1")
+        await debounce_router.submit(req3, mock_websocket, "node-1")
+
+        # Wait for debounce to expire
+        await asyncio.sleep(0.2)
+
+        # Should have been called once with consolidated content
+        callback.assert_called_once()
+        consolidated = callback.call_args[0][1]
+        assert consolidated.request.content == "hey\ncan you help me\nwith python?"
+        # First request's ID is kept
+        assert consolidated.request.id == "req-1"
+
+    @pytest.mark.asyncio
+    async def test_mention_skips_debounce(self, debounce_router, mock_websocket):
+        """Mentions should skip debounce and acquire immediately."""
+        req = make_request("req-1", content="@Clara help")
+        acquired, position = await debounce_router.submit(
+            req, mock_websocket, "node-1", is_mention=True
+        )
+
+        assert acquired is True
+        assert position == 0
+        assert await debounce_router.get_request_status("req-1") == RequestStatus.ACTIVE
+
+    @pytest.mark.asyncio
+    async def test_debounce_during_active_request_queues_normally(
+        self, debounce_router, mock_websocket
+    ):
+        """Messages arriving while channel is busy should queue, not debounce."""
+        # First request acquires via mention (skip debounce)
+        req1 = make_request("req-1", content="first")
+        await debounce_router.submit(req1, mock_websocket, "node-1", is_mention=True)
+
+        # Second request while channel is busy — should queue
+        req2 = make_request("req-2", content="second")
+        acquired, position = await debounce_router.submit(req2, mock_websocket, "node-1")
+
+        assert acquired is False
+        assert position == 1  # Queued, not debounced (would be 0)
+        assert await debounce_router.get_request_status("req-2") == RequestStatus.QUEUED
+
+    @pytest.mark.asyncio
+    async def test_consolidated_uses_latest_metadata(self, debounce_router, mock_websocket):
+        """Consolidated request should use latest request's metadata."""
+        callback = AsyncMock()
+        debounce_router.set_debounce_callback(callback)
+
+        req1 = make_request("req-1", content="hey")
+        req1.metadata = {"source": "old"}
+        req1.tier_override = "low"
+
+        req2 = make_request("req-2", content="help me")
+        req2.metadata = {"source": "new", "extra": True}
+        req2.tier_override = "high"
+
+        await debounce_router.submit(req1, mock_websocket, "node-1")
+        await debounce_router.submit(req2, mock_websocket, "node-1")
+
+        await asyncio.sleep(0.2)
+
+        consolidated = callback.call_args[0][1]
+        assert consolidated.request.metadata == {"source": "new", "extra": True}
+        assert consolidated.request.tier_override == "high"
+
+    @pytest.mark.asyncio
+    async def test_consolidated_marks_folded_requests_completed(
+        self, debounce_router, mock_websocket
+    ):
+        """Folded request IDs should be marked as completed."""
+        callback = AsyncMock()
+        debounce_router.set_debounce_callback(callback)
+
+        req1 = make_request("req-1", content="hey")
+        req2 = make_request("req-2", content="there")
+
+        await debounce_router.submit(req1, mock_websocket, "node-1")
+        await debounce_router.submit(req2, mock_websocket, "node-1")
+
+        await asyncio.sleep(0.2)
+
+        # First request becomes the active consolidated request
+        assert await debounce_router.get_request_status("req-1") == RequestStatus.ACTIVE
+        # Second request was folded in and marked completed
+        assert await debounce_router.get_request_status("req-2") == RequestStatus.COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_cancel_channel_cleans_debounce(self, debounce_router, mock_websocket):
+        """Cancelling a channel should clean up debounce state."""
+        req1 = make_request("req-1", content="hey")
+        req2 = make_request("req-2", content="there")
+
+        await debounce_router.submit(req1, mock_websocket, "node-1")
+        await debounce_router.submit(req2, mock_websocket, "node-1")
+
+        # Cancel while still debouncing
+        _, num_cancelled = await debounce_router.cancel_channel("channel-1")
+
+        assert num_cancelled == 2
+        assert await debounce_router.get_request_status("req-1") == RequestStatus.CANCELLED
+        assert await debounce_router.get_request_status("req-2") == RequestStatus.CANCELLED
+
+    @pytest.mark.asyncio
+    async def test_debounce_timer_resets_on_new_message(self, debounce_router, mock_websocket):
+        """Each new message during debounce should reset the timer."""
+        callback = AsyncMock()
+        debounce_router.set_debounce_callback(callback)
+
+        req1 = make_request("req-1", content="hey")
+        await debounce_router.submit(req1, mock_websocket, "node-1")
+
+        # Wait half the debounce window, then send another
+        await asyncio.sleep(0.06)
+        req2 = make_request("req-2", content="there")
+        await debounce_router.submit(req2, mock_websocket, "node-1")
+
+        # At 0.06s, the first timer (would expire at 0.1s) was cancelled.
+        # New timer starts, expires at 0.06+0.1=0.16s
+        await asyncio.sleep(0.06)
+        # At 0.12s — original timer would have expired, but callback should NOT have fired yet
+        callback.assert_not_called()
+
+        # Wait for second timer to expire
+        await asyncio.sleep(0.1)
+        callback.assert_called_once()
