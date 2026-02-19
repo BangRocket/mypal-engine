@@ -236,22 +236,24 @@ class MemoryGraph:
         # Vector similarity search using vec.cosineDistance (proven pattern from main).
         # cosineDistance returns [0, 2] where 0 = identical; convert to similarity.
         # The vector index accelerates the distance calculation automatically.
+        # Note: score is computed after the CALL subquery to avoid FalkorDB's
+        # "Variable already declared in outer scope" error with UNION subqueries.
         cypher = """
         MATCH (node:__Entity__ {user_id: $user_id})
         WHERE node.embedding IS NOT NULL
-        WITH node, (1 - vec.cosineDistance(node.embedding, vecf32($query_embedding))) AS score
-        WHERE score >= 0.3
+        WITH node, (1 - vec.cosineDistance(node.embedding, vecf32($query_embedding))) AS similarity
+        WHERE similarity >= 0.3
         CALL {
-            WITH node, score
+            WITH node
             MATCH (node)-[r]->(other:__Entity__ {user_id: $user_id})
-            RETURN node.name AS source, type(r) AS relationship, other.name AS destination, score
+            RETURN node.name AS source, type(r) AS relationship, other.name AS destination
             UNION
-            WITH node, score
+            WITH node
             MATCH (other:__Entity__ {user_id: $user_id})-[r]->(node)
-            RETURN other.name AS source, type(r) AS relationship, node.name AS destination, score
+            RETURN other.name AS source, type(r) AS relationship, node.name AS destination
         }
-        WITH DISTINCT source, relationship, destination, score
-        RETURN source, relationship, destination, score
+        WITH DISTINCT source, relationship, destination, similarity
+        RETURN source, relationship, destination, similarity AS score
         ORDER BY score DESC
         LIMIT $limit
         """
