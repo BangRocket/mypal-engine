@@ -1130,7 +1130,10 @@ class MessageProcessor:
         """
         from config.bot import BOT_NAME
 
-        content_lower = request.content.lower()
+        # Build searchable content from message text + attachment filenames
+        attachment_names = " ".join(att.filename for att in request.attachments if att.filename)
+        full_content = f"{request.content} {attachment_names}".strip()
+        content_lower = full_content.lower()
         bot_name_lower = BOT_NAME.lower()
 
         # Layer 1: Deterministic rules
@@ -1143,7 +1146,7 @@ class MessageProcessor:
         if request.metadata.get("is_mention", False):
             return "CLARA"
 
-        # Rule: Bot name appears in message
+        # Rule: Bot name appears in message text or attachment filenames
         if bot_name_lower in content_lower:
             return "CLARA"
 
@@ -1175,11 +1178,22 @@ class MessageProcessor:
 
         context_str = "\n".join(context_lines) if context_lines else "(no prior messages)"
 
+        # Build message description for the LLM (text + attachments)
+        message_parts = []
+        if request.content:
+            message_parts.append(request.content[:500])
+        if request.attachments:
+            att_desc = ", ".join(
+                f"{att.filename} ({att.type})" for att in request.attachments
+            )
+            message_parts.append(f"[Attachments: {att_desc}]")
+        message_str = " ".join(message_parts) if message_parts else "(empty message)"
+
         prompt = TARGET_CLASSIFICATION_PROMPT.format(
             bot_name=BOT_NAME,
             context=context_str,
             user_name=request.user.display_name or request.user.name or request.user.id,
-            message=request.content[:500],
+            message=message_str,
         )
 
         try:
