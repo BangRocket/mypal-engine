@@ -68,9 +68,23 @@ def get_current_revision() -> str | None:
 
 
 def get_head_revision() -> str | None:
-    """Get the head revision from migration scripts."""
+    """Get the head revision from migration scripts.
+
+    If multiple heads exist (branching), auto-merges them first.
+    """
     cfg = get_alembic_config()
     script = ScriptDirectory.from_config(cfg)
+    heads = script.get_heads()
+    if len(heads) > 1:
+        print(f"Multiple migration heads detected: {heads}")
+        print("Auto-merging...")
+        try:
+            command.merge(cfg, list(heads), message="auto-merge migration heads")
+            print("Heads merged successfully")
+        except Exception as e:
+            print(f"Auto-merge failed ({e}), upgrading to all heads")
+            command.upgrade(cfg, "heads")
+            return None
     return script.get_current_head()
 
 
