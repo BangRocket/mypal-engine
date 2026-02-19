@@ -54,7 +54,7 @@ from clara_core.llm import (
     message_from_dict,
     messages_from_dicts,
 )
-from clara_core.memory_manager import MemoryManager, load_initial_profile
+from clara_core.memory_manager import MemoryManager
 from clara_core.platform import PlatformAdapter, PlatformContext, PlatformMessage
 from clara_core.tools import ToolRegistry
 
@@ -97,6 +97,4 @@ __all__ = [
     "get_current_tier",
     "get_tier_info",
     "DEFAULT_TIER",
-    # Profile loading
-    "load_initial_profile",
 ]

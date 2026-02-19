@@ -135,9 +135,7 @@ class MemoryManager:
         self._session_manager = SessionManager(llm_callable=llm_callable)
         self._dynamics_manager = MemoryDynamicsManager()
         self._intention_manager = IntentionManager(agent_id=agent_id)
-        self._ingestion_manager = MemoryIngestionManager(
-            agent_id=agent_id, dynamics_manager=self._dynamics_manager
-        )
+        self._ingestion_manager = MemoryIngestionManager(agent_id=agent_id, dynamics_manager=self._dynamics_manager)
         self._memory_retriever = MemoryRetriever(
             agent_id=agent_id,
             on_memory_event=on_memory_event,
@@ -217,8 +215,12 @@ class MemoryManager:
     # ---------- Session management (delegates to SessionManager) ----------
 
     def get_or_create_session(
-        self, db: "OrmSession", user_id: str, context_id: str = "default",
-        project_id: str | None = None, title: str | None = None,
+        self,
+        db: "OrmSession",
+        user_id: str,
+        context_id: str = "default",
+        project_id: str | None = None,
+        title: str | None = None,
     ) -> "Session":
         """Get or create a session with platform-agnostic context."""
         return self._session_manager.get_or_create_session(db, user_id, context_id, project_id, title)
@@ -236,7 +238,12 @@ class MemoryManager:
         return self._session_manager.get_message_count(db, thread_id)
 
     def store_message(
-        self, db: "OrmSession", thread_id: str, user_id: str, role: str, content: str,
+        self,
+        db: "OrmSession",
+        thread_id: str,
+        user_id: str,
+        role: str,
+        content: str,
     ) -> "Message":
         """Store a message in a thread."""
         return self._session_manager.store_message(db, thread_id, user_id, role, content)
@@ -252,28 +259,51 @@ class MemoryManager:
     # ---------- Memory retrieval (delegates to MemoryRetriever) ----------
 
     def fetch_mem0_context(
-        self, user_id: str, project_id: str, user_message: str,
-        participants: list[dict] | None = None, is_dm: bool = False,
+        self,
+        user_id: str,
+        project_id: str,
+        user_message: str,
+        participants: list[dict] | None = None,
+        is_dm: bool = False,
     ) -> tuple[list[str], list[str], list[dict]]:
         """Fetch relevant memories from mem0 using parallel fetches."""
         return self._memory_retriever.fetch_mem0_context(
-            user_id, project_id, user_message, participants, is_dm,
+            user_id,
+            project_id,
+            user_message,
+            participants,
+            is_dm,
         )
 
     # ---------- Memory writing (delegates to MemoryWriter) ----------
 
     def add_to_mem0(
-        self, user_id: str, project_id: str, recent_msgs: list["Message"],
-        user_message: str, assistant_reply: str,
-        participants: list[dict] | None = None, is_dm: bool = False,
+        self,
+        user_id: str,
+        project_id: str,
+        recent_msgs: list["Message"],
+        user_message: str,
+        assistant_reply: str,
+        participants: list[dict] | None = None,
+        is_dm: bool = False,
     ) -> None:
         """Send conversation slice to mem0 for memory extraction."""
         self._memory_writer.add_to_mem0(
-            user_id, project_id, recent_msgs, user_message, assistant_reply, participants, is_dm,
+            user_id,
+            project_id,
+            recent_msgs,
+            user_message,
+            assistant_reply,
+            participants,
+            is_dm,
         )
 
     def add_to_memory(
-        self, user_id: str, user_message: str, assistant_reply: str, is_dm: bool = False,
+        self,
+        user_id: str,
+        user_message: str,
+        assistant_reply: str,
+        is_dm: bool = False,
     ) -> None:
         """Simplified method to add a conversation exchange to memory."""
         self._memory_writer.add_to_memory(user_id, user_message, assistant_reply, is_dm)
@@ -281,27 +311,44 @@ class MemoryManager:
     # ---------- Prompt building (delegates to PromptBuilder) ----------
 
     def fetch_emotional_context(
-        self, user_id: str, limit: int = 3, max_age_days: int = 7,
+        self,
+        user_id: str,
+        limit: int = 3,
+        max_age_days: int = 7,
     ) -> list[dict]:
         """Fetch recent emotional context memories for session warmth."""
         return self._prompt_builder.fetch_emotional_context(user_id, limit, max_age_days)
 
     def build_prompt(
-        self, user_mems: list[str], proj_mems: list[str],
-        thread_summary: str | None, recent_msgs: list["Message"],
-        user_message: str, emotional_context: list[dict] | None = None,
+        self,
+        user_mems: list[str],
+        proj_mems: list[str],
+        thread_summary: str | None,
+        recent_msgs: list["Message"],
+        user_message: str,
+        emotional_context: list[dict] | None = None,
         recurring_topics: list[dict] | None = None,
         graph_relations: list[dict] | None = None,
         tools: list[dict] | None = None,
     ) -> list[Message]:
         """Build the full prompt for the LLM."""
         return self._prompt_builder.build_prompt(
-            user_mems, proj_mems, thread_summary, recent_msgs, user_message,
-            emotional_context, recurring_topics, graph_relations, tools,
+            user_mems,
+            proj_mems,
+            thread_summary,
+            recent_msgs,
+            user_message,
+            emotional_context,
+            recurring_topics,
+            graph_relations,
+            tools,
         )
 
     def fetch_topic_recurrence(
-        self, user_id: str, lookback_days: int = 14, min_mentions: int = 2,
+        self,
+        user_id: str,
+        lookback_days: int = 14,
+        min_mentions: int = 2,
     ) -> list[dict]:
         """Fetch recurring topic patterns for a user."""
         return self._prompt_builder.fetch_topic_recurrence(user_id, lookback_days, min_mentions)
@@ -317,13 +364,19 @@ class MemoryManager:
         return self._dynamics_manager.ensure_memory_dynamics(memory_id, user_id, is_key)
 
     def promote_memory(
-        self, memory_id: str, user_id: str, grade: int = 3, signal_type: str = "used_in_response",
+        self,
+        memory_id: str,
+        user_id: str,
+        grade: int = 3,
+        signal_type: str = "used_in_response",
     ) -> None:
         """Mark memory as successfully recalled, updating FSRS state."""
         self._dynamics_manager.promote_memory(memory_id, user_id, grade, signal_type)
 
     def prune_old_access_logs(
-        self, db: "OrmSession", retention_days: int = MEMORY_ACCESS_LOG_RETENTION_DAYS,
+        self,
+        db: "OrmSession",
+        retention_days: int = MEMORY_ACCESS_LOG_RETENTION_DAYS,
     ) -> int:
         """Delete MemoryAccessLog records older than retention period."""
         return self._dynamics_manager.prune_old_access_logs(db, retention_days)
@@ -351,21 +404,32 @@ class MemoryManager:
         return self._ingestion_manager.validate_ingested_memories(mem_results, user_id)
 
     def smart_ingest(
-        self, content: str, user_id: str, metadata: dict | None = None,
+        self,
+        content: str,
+        user_id: str,
+        metadata: dict | None = None,
         exclude_ids: list[str] | None = None,
     ) -> tuple[str, str | None]:
         """Intelligently decide how to handle new information."""
         return self._ingestion_manager.smart_ingest(content, user_id, metadata, exclude_ids)
 
     def _record_supersession(
-        self, old_memory_id: str, new_memory_id: str, user_id: str, reason: str = "contradiction",
+        self,
+        old_memory_id: str,
+        new_memory_id: str,
+        user_id: str,
+        reason: str = "contradiction",
     ) -> None:
         """Record a supersession relationship and demote the old memory."""
         self._ingestion_manager._record_supersession(old_memory_id, new_memory_id, user_id, reason)
 
     def supersede_memory(
-        self, old_memory_id: str, new_content: str, user_id: str,
-        reason: str = "contradiction", metadata: dict | None = None,
+        self,
+        old_memory_id: str,
+        new_content: str,
+        user_id: str,
+        reason: str = "contradiction",
+        metadata: dict | None = None,
     ) -> str | None:
         """Replace an old memory with new information."""
         return self._ingestion_manager.supersede_memory(old_memory_id, new_content, user_id, reason, metadata)
@@ -373,12 +437,20 @@ class MemoryManager:
     # ---------- Intentions (delegates to IntentionManager) ----------
 
     def set_intention(
-        self, user_id: str, content: str, trigger_conditions: dict,
-        expires_at: datetime | None = None, source_memory_id: str | None = None,
+        self,
+        user_id: str,
+        content: str,
+        trigger_conditions: dict,
+        expires_at: datetime | None = None,
+        source_memory_id: str | None = None,
     ) -> str:
         """Create a new intention/reminder for future surfacing."""
         return self._intention_manager.set_intention(
-            user_id, content, trigger_conditions, expires_at, source_memory_id,
+            user_id,
+            content,
+            trigger_conditions,
+            expires_at,
+            source_memory_id,
         )
 
     def check_intentions(self, user_id: str, message: str, context: dict | None = None) -> list[dict]:

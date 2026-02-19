@@ -42,11 +42,7 @@ class MemoryDynamicsManager:
 
         db = SessionLocal()
         try:
-            return (
-                db.query(MemoryDynamics)
-                .filter_by(memory_id=memory_id, user_id=user_id)
-                .first()
-            )
+            return db.query(MemoryDynamics).filter_by(memory_id=memory_id, user_id=user_id).first()
         finally:
             db.close()
 
@@ -62,11 +58,7 @@ class MemoryDynamicsManager:
 
         db = SessionLocal()
         try:
-            dynamics = (
-                db.query(MemoryDynamics)
-                .filter_by(memory_id=memory_id, user_id=user_id)
-                .first()
-            )
+            dynamics = db.query(MemoryDynamics).filter_by(memory_id=memory_id, user_id=user_id).first()
 
             if not dynamics:
                 dynamics = MemoryDynamics(
@@ -102,11 +94,7 @@ class MemoryDynamicsManager:
 
         db = SessionLocal()
         try:
-            dynamics = (
-                db.query(MemoryDynamics)
-                .filter_by(memory_id=memory_id, user_id=user_id)
-                .first()
-            )
+            dynamics = db.query(MemoryDynamics).filter_by(memory_id=memory_id, user_id=user_id).first()
 
             if not dynamics:
                 dynamics = MemoryDynamics(memory_id=memory_id, user_id=user_id)
@@ -167,9 +155,7 @@ class MemoryDynamicsManager:
         finally:
             db.close()
 
-    def prune_old_access_logs(
-        self, db: "OrmSession", retention_days: int = MEMORY_ACCESS_LOG_RETENTION_DAYS
-    ) -> int:
+    def prune_old_access_logs(self, db: "OrmSession", retention_days: int = MEMORY_ACCESS_LOG_RETENTION_DAYS) -> int:
         """Delete MemoryAccessLog records older than retention period."""
         from db.models import MemoryAccessLog
 
@@ -212,11 +198,7 @@ class MemoryDynamicsManager:
 
         db = SessionLocal()
         try:
-            dynamics = (
-                db.query(MemoryDynamics)
-                .filter_by(memory_id=memory_id, user_id=user_id)
-                .first()
-            )
+            dynamics = db.query(MemoryDynamics).filter_by(memory_id=memory_id, user_id=user_id).first()
 
             if not dynamics:
                 return semantic_score

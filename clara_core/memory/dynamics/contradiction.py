@@ -12,18 +12,18 @@ enabling smart memory updates (supersede vs update vs skip).
 
 from __future__ import annotations
 
-import logging
 import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
 from clara_core.llm.messages import SystemMessage, UserMessage
+from config.logging import get_logger
 
 if TYPE_CHECKING:
     pass
 
-logger = logging.getLogger("clara.memory.contradiction")
+logger = get_logger("contradiction")
 
 
 class ContradictionType(str, Enum):
