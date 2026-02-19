@@ -29,6 +29,8 @@ class ToolExecutor:
 
     def __init__(self) -> None:
         """Initialize the executor."""
+        from collections.abc import Callable
+
         from clara_core.security.circuit_breaker import CircuitBreaker
 
         self._initialized = False
@@ -39,6 +41,7 @@ class ToolExecutor:
         self._mcp_initialized = False
         self._modular_initialized = False
         self._circuit_breaker = CircuitBreaker()
+        self._tool_handlers: dict[str, Callable[..., Any]] = {}
 
     async def initialize(self) -> None:
         """Initialize tool systems.
@@ -64,8 +67,14 @@ class ToolExecutor:
         # Initialize MCP
         await self._init_mcp()
 
+        self._register_handlers()
         self._initialized = True
         logger.info("ToolExecutor initialized")
+
+    async def shutdown(self) -> None:
+        """Shut down tool systems, including MCP servers."""
+        if self._mcp_manager and self._mcp_initialized:
+            await self._mcp_manager.shutdown()
 
     async def _init_modular_tools(self) -> None:
         """Initialize modular tools system."""
@@ -500,35 +509,10 @@ class ToolExecutor:
         """Return circuit breaker health status for all tracked tools."""
         return self._circuit_breaker.get_health_summary()
 
-    async def _route_tool(
-        self,
-        tool_name: str,
-        arguments: dict[str, Any],
-        user_id: str,
-        channel_id: str | None,
-        files_to_send: list[str],
-        platform_context: dict[str, Any],
-    ) -> str:
-        """Route tool call to appropriate handler.
-
-        Args:
-            tool_name: Name of the tool
-            arguments: Tool arguments
-            user_id: User ID
-            channel_id: Channel ID
-            files_to_send: List for file attachments
-            platform_context: Platform context
-
-        Returns:
-            Tool output
-        """
-        # MCP tools (have "__" in name)
-        if "__" in tool_name and self._mcp_initialized:
-            if self._mcp_manager.is_mcp_tool(tool_name):
-                return await self._mcp_manager.call_tool(tool_name, arguments)
-
-        # Docker sandbox tools
-        docker_tools = {
+    def _register_handlers(self) -> None:
+        """Register tool name → handler group mappings."""
+        # Sandbox tools
+        for name in (
             "execute_python",
             "install_package",
             "read_file",
@@ -538,13 +522,92 @@ class ToolExecutor:
             "unzip_file",
             "web_search",
             "run_claude_code",
-        }
-
-        if tool_name in docker_tools:
-            result = await self._sandbox_manager.handle_tool_call(user_id, tool_name, arguments)
-            return result.output if result.success else f"Error: {result.error}"
+        ):
+            self._tool_handlers[name] = self._handle_sandbox_tool
 
         # Local file tools
+        for name in (
+            "save_to_local",
+            "list_local_files",
+            "read_local_file",
+            "delete_local_file",
+            "download_from_sandbox",
+            "upload_to_sandbox",
+            "send_local_file",
+        ):
+            self._tool_handlers[name] = self._handle_file_tool
+
+        # Discord tools
+        for name in (
+            "format_discord_message",
+            "add_discord_reaction",
+            "send_discord_embed",
+            "create_discord_thread",
+            "edit_discord_message",
+            "send_discord_buttons",
+            "send_discord_file",
+        ):
+            self._tool_handlers[name] = self._handle_discord_tool
+
+    async def _route_tool(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        user_id: str,
+        channel_id: str | None,
+        files_to_send: list[str],
+        platform_context: dict[str, Any],
+    ) -> str:
+        """Route tool call to appropriate handler."""
+        # MCP tools (dynamic, checked by prefix)
+        if "__" in tool_name and self._mcp_initialized:
+            if self._mcp_manager.is_mcp_tool(tool_name):
+                return await self._mcp_manager.call_tool(tool_name, arguments)
+
+        # Registry lookup
+        handler = self._tool_handlers.get(tool_name)
+        if handler:
+            return await handler(tool_name, arguments, user_id, channel_id, files_to_send, platform_context)
+
+        # Modular registry fallback (GitHub, ADO, etc.)
+        if self._modular_initialized and self._tool_registry and tool_name in self._tool_registry:
+            from tools import ToolContext
+
+            ctx = ToolContext(
+                user_id=user_id,
+                channel_id=channel_id,
+                platform="gateway",
+                extra={"files_to_send": files_to_send, **platform_context},
+            )
+            return await self._tool_registry.execute(tool_name, arguments, ctx)
+
+        return f"Unknown tool: {tool_name}"
+
+    # ---------- Handler groups ----------
+
+    async def _handle_sandbox_tool(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        user_id: str,
+        channel_id: str | None,
+        files_to_send: list[str],
+        platform_context: dict[str, Any],
+    ) -> str:
+        """Handle Docker sandbox tools."""
+        result = await self._sandbox_manager.handle_tool_call(user_id, tool_name, arguments)
+        return result.output if result.success else f"Error: {result.error}"
+
+    async def _handle_file_tool(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        user_id: str,
+        channel_id: str | None,
+        files_to_send: list[str],
+        platform_context: dict[str, Any],
+    ) -> str:
+        """Handle local file storage tools."""
         if tool_name == "save_to_local":
             result = self._file_manager.save_file(
                 user_id,
@@ -585,31 +648,25 @@ class ToolExecutor:
             local_filename = arguments.get("local_filename", "")
             if not local_filename:
                 local_filename = sandbox_path.split("/")[-1] if "/" in sandbox_path else sandbox_path
-
             read_result = await self._sandbox_manager.read_file(user_id, sandbox_path)
             if not read_result.success:
                 return f"Error reading from sandbox: {read_result.error}"
-
             save_result = self._file_manager.save_file(user_id, local_filename, read_result.output, channel_id)
             return save_result.message
 
         if tool_name == "upload_to_sandbox":
             local_filename = arguments.get("local_filename", "")
             sandbox_path = arguments.get("sandbox_path", "")
-
             content, error = self._file_manager.read_file_bytes(user_id, local_filename, channel_id)
             if content is None:
                 return f"Error: {error}"
-
             if not sandbox_path:
                 sandbox_path = f"/home/user/{local_filename}"
-
             write_result = await self._sandbox_manager.write_file(user_id, sandbox_path, content)
             if write_result.success:
                 size_kb = len(content) / 1024
                 return f"Uploaded '{local_filename}' ({size_kb:.1f} KB) to sandbox at {sandbox_path}"
-            else:
-                return f"Error uploading to sandbox: {write_result.error}"
+            return f"Error uploading to sandbox: {write_result.error}"
 
         if tool_name == "send_local_file":
             filename = arguments.get("filename", "")
@@ -619,47 +676,34 @@ class ToolExecutor:
                 return f"File '{filename}' will be sent to chat."
             return f"File not found: {filename}"
 
-        # Modular registry tools (GitHub, ADO, etc.)
-        if self._modular_initialized and tool_name in self._tool_registry:
-            from tools import ToolContext
+        return f"Unknown file tool: {tool_name}"
 
-            ctx = ToolContext(
-                user_id=user_id,
-                channel_id=channel_id,
-                platform="gateway",
-                extra={
-                    "files_to_send": files_to_send,
-                    **platform_context,
-                },
-            )
-            return await self._tool_registry.execute(tool_name, arguments, ctx)
+    async def _handle_discord_tool(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        user_id: str,
+        channel_id: str | None,
+        files_to_send: list[str],
+        platform_context: dict[str, Any],
+    ) -> str:
+        """Handle Discord-specific tools."""
+        import json
 
-        # Discord-specific tools
         if tool_name == "format_discord_message":
             content = arguments.get("content", "")
             code_block = arguments.get("code_block", "")
             language = arguments.get("language", "")
             spoiler = arguments.get("spoiler", "")
-
-            if code_block:
-                formatted = f"```{language}\n{code_block}\n```"
-            else:
-                formatted = content
-
+            formatted = f"```{language}\n{code_block}\n```" if code_block else content
             if spoiler:
                 formatted = f"||{spoiler}||\n\n{formatted}"
-
             return formatted
 
         if tool_name == "add_discord_reaction":
-            emoji = arguments.get("emoji", "✅")
-
-            # Return special marker that Discord adapter can use
-            return f"__REACTION__:{emoji}"
+            return f"__REACTION__:{arguments.get('emoji', '✅')}"
 
         if tool_name == "send_discord_embed":
-            import json
-
             embed_data = {
                 "type": arguments.get("type", "info"),
                 "title": arguments.get("title", ""),
@@ -668,53 +712,40 @@ class ToolExecutor:
                 "color": arguments.get("color"),
                 "footer": arguments.get("footer"),
             }
-            # Remove None values
             embed_data = {k: v for k, v in embed_data.items() if v is not None}
             return f"__EMBED__:{json.dumps(embed_data)}"
 
         if tool_name == "create_discord_thread":
-            name = arguments.get("name", "Discussion")[:100]  # Max 100 chars
-            auto_archive = arguments.get("auto_archive_minutes", 1440)  # Default 1 day
+            name = arguments.get("name", "Discussion")[:100]
+            auto_archive = arguments.get("auto_archive_minutes", 1440)
             return f"__THREAD__:{name}:{auto_archive}"
 
         if tool_name == "edit_discord_message":
-            target = arguments.get("target", "last")
-            return f"__EDIT__:{target}"
+            return f"__EDIT__:{arguments.get('target', 'last')}"
 
         if tool_name == "send_discord_buttons":
-            import json
-
             buttons = arguments.get("buttons", [])
-            # Normalize button data
-            normalized = []
-            for btn in buttons[:5]:  # Max 5 buttons
-                normalized.append(
-                    {
-                        "label": btn.get("label", "Button"),
-                        "style": btn.get("style", "secondary"),
-                        "action": btn.get("action", "dismiss"),
-                    }
-                )
+            normalized = [
+                {
+                    "label": btn.get("label", "Button"),
+                    "style": btn.get("style", "secondary"),
+                    "action": btn.get("action", "dismiss"),
+                }
+                for btn in buttons[:5]
+            ]
             return f"__BUTTONS__:{json.dumps(normalized)}"
 
         if tool_name == "send_discord_file":
             filename = arguments.get("filename", "file.txt")
             content = arguments.get("content", "")
-
-            # Save file to local storage
             result = self._file_manager.save_file(user_id, filename, content, channel_id)
             if not result.success:
                 return f"Error saving file: {result.message}"
-
-            # Get the file path and add to files_to_send
             file_path = self._file_manager.get_file_path(user_id, filename, channel_id)
             if file_path:
                 files_to_send.append(str(file_path))
-                logger.info(
-                    f"[send_discord_file] Added file to send: {file_path} (exists: {file_path.exists() if hasattr(file_path, 'exists') else 'unknown'})"
-                )
-                logger.info(f"[send_discord_file] files_to_send now has {len(files_to_send)} files: {files_to_send}")
+                logger.info(f"[send_discord_file] Added file to send: {file_path}")
                 return f"File '{filename}' will be sent as an attachment."
             return f"Error: Could not locate saved file '{filename}'"
 
-        return f"Unknown tool: {tool_name}"
+        return f"Unknown Discord tool: {tool_name}"

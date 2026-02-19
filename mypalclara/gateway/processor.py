@@ -113,11 +113,15 @@ class MessageProcessor:
         logger.info("MessageProcessor initialized")
 
     async def shutdown(self) -> None:
-        """Wait for all background memory tasks to complete."""
+        """Shut down the processor: wait for background tasks, then close MCP servers."""
         if self._background_tasks:
             logger.info(f"Waiting for {len(self._background_tasks)} background memory tasks...")
             await asyncio.gather(*self._background_tasks, return_exceptions=True)
             logger.info("All background memory tasks completed")
+
+        # Shut down MCP servers after background tasks (which may use MCP tools)
+        if self._tool_executor:
+            await self._tool_executor.shutdown()
 
     async def _init_memory_manager(self) -> None:
         """Initialize the memory manager."""
