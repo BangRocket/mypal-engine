@@ -16,9 +16,8 @@ class GraphStoreFactory:
 
     # Provider mappings - only include what Clara uses
     provider_to_class = {
-        "neo4j": "clara_core.memory.graph.neo4j.MemoryGraph",
-        "kuzu": "clara_core.memory.graph.kuzu.MemoryGraph",
-        "default": "clara_core.memory.graph.neo4j.MemoryGraph",
+        "falkordb": "clara_core.memory.graph.falkordb.MemoryGraph",
+        "default": "clara_core.memory.graph.falkordb.MemoryGraph",
     }
 
     @classmethod
@@ -26,7 +25,7 @@ class GraphStoreFactory:
         """Create a graph store instance.
 
         Args:
-            provider_name: The provider name (neo4j, kuzu)
+            provider_name: The provider name (falkordb)
             config: ClaraMemoryConfig instance
 
         Returns:

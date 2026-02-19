@@ -91,17 +91,13 @@ if not ROOK_DATABASE_URL and not QDRANT_URL:
 
 # Graph memory configuration (optional - for relationship tracking)
 ENABLE_GRAPH_MEMORY = os.getenv("ENABLE_GRAPH_MEMORY", "false").lower() == "true"
-GRAPH_STORE_PROVIDER = os.getenv("GRAPH_STORE_PROVIDER", "neo4j").lower()
+GRAPH_STORE_PROVIDER = os.getenv("GRAPH_STORE_PROVIDER", "falkordb").lower()
 
-# Neo4j configuration
-NEO4J_URL = os.getenv("NEO4J_URL")
-NEO4J_USERNAME = os.getenv("NEO4J_USERNAME", "neo4j")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
-
-# Kuzu configuration
-KUZU_DATA_DIR = BASE_DATA_DIR / "kuzu_data"
-if GRAPH_STORE_PROVIDER == "kuzu":
-    KUZU_DATA_DIR.mkdir(parents=True, exist_ok=True)
+# FalkorDB configuration
+FALKORDB_HOST = os.getenv("FALKORDB_HOST", "localhost")
+FALKORDB_PORT = int(os.getenv("FALKORDB_PORT", "6379"))
+FALKORDB_PASSWORD = os.getenv("FALKORDB_PASSWORD") or None
+FALKORDB_GRAPH_NAME = os.getenv("FALKORDB_GRAPH_NAME", "clara_memory")
 
 
 def _get_graph_store_config() -> dict | None:
@@ -109,33 +105,20 @@ def _get_graph_store_config() -> dict | None:
     if not ENABLE_GRAPH_MEMORY:
         return None
 
-    if GRAPH_STORE_PROVIDER == "neo4j":
-        if not NEO4J_URL or not NEO4J_PASSWORD:
-            logger.warning("Neo4j configured but NEO4J_URL or NEO4J_PASSWORD not set")
-            return None
-
-        logger.info(f"Graph store: Neo4j at {NEO4J_URL}")
-        return {
-            "provider": "neo4j",
-            "config": {
-                "url": NEO4J_URL,
-                "username": NEO4J_USERNAME,
-                "password": NEO4J_PASSWORD,
-            },
-        }
-
-    elif GRAPH_STORE_PROVIDER == "kuzu":
-        logger.info(f"Graph store: Kuzu (embedded) at {KUZU_DATA_DIR}")
-        return {
-            "provider": "kuzu",
-            "config": {
-                "db_path": str(KUZU_DATA_DIR),
-            },
-        }
-
-    else:
-        logger.warning(f"Unknown GRAPH_STORE_PROVIDER={GRAPH_STORE_PROVIDER}")
+    if GRAPH_STORE_PROVIDER != "falkordb":
+        logger.warning(f"Unknown GRAPH_STORE_PROVIDER={GRAPH_STORE_PROVIDER}, only 'falkordb' is supported")
         return None
+
+    logger.info(f"Graph store: FalkorDB at {FALKORDB_HOST}:{FALKORDB_PORT}")
+    return {
+        "provider": "falkordb",
+        "config": {
+            "host": FALKORDB_HOST,
+            "port": FALKORDB_PORT,
+            "password": FALKORDB_PASSWORD,
+            "graph_name": FALKORDB_GRAPH_NAME,
+        },
+    }
 
 
 def _get_llm_config() -> dict | None:
