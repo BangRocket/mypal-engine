@@ -35,7 +35,7 @@ class MemoryGraph:
     Write path: 1 LLM call to extract (subject, predicate, object) triples,
     then MERGE nodes with embeddings and MERGE relationships.
 
-    Read path: Embed query, use db.idx.vector.queryNodes for KNN search,
+    Read path: Embed query, use vec.cosineDistance for similarity search,
     traverse relationships from matched nodes.
     """
 
@@ -233,27 +233,27 @@ class MemoryGraph:
 
         query_embedding = self.embedding_model.embed(query)
 
-        # KNN search against entity embeddings, then traverse relationships
+        # Vector similarity search using vec.cosineDistance (proven pattern from main).
+        # cosineDistance returns [0, 2] where 0 = identical; convert to similarity.
+        # The vector index accelerates the distance calculation automatically.
         cypher = """
-        CALL db.idx.vector.queryNodes('__Entity__', 'embedding', $k, vecf32($query_embedding))
-        YIELD node, score
-        WHERE node.user_id = $user_id
-        WITH node, score
-        OPTIONAL MATCH (node)-[r]->(other:__Entity__)
-        WHERE other.user_id = $user_id
-        WITH node, score, r, other
-        WHERE r IS NOT NULL
-        RETURN node.name AS source, type(r) AS relationship, other.name AS destination, score
-        UNION
-        CALL db.idx.vector.queryNodes('__Entity__', 'embedding', $k, vecf32($query_embedding))
-        YIELD node, score
-        WHERE node.user_id = $user_id
-        WITH node, score
-        OPTIONAL MATCH (other:__Entity__)-[r]->(node)
-        WHERE other.user_id = $user_id
-        WITH node, score, r, other
-        WHERE r IS NOT NULL
-        RETURN other.name AS source, type(r) AS relationship, node.name AS destination, score
+        MATCH (node:__Entity__ {user_id: $user_id})
+        WHERE node.embedding IS NOT NULL
+        WITH node, (1 - vec.cosineDistance(node.embedding, vecf32($query_embedding))) AS score
+        WHERE score >= 0.3
+        CALL {
+            WITH node, score
+            MATCH (node)-[r]->(other:__Entity__ {user_id: $user_id})
+            RETURN node.name AS source, type(r) AS relationship, other.name AS destination, score
+            UNION
+            WITH node, score
+            MATCH (other:__Entity__ {user_id: $user_id})-[r]->(node)
+            RETURN other.name AS source, type(r) AS relationship, node.name AS destination, score
+        }
+        WITH DISTINCT source, relationship, destination, score
+        RETURN source, relationship, destination, score
+        ORDER BY score DESC
+        LIMIT $limit
         """
 
         results = self._query(
@@ -261,7 +261,7 @@ class MemoryGraph:
             params={
                 "query_embedding": query_embedding,
                 "user_id": user_id,
-                "k": limit * 2,  # Fetch more candidates, deduplicate below
+                "limit": limit,
             },
         )
 
