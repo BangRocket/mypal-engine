@@ -25,10 +25,10 @@ poetry.lock
 *.db
 *.db.bak
 
-# mem0 / Qdrant local storage
+# mem0 / Qdrant / FalkorDB local storage
 mem0_data/
 qdrant_data/
-kuzu_data/
+falkordb_data/
 
 # MCP servers (cloned repos and built servers)
 .mcp_servers/

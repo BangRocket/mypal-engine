@@ -186,8 +186,11 @@ Note: For `ROOK_PROVIDER=anthropic`, uses native Anthropic SDK with `anthropic_b
 - `DEFAULT_PROJECT` - Default project name (default: "Default Project")
 - `SKIP_PROFILE_LOAD` - Skip initial Rook profile loading (default: true)
 - `ENABLE_GRAPH_MEMORY` - Enable graph memory for relationship tracking (default: false)
-- `GRAPH_STORE_PROVIDER` - Graph store provider: "neo4j" (default) or "kuzu" (embedded)
-- `NEO4J_URL`, `NEO4J_USERNAME`, `NEO4J_PASSWORD` - Neo4j connection (when using neo4j provider)
+- `GRAPH_STORE_PROVIDER` - Graph store provider: "falkordb" (default)
+- `FALKORDB_HOST` - FalkorDB host (default: localhost)
+- `FALKORDB_PORT` - FalkorDB port (default: 6379)
+- `FALKORDB_PASSWORD` - FalkorDB password (optional)
+- `FALKORDB_GRAPH_NAME` - Graph name (default: clara)
 
 ### PostgreSQL (Production)
 For production, use managed PostgreSQL instead of SQLite/Qdrant:
@@ -309,7 +312,7 @@ CLARA_GATEWAY_SECRET=...          # Optional auth secret
 
 ### Optional Features
 ```bash
-ENABLE_GRAPH_MEMORY=false         # Neo4j/Kuzu relationship tracking
+ENABLE_GRAPH_MEMORY=false         # FalkorDB relationship tracking
 GITHUB_TOKEN=...                  # GitHub integration
 EMAIL_MONITORING_ENABLED=false    # Email alerts
 TAVILY_API_KEY=...                # Web search in sandbox

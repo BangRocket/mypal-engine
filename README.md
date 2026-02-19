@@ -157,7 +157,7 @@ AUTO_TIER_SELECTION=true
 | `AZURE_DEVOPS_ORG` / `AZURE_DEVOPS_PAT` | Enable Azure DevOps integration |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Enable Google Workspace integration |
 | `ANTHROPIC_API_KEY` | Enable Claude Code agent |
-| `ENABLE_GRAPH_MEMORY=true` | Enable relationship tracking (Neo4j/Kuzu) |
+| `ENABLE_GRAPH_MEMORY=true` | Enable relationship tracking (FalkorDB) |
 | `SMITHERY_API_TOKEN` | Enable Smithery MCP server registry |
 
 ## MCP Plugin System
@@ -271,7 +271,7 @@ tasks:
 
 ## Memory System
 
-Clara uses mem0 for persistent memory with vector search (pgvector/Qdrant) and optional graph storage (Neo4j/Kuzu).
+Clara uses mem0 for persistent memory with vector search (pgvector/Qdrant) and optional graph storage (FalkorDB).
 
 ### Memory Types
 - **User Memories** - Personal facts, preferences, and context

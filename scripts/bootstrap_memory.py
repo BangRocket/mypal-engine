@@ -401,40 +401,12 @@ def group_memories_for_graph(memories: dict) -> list[dict]:
 
 
 def link_user_to_person(user_id: str):
-    """Link the mem0 user_id node to person nodes in Neo4j graph."""
-    try:
-        from neo4j import GraphDatabase
+    """Link the mem0 user_id node to person nodes in graph (FalkorDB).
 
-        NEO4J_URL = os.getenv("NEO4J_URL")
-        NEO4J_USERNAME = os.getenv("NEO4J_USERNAME", "neo4j")
-        NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
-
-        if not NEO4J_URL or not NEO4J_PASSWORD:
-            return
-
-        driver = GraphDatabase.driver(NEO4J_URL, auth=(NEO4J_USERNAME, NEO4J_PASSWORD))
-        user_node_name = f"user_id:_{user_id}"
-
-        with driver.session() as session:
-            # Find person nodes that should be linked (joshua, josh)
-            result = session.run(
-                """
-                MATCH (u:__User__ {name: $user_name})
-                MATCH (p:person)
-                WHERE p.name IN ["joshua", "josh"]
-                MERGE (u)-[r:is_person]->(p)
-                RETURN p.name as linked
-            """,
-                user_name=user_node_name,
-            )
-
-            linked = [record["linked"] for record in result]
-            if linked:
-                print(f"[bootstrap] Linked {user_node_name} to person nodes: {linked}")
-
-        driver.close()
-    except Exception as e:
-        print(f"[bootstrap] Warning: Could not link user to person in graph: {e}")
+    Note: This function is deprecated and no longer performs any operations.
+    Graph node linking is now handled by the FalkorDB graph provider.
+    """
+    pass
 
 
 def apply_to_mem0(memories: dict, user_id: str, dry_run: bool = False):
