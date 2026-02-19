@@ -7,6 +7,8 @@ Zero-downtime migration script with:
 - Resume from failure
 - Verification after each batch
 
+Requires ROOK_DATABASE_URL (or MEM0_DATABASE_URL) and QDRANT_URL to be set.
+
 Usage:
     # Dry run (count only)
     python scripts/migrate_pgvector_to_qdrant.py --dry-run
@@ -47,23 +49,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configuration
-MEM0_DATABASE_URL = os.getenv("MEM0_DATABASE_URL")
+# Configuration (ROOK_* preferred, MEM0_* as deprecated fallback)
+ROOK_DATABASE_URL = os.getenv("ROOK_DATABASE_URL") or os.getenv("MEM0_DATABASE_URL")
 QDRANT_URL = os.getenv("QDRANT_URL")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
-COLLECTION_NAME = os.getenv("MEM0_COLLECTION_NAME", "clara_memories")
+COLLECTION_NAME = os.getenv("ROOK_COLLECTION_NAME") or os.getenv("MEM0_COLLECTION_NAME", "clara_memories")
 CHECKPOINT_FILE = Path("migration_checkpoint.json")
 
 
 def get_pgvector_connection():
     """Get SQLAlchemy connection to pgvector database."""
-    if not MEM0_DATABASE_URL:
-        logger.error("MEM0_DATABASE_URL not set")
+    if not ROOK_DATABASE_URL:
+        logger.error("ROOK_DATABASE_URL not set (or MEM0_DATABASE_URL)")
         sys.exit(1)
 
     from sqlalchemy import create_engine
 
-    url = MEM0_DATABASE_URL
+    url = ROOK_DATABASE_URL
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
 

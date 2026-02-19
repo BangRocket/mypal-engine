@@ -74,12 +74,11 @@ PROVIDER_DEFAULTS = {
 BASE_DATA_DIR = Path(os.getenv("DATA_DIR", str(Path(__file__).parent.parent.parent)))
 QDRANT_DATA_DIR = BASE_DATA_DIR / "qdrant_data"
 
-# PostgreSQL with pgvector for production (optional)
-# ROOK_DATABASE_URL preferred, MEM0_DATABASE_URL as fallback
-ROOK_DATABASE_URL = _get_env("ROOK_DATABASE_URL", "MEM0_DATABASE_URL")
-# Self-hosted Qdrant (takes priority over pgvector and local Qdrant)
+# Self-hosted Qdrant (recommended for production)
 QDRANT_URL = os.getenv("QDRANT_URL")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
+# PostgreSQL with pgvector (legacy option, set ROOK_DATABASE_URL to use)
+ROOK_DATABASE_URL = _get_env("ROOK_DATABASE_URL", "MEM0_DATABASE_URL")
 
 # Vector store migration mode (for blue-green deployment)
 # Options: primary_only, dual_write, dual_read, secondary_only
@@ -180,11 +179,11 @@ def _build_vector_store_config() -> dict:
     """Build vector store configuration.
 
     Priority order:
-    1. QDRANT_URL (self-hosted Qdrant) - NEW, recommended for production
-    2. ROOK_DATABASE_URL (pgvector) - legacy production option
-    3. Local Qdrant (development)
+    1. QDRANT_URL (self-hosted Qdrant) — recommended for all deployments
+    2. ROOK_DATABASE_URL (pgvector) — legacy option, use migrate_pgvector_to_qdrant.py to migrate
+    3. Local Qdrant (development default)
     """
-    # 1. Self-hosted Qdrant (preferred for production)
+    # 1. Self-hosted Qdrant (recommended)
     if QDRANT_URL:
         config = {
             "provider": "qdrant",
@@ -201,7 +200,7 @@ def _build_vector_store_config() -> dict:
         logger.info(f"Collection: {ROOK_COLLECTION_NAME}")
         return config
 
-    # 2. PostgreSQL with pgvector (legacy production)
+    # 2. PostgreSQL with pgvector (legacy — migrate to Qdrant with scripts/migrate_pgvector_to_qdrant.py)
     if ROOK_DATABASE_URL:
         pgvector_url = ROOK_DATABASE_URL
         if pgvector_url.startswith("postgres://"):
