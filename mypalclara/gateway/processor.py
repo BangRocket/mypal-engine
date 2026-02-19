@@ -657,6 +657,12 @@ class MessageProcessor:
             if other_participants:
                 parts.append(f"- Other participants: {', '.join(other_participants)}")
 
+        if not is_dm:
+            parts.append(
+                "- User messages are prefixed with [DisplayName] for attribution. "
+                "Do NOT mimic this format in your replies."
+            )
+
         # Add attachment info
         image_count = sum(1 for att in request.attachments if att.type == "image")
         text_count = sum(1 for att in request.attachments if att.type == "text")
