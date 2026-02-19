@@ -532,9 +532,12 @@ class MessageProcessor:
         user_content = request.content
         text_attachments = self._format_text_attachments(request.attachments)
         if text_attachments:
-            user_content = f"{request.content}\n\n{text_attachments}"
+            if user_content:
+                user_content = f"{user_content}\n\n{text_attachments}"
+            else:
+                user_content = text_attachments
 
-        if not is_dm and request.user.display_name:
+        if not is_dm and request.user.display_name and user_content:
             user_content = f"[{request.user.display_name}]: {user_content}"
 
         # Extract participants from reply chain
@@ -631,6 +634,8 @@ class MessageProcessor:
             for msg in request.reply_chain:
                 role = msg.get("role", "user")
                 content = msg.get("content", "")
+                if not content:
+                    continue
 
                 # Format timestamp prefix for user messages
                 ts_prefix = ""
@@ -689,6 +694,8 @@ class MessageProcessor:
             if att.type == "text" and att.content:
                 content = wrap_untrusted(att.content, "attachment")
                 text_parts.append(f"--- Attached file: {att.filename} ---\n{content}\n--- End of {att.filename} ---")
+            elif att.type == "file":
+                text_parts.append(f"[Attached file: {att.filename} — content not extracted]")
 
         return "\n\n".join(text_parts)
 
@@ -931,6 +938,22 @@ class MessageProcessor:
 
             # Promote memories that were used in this response (FSRS feedback)
             await self._promote_retrieved_memories(context)
+
+            # Personality evolution (probabilistic, low-cost gate)
+            try:
+                from clara_core.personality_evolution import maybe_evolve_personality
+
+                await loop.run_in_executor(
+                    BLOCKING_EXECUTOR,
+                    lambda: maybe_evolve_personality(
+                        user_message=request.content,
+                        assistant_reply=response,
+                    ),
+                )
+            except ImportError:
+                pass
+            except Exception as e:
+                logger.debug(f"Personality evolution check failed: {e}")
 
             logger.debug(f"Background memory ops completed for {request.id}")
         except Exception as e:
