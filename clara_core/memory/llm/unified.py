@@ -159,7 +159,12 @@ class UnifiedLLM(LLMBase):
 
         if tools:
             # Use tool calling
-            response = self._provider.complete_with_tools(typed_messages, tools, self._llm_config)
+            config = self._llm_config
+            if tool_choice:
+                from dataclasses import replace
+
+                config = replace(config, tool_choice=tool_choice)
+            response = self._provider.complete_with_tools(typed_messages, tools, config)
 
             if response.has_tool_calls:
                 return {"tool_calls": [{"name": tc.name, "arguments": tc.arguments} for tc in response.tool_calls]}

@@ -72,7 +72,10 @@ class LangChainProvider(LLMProvider):
 
         # Bind tools to model
         if normalized:
-            model_with_tools = model.bind_tools(normalized)
+            bind_kwargs = {}
+            if config.tool_choice:
+                bind_kwargs["tool_choice"] = config.tool_choice
+            model_with_tools = model.bind_tools(normalized, **bind_kwargs)
         else:
             model_with_tools = model
 
@@ -112,7 +115,10 @@ class LangChainProvider(LLMProvider):
         normalized = _normalize_tools(tools)
 
         if normalized:
-            model_with_tools = model.bind_tools(normalized)
+            bind_kwargs = {}
+            if config.tool_choice:
+                bind_kwargs["tool_choice"] = config.tool_choice
+            model_with_tools = model.bind_tools(normalized, **bind_kwargs)
         else:
             model_with_tools = model
 
