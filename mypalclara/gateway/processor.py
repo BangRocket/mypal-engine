@@ -241,7 +241,7 @@ class MessageProcessor:
     def _get_recent_messages(
         self,
         session_id: str,
-        limit: int = 15,
+        limit: int = 30,
     ) -> list[Message]:
         """Fetch recent messages from a database session.
 
@@ -265,6 +265,44 @@ class MessageProcessor:
             return list(reversed(messages))
         except Exception as e:
             logger.warning(f"Failed to fetch messages: {e}")
+            return []
+        finally:
+            db.close()
+
+    def _get_channel_context(
+        self,
+        context_id: str,
+        limit: int = 50,
+    ) -> list[Message]:
+        """Fetch recent messages across all sessions in a channel.
+
+        Provides cross-session context so Clara can see what other users
+        have been saying in the channel, even across different sessions.
+
+        Args:
+            context_id: The channel context identifier (e.g., "channel-123")
+            limit: Maximum messages to fetch
+
+        Returns:
+            List of Message objects in chronological order
+        """
+        db = SessionLocal()
+        try:
+            messages = (
+                db.query(Message)
+                .join(DBSession, Message.session_id == DBSession.id)
+                .filter(DBSession.context_id == context_id)
+                .order_by(Message.created_at.desc())
+                .limit(limit)
+                .all()
+            )
+            # Detach from session before closing
+            for m in messages:
+                db.expunge(m)
+            # Return in chronological order
+            return list(reversed(messages))
+        except Exception as e:
+            logger.warning(f"Failed to fetch channel context: {e}")
             return []
         finally:
             db.close()
@@ -445,6 +483,14 @@ class MessageProcessor:
             lambda: self._get_recent_messages(db_session.id),
         )
 
+        # Fetch channel-wide context for group channels
+        channel_context_msgs = []
+        if not is_dm:
+            channel_context_msgs = await loop.run_in_executor(
+                BLOCKING_EXECUTOR,
+                lambda: self._get_channel_context(f"channel-{channel_id}"),
+            )
+
         # Prepare user content with text file attachments
         user_content = request.content
         text_attachments = self._format_text_attachments(request.attachments)
@@ -519,6 +565,7 @@ class MessageProcessor:
             emotional_context=emotional_context,
             recurring_topics=recurring_topics,
             tools=tools,
+            channel_context=channel_context_msgs if channel_context_msgs else None,
         )
 
         # Add gateway context

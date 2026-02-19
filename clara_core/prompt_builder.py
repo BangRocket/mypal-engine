@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 
 from clara_core.llm.messages import AssistantMessage, Message, SystemMessage, UserMessage
 from clara_core.memory_manager import _format_message_timestamp
+from clara_core.token_counter import count_message_tokens, get_context_window
 from config.bot import PERSONALITY
 from config.logging import get_logger
 
@@ -134,19 +135,23 @@ class PromptBuilder:
         recurring_topics: list[dict] | None = None,
         graph_relations: list[dict] | None = None,
         tools: list[dict] | None = None,
+        channel_context: list["Message"] | None = None,
+        model_name: str = "claude",
     ) -> list[Message]:
         """Build the full prompt for the LLM.
 
         Args:
             user_mems: List of user memories
             proj_mems: List of project memories
-            thread_summary: Optional thread summary
+            thread_summary: Optional thread summary (kept in signature for caller compat, not included in prompt)
             recent_msgs: Recent messages in the conversation
             user_message: Current user message
             emotional_context: Optional emotional context from recent sessions
             recurring_topics: Optional recurring topic patterns from fetch_topic_recurrence
             graph_relations: Optional list of entity relationships from graph memory
             tools: Optional list of tool schema dicts for WORM capability inventory
+            channel_context: Optional list of recent messages from the channel (all users)
+            model_name: Model name for token budget calculation
 
         Returns:
             List of typed Messages ready for LLM
@@ -188,8 +193,14 @@ class PromptBuilder:
             if topic_block:
                 context_parts.append(f"RECURRING TOPICS:\n{topic_block}")
 
-        if thread_summary:
-            context_parts.append(f"THREAD SUMMARY:\n{thread_summary}")
+        # thread_summary intentionally not included in prompt — we keep generating
+        # summaries for session continuity but rely on expanded history instead
+
+        # Add channel context (recent messages from all users in this channel)
+        if channel_context:
+            channel_block = self._format_channel_context(channel_context)
+            if channel_block:
+                context_parts.append(channel_block)
 
         messages: list[Message] = [
             SystemMessage(content=system_base),
@@ -212,6 +223,9 @@ class PromptBuilder:
 
         messages.append(UserMessage(content=user_message))
 
+        # Enforce token budget (80% of model context window)
+        messages = self._trim_to_budget(messages, model_name)
+
         # Log prompt composition summary
         components = []
         components.append(f"personality={len(system_base)} chars")
@@ -225,11 +239,124 @@ class PromptBuilder:
             components.append(f"emotional={len(emotional_context)}")
         if recurring_topics:
             components.append(f"topics={len(recurring_topics)}")
-        if thread_summary:
-            components.append("summary")
+        if channel_context:
+            components.append(f"channel={len(channel_context)}")
         if recent_msgs:
             components.append(f"history={len(recent_msgs)}")
         logger.info(f"[prompt] Built with: {', '.join(components)}")
+
+        return messages
+
+    # ---------- channel context ----------
+
+    def _format_channel_context(self, channel_context: list) -> str:
+        """Format channel-wide messages as a chat log for the prompt.
+
+        Channel user messages already have [DisplayName]: prefix baked into
+        content (added by the gateway processor). We just add timestamps
+        and a role indicator for Clara's messages.
+
+        Args:
+            channel_context: List of Message objects from the channel
+
+        Returns:
+            Formatted chat log string, or empty string if no messages
+        """
+        if not channel_context:
+            return ""
+
+        lines = []
+        for m in channel_context:
+            ts = _format_message_timestamp(getattr(m, "created_at", None))
+            prefix = f"[{ts}] " if ts else ""
+
+            if m.role == "assistant":
+                lines.append(f"{prefix}Clara: {m.content}")
+            else:
+                # Content already has [DisplayName]: prefix for channel messages
+                lines.append(f"{prefix}{m.content}")
+
+        return "CHANNEL CONTEXT (recent messages in this channel):\n" + "\n".join(lines)
+
+    # ---------- token budget ----------
+
+    def _trim_to_budget(self, messages: list[Message], model_name: str) -> list[Message]:
+        """Trim messages to fit within 80% of the model's context window.
+
+        Trimming priority (least important first):
+        1. Channel context (within the context system message)
+        2. Oldest direct conversation messages
+        Never removes: system messages (persona, context), current user message
+
+        Args:
+            messages: Full assembled message list
+            model_name: Model name for context window lookup
+
+        Returns:
+            Trimmed message list
+        """
+        max_tokens = int(get_context_window(model_name) * 0.8)
+        total = count_message_tokens(messages)
+
+        if total <= max_tokens:
+            return messages
+
+        logger.info(f"[prompt] Over budget: {total} tokens > {max_tokens} limit, trimming")
+
+        # Identify the context system message (index 1 if it exists)
+        # and check if it contains channel context
+        context_msg_idx = None
+        for i, m in enumerate(messages):
+            if isinstance(m, SystemMessage) and "CHANNEL CONTEXT" in m.content:
+                context_msg_idx = i
+                break
+
+        # Phase 1: Trim channel context by removing oldest lines
+        if context_msg_idx is not None and total > max_tokens:
+            messages = list(messages)  # copy
+            content = messages[context_msg_idx].content
+
+            # Split out the channel context section
+            sections = content.split("\n\nCHANNEL CONTEXT")
+            if len(sections) == 2:
+                before = sections[0]
+                channel_lines = sections[1].split("\n")
+                # channel_lines[0] is the header remainder: " (recent messages...):"
+                header = "CHANNEL CONTEXT" + channel_lines[0]
+                chat_lines = channel_lines[1:]
+
+                # Remove oldest lines (from the top) until under budget
+                while chat_lines and count_message_tokens(messages) > max_tokens:
+                    chat_lines.pop(0)
+                    if chat_lines:
+                        new_content = before + "\n\n" + header + "\n" + "\n".join(chat_lines)
+                    else:
+                        new_content = before  # Channel context fully removed
+                    messages[context_msg_idx] = SystemMessage(content=new_content)
+
+                total = count_message_tokens(messages)
+
+        # Phase 2: Trim oldest direct conversation messages
+        # Messages layout: [system_persona, system_context?, ...history..., current_user_msg]
+        # We trim from the start of history (after system messages, before current user msg)
+        if total > max_tokens:
+            messages = list(messages)  # copy
+
+            # Find the range of history messages (between system msgs and final user msg)
+            first_history = 0
+            for i, m in enumerate(messages):
+                if not isinstance(m, SystemMessage):
+                    first_history = i
+                    break
+
+            # Remove oldest history messages (keep at least the current user message)
+            while first_history < len(messages) - 1 and count_message_tokens(messages) > max_tokens:
+                messages.pop(first_history)
+
+            total = count_message_tokens(messages)
+
+        if total > max_tokens:
+            logger.warning(f"[prompt] Still over budget after trimming: {total} > {max_tokens}")
 
         return messages
 

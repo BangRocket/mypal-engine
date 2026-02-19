@@ -43,6 +43,34 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from mypalclara.gateway.banner import Colors, print_banner
+
+_C = Colors
+
+
+def _get_version() -> str:
+    """Read version from VERSION file."""
+    version_file = Path(__file__).parent.parent.parent / "VERSION"
+    if version_file.exists():
+        return version_file.read_text().strip()
+    return "0.0.0"
+
+
+def _print_startup_info(host: str, port: int, adapters: list[str] | None, no_adapters: bool = False) -> None:
+    """Print the startup banner and configuration info."""
+    from config.bot import BOT_NAME, PERSONALITY_SOURCE
+
+    print_banner(_get_version())
+    print(f"  {_C.info('Persona')}  {_C.bold(BOT_NAME)} {_C.dim(f'({PERSONALITY_SOURCE})')}")
+    print(f"  {_C.info('Gateway')}  {_C.bold(f'{host}:{port}')}")
+    if adapters:
+        print(f"  {_C.info('Adapters')} {', '.join(adapters)}")
+    elif not no_adapters:
+        print(f"  {_C.info('Adapters')} {_C.dim('all enabled')}")
+    else:
+        print(f"  {_C.info('Adapters')} {_C.dim('none')}")
+    print()
+
 
 def create_parser() -> argparse.ArgumentParser:
     """Create the argument parser with all subcommands."""
@@ -181,25 +209,21 @@ def cmd_start(args: argparse.Namespace) -> None:
     if check_daemon_running(pidfile):
         with open(pidfile) as f:
             pid = f.read().strip()
-        print(f"Gateway already running (PID: {pid})")
+        print(f"{_C.warn('Gateway already running')} {_C.dim(f'(PID: {pid})')}")
         sys.exit(1)
 
     # [] = start no adapters, None = start all enabled, ["foo"] = start specific
     adapters = [] if args.no_adapters else args.adapters
 
     if args.foreground:
-        print(f"Starting gateway on {args.host}:{args.port}")
-        if adapters:
-            print(f"Starting adapters: {', '.join(adapters)}")
-        elif not args.no_adapters:
-            print("Starting all enabled adapters")
-        else:
-            print("No adapters will be started")
+        _print_startup_info(args.host, args.port, adapters, args.no_adapters)
         _run_gateway(args, adapters)
     else:
-        print(f"Starting gateway daemon (PID file: {pidfile})...")
+        _print_startup_info(args.host, args.port, adapters, args.no_adapters)
+        print(f"  {_C.info('Daemon')}   PID file: {pidfile}")
         if args.logfile:
-            print(f"Logging to: {args.logfile}")
+            print(f"  {_C.info('Logging')}  {args.logfile}")
+        print()
         daemonize(pidfile, args.logfile)
         _run_gateway(args, adapters)
 
@@ -221,16 +245,16 @@ def cmd_status(args: argparse.Namespace) -> None:
     # Check gateway status
     running, pid = get_daemon_status(args.pidfile)
 
-    print("Gateway Status")
-    print("-" * 40)
+    print(f"\n  {_C.header('Gateway Status')}")
+    print(f"  {_C.dim('─' * 38)}")
     if running:
-        print(f"  Gateway: running (PID: {pid})")
+        print(f"  Gateway  {_C.ok('● running')}  {_C.dim(f'PID {pid}')}")
     else:
-        print("  Gateway: stopped")
+        print(f"  Gateway  {_C.err('○ stopped')}")
 
     # Check adapter statuses from PID files
-    print("\nAdapter Status")
-    print("-" * 40)
+    print(f"\n  {_C.header('Adapter Status')}")
+    print(f"  {_C.dim('─' * 38)}")
 
     # Load adapter config to get names
     config_path = args.adapters_config or (Path(__file__).parent / "adapters.yaml")
@@ -247,9 +271,10 @@ def cmd_status(args: argparse.Namespace) -> None:
         pidfile = get_adapter_pidfile(name)
         adapter_running, adapter_pid = get_daemon_status(pidfile)
         if adapter_running:
-            print(f"  {name}: running (PID: {adapter_pid})")
+            print(f"  {name:<10} {_C.ok('● running')}  {_C.dim(f'PID {adapter_pid}')}")
         else:
-            print(f"  {name}: stopped")
+            print(f"  {name:<10} {_C.dim('○ stopped')}")
+    print()
 
 
 def cmd_restart(args: argparse.Namespace) -> None:
@@ -258,7 +283,7 @@ def cmd_restart(args: argparse.Namespace) -> None:
 
     # Stop if running
     if check_daemon_running(args.pidfile):
-        print("Stopping gateway...")
+        print(f"{_C.warn('Stopping gateway...')}")
         stop_daemon(args.pidfile)
         # Wait a moment for cleanup
         import time
@@ -280,30 +305,28 @@ def cmd_adapter(args: argparse.Namespace) -> None:
     if action == "status":
         running, pid = get_daemon_status(pidfile)
         if running:
-            print(f"Adapter {name}: running (PID: {pid})")
+            print(f"  {name}  {_C.ok('● running')}  {_C.dim(f'PID {pid}')}")
         else:
-            print(f"Adapter {name}: stopped")
+            print(f"  {name}  {_C.dim('○ stopped')}")
 
     elif action == "start":
         # For individual adapter start, we need the gateway to be running
         running, _ = get_daemon_status(args.pidfile)
         if not running:
-            print("Error: Gateway must be running to start adapters")
-            print("Run 'clara-gateway start' first")
+            print(_C.err("Error: Gateway must be running to start adapters"))
+            print(f"Run {_C.bold('clara-gateway start')} first")
             sys.exit(1)
 
-        # TODO: Implement IPC to tell gateway to start adapter
-        # For now, we can start the adapter directly
-        print(f"Starting adapter {name}...")
+        print(f"{_C.info('Starting')} adapter {_C.bold(name)}...")
         _start_adapter_directly(name, args)
 
     elif action == "stop":
         from mypalclara.gateway.daemon import stop_daemon as stop_adapter_daemon
 
         if stop_adapter_daemon(pidfile):
-            print(f"Adapter {name} stopped")
+            print(f"Adapter {_C.bold(name)} {_C.ok('stopped')}")
         else:
-            print(f"Adapter {name} was not running")
+            print(f"Adapter {_C.bold(name)} {_C.dim('was not running')}")
 
     elif action == "restart":
         from mypalclara.gateway.daemon import stop_daemon as stop_adapter_daemon
@@ -321,11 +344,12 @@ def cmd_logs(args: argparse.Namespace) -> None:
 
     logfile = args.logfile
     if not logfile:
-        print("No log file configured. Use --logfile when starting the gateway.")
+        print(_C.err("No log file configured."))
+        print(f"Use {_C.bold('--logfile')} when starting the gateway.")
         sys.exit(1)
 
     if not os.path.exists(logfile):
-        print(f"Log file not found: {logfile}")
+        print(_C.err(f"Log file not found: {logfile}"))
         sys.exit(1)
 
     cmd = ["tail"]
@@ -351,7 +375,7 @@ def _start_adapter_directly(name: str, args: argparse.Namespace) -> None:
     # Load adapter config
     config_path = args.adapters_config or (Path(__file__).parent / "adapters.yaml")
     if not Path(config_path).exists():
-        print(f"Adapter config not found: {config_path}")
+        print(_C.err(f"Adapter config not found: {config_path}"))
         sys.exit(1)
 
     import yaml
@@ -361,8 +385,8 @@ def _start_adapter_directly(name: str, args: argparse.Namespace) -> None:
 
     adapters = config.get("adapters", {})
     if name not in adapters:
-        print(f"Unknown adapter: {name}")
-        print(f"Available adapters: {', '.join(adapters.keys())}")
+        print(_C.err(f"Unknown adapter: {name}"))
+        print(f"Available: {_C.dim(', '.join(adapters.keys()))}")
         sys.exit(1)
 
     adapter_config = adapters[name]
@@ -378,7 +402,7 @@ def _start_adapter_directly(name: str, args: argparse.Namespace) -> None:
             env[key] = str(value)
 
     cmd = [sys.executable, "-m", module]
-    print(f"Starting: {' '.join(cmd)}")
+    print(f"  {_C.info('Starting')} {_C.dim(' '.join(cmd))}")
 
     # Run in background
     process = subprocess.Popen(
@@ -394,7 +418,7 @@ def _start_adapter_directly(name: str, args: argparse.Namespace) -> None:
     with open(pidfile, "w") as f:
         f.write(str(process.pid))
 
-    print(f"Adapter {name} started (PID: {process.pid})")
+    print(f"  {_C.bold(name)}  {_C.ok('● started')}  {_C.dim(f'PID {process.pid}')}")
 
 
 def _run_gateway(args: argparse.Namespace, adapter_names: list[str] | None) -> None:
@@ -524,8 +548,7 @@ def main() -> None:
 
     # If no command, run in foreground with adapters (same as 'start -f')
     if args.command is None:
-        print(f"Starting gateway on {args.host}:{args.port}")
-        print("Starting all enabled adapters")
+        _print_startup_info(args.host, args.port, None)
         # None = start all enabled adapters
         _run_gateway(args, None)
         return

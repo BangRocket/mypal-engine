@@ -34,7 +34,8 @@ if TYPE_CHECKING:
     from db.models import MemoryDynamics, Message, Session
 
 # Configuration constants
-CONTEXT_MESSAGE_COUNT = 15  # Reduced from 20 to save tokens
+CONTEXT_MESSAGE_COUNT = 30  # Direct conversation history
+CHANNEL_CONTEXT_COUNT = 50  # Channel-wide context (all users)
 SUMMARY_INTERVAL = 10
 MAX_SEARCH_QUERY_CHARS = 6000
 MAX_KEY_MEMORIES = 15  # Key memories always included in every request
@@ -330,6 +331,8 @@ class MemoryManager:
         recurring_topics: list[dict] | None = None,
         graph_relations: list[dict] | None = None,
         tools: list[dict] | None = None,
+        channel_context: list | None = None,
+        model_name: str = "claude",
     ) -> list[Message]:
         """Build the full prompt for the LLM."""
         return self._prompt_builder.build_prompt(
@@ -338,10 +341,12 @@ class MemoryManager:
             thread_summary,
             recent_msgs,
             user_message,
-            emotional_context,
-            recurring_topics,
-            graph_relations,
-            tools,
+            emotional_context=emotional_context,
+            recurring_topics=recurring_topics,
+            graph_relations=graph_relations,
+            tools=tools,
+            channel_context=channel_context,
+            model_name=model_name,
         )
 
     def fetch_topic_recurrence(
