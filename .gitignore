@@ -21,6 +21,9 @@ poetry.lock
 .env.local
 .env.*.local
 
+# Logs
+*.log
+
 # Database
 *.db
 *.db.bak
