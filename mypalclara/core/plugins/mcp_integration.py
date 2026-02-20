@@ -261,7 +261,7 @@ def create_mcp_plugin_record() -> "PluginRecord":
         description="Integration for Model Context Protocol servers",
         kind=PluginKind.MCP,
         origin=PluginOrigin.BUNDLED,
-        source="clara_core.plugins.mcp",
+        source="mypalclara.core.plugins.mcp",
         workspace_dir=None,
         enabled=True,
         status="loaded",

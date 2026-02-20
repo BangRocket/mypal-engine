@@ -13,7 +13,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-logger = logging.getLogger("clara_core.tools")
+logger = logging.getLogger("mypalclara.core.tools")
 
 
 @dataclass

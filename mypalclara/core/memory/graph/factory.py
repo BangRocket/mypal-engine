@@ -16,8 +16,8 @@ class GraphStoreFactory:
 
     # Provider mappings - only include what Clara uses
     provider_to_class = {
-        "falkordb": "clara_core.memory.graph.falkordb.MemoryGraph",
-        "default": "clara_core.memory.graph.falkordb.MemoryGraph",
+        "falkordb": "mypalclara.core.memory.graph.falkordb.MemoryGraph",
+        "default": "mypalclara.core.memory.graph.falkordb.MemoryGraph",
     }
 
     @classmethod

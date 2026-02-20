@@ -44,7 +44,7 @@ TAG_COLORS = {
     "tools": "\033[36m",  # Cyan
     "sandbox": "\033[35m",  # Magenta
     "websockets": "\033[90m",  # Dark gray
-    "clara_core.memory": "\033[95m",  # Magenta (memory subsystem)
+    "mypalclara.core.memory": "\033[95m",  # Magenta (memory subsystem)
 }
 
 

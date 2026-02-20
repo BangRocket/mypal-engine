@@ -137,14 +137,14 @@ async def initialize_mcp_integration(registry: PluginRegistry) -> None:
             name="MCP Server Integration",
             version="1.0.0",
             description="Integration for Model Context Protocol servers",
-            source="clara_core.plugins.mcp_integration",
+            source="mypalclara.core.plugins.mcp_integration",
             config=registry.config,
             plugin_config={},
             runtime=registry.runtime,
             logger=logger,
             # Registration methods (bound to registry)
-            register_tool=lambda t, opt=False: registry.register_tool(t, "mcp", opt, "clara_core.plugins.mcp"),
-            register_hook=lambda e, h: registry.register_hook(e, h, "mcp", "clara_core.plugins.mcp"),
+            register_tool=lambda t, opt=False: registry.register_tool(t, "mcp", opt, "mypalclara.core.plugins.mcp"),
+            register_hook=lambda e, h: registry.register_hook(e, h, "mcp", "mypalclara.core.plugins.mcp"),
             register_channel=lambda c: None,  # MCP doesn't register channels
             register_provider=lambda p: None,  # MCP doesn't register providers
             register_service=lambda s: None,  # MCP doesn't register services
@@ -168,7 +168,7 @@ async def initialize_mcp_integration(registry: PluginRegistry) -> None:
                 level=DiagnosticLevel.ERROR,
                 message=f"MCP initialization failed: {e}",
                 plugin_id="mcp",
-                source="clara_core.plugins.mcp_integration",
+                source="mypalclara.core.plugins.mcp_integration",
             )
         )
 

@@ -16,8 +16,8 @@ class VectorStoreFactory:
 
     # Provider mappings - only include the stores Clara uses
     provider_to_class = {
-        "qdrant": "clara_core.memory.vector.qdrant.Qdrant",
-        "pgvector": "clara_core.memory.vector.pgvector.PGVector",
+        "qdrant": "mypalclara.core.memory.vector.qdrant.Qdrant",
+        "pgvector": "mypalclara.core.memory.vector.pgvector.PGVector",
     }
 
     @classmethod
