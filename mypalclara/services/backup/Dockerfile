@@ -15,9 +15,11 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir typer[all] boto3 python-dotenv
 
-COPY backup_service/ ./backup_service/
+COPY mypalclara/services/backup/ ./mypalclara/services/backup/
+COPY mypalclara/__init__.py ./mypalclara/__init__.py
+COPY mypalclara/services/__init__.py ./mypalclara/services/__init__.py
 
 RUN mkdir -p /backups
 
 EXPOSE 8080
-CMD ["python", "-m", "backup_service", "serve"]
+CMD ["python", "-m", "mypalclara.services.backup", "serve"]
