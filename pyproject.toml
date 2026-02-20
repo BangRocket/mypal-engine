@@ -97,10 +97,10 @@ botbuilder-integration-aiohttp = "^4.16.0"
 aiohttp = "^3.9.0"  # Required for Teams bot HTTP server
 
 [tool.poetry.scripts]
-clara-gateway = "gateway.__main__:main"
-clara-discord = "adapters.discord.main:run"
-clara-teams = "adapters.teams.main:run"
-clara-cli = "adapters.cli.main:run"
+clara-gateway = "mypalclara.gateway.__main__:main"
+clara-discord = "mypalclara.adapters.discord.main:run"
+clara-teams = "mypalclara.adapters.teams.main:run"
+clara-cli = "mypalclara.adapters.cli.main:run"
 clara-web = "mypalclara.web.__main__:main"
 
 [tool.poetry.group.dev.dependencies]
@@ -116,7 +116,6 @@ build-backend = "poetry.core.masonry.api"
 line-length = 120
 target-version = "py311"
 exclude = [
-    "vendor",
     ".venv",
     "__pycache__",
 ]
@@ -133,8 +132,8 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
-"tools/*.py" = ["E501"]
-"sandbox/*.py" = ["E501"]
+"mypalclara/tools/*.py" = ["E501"]
+"mypalclara/sandbox/*.py" = ["E501"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
