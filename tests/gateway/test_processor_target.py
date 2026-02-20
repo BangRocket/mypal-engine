@@ -51,7 +51,7 @@ class TestTargetClassifierRules:
         """DMs are always for Clara, regardless of content."""
         request = make_request(content="hey bob", channel_type="dm")
 
-        with patch("config.bot.BOT_NAME", "Clara"):
+        with patch("mypalclara.config.bot.BOT_NAME", "Clara"):
             result = await processor._classify_target(request)
 
         assert result == "CLARA"
@@ -64,7 +64,7 @@ class TestTargetClassifierRules:
             metadata={"is_mention": True},
         )
 
-        with patch("config.bot.BOT_NAME", "Clara"):
+        with patch("mypalclara.config.bot.BOT_NAME", "Clara"):
             result = await processor._classify_target(request)
 
         assert result == "CLARA"
@@ -74,7 +74,7 @@ class TestTargetClassifierRules:
         """Bot name appearing in message routes to Clara."""
         request = make_request(content="hey Clara, what time is it?")
 
-        with patch("config.bot.BOT_NAME", "Clara"):
+        with patch("mypalclara.config.bot.BOT_NAME", "Clara"):
             result = await processor._classify_target(request)
 
         assert result == "CLARA"
@@ -84,7 +84,7 @@ class TestTargetClassifierRules:
         """Bot name matching is case-insensitive."""
         request = make_request(content="CLARA help me")
 
-        with patch("config.bot.BOT_NAME", "Clara"):
+        with patch("mypalclara.config.bot.BOT_NAME", "Clara"):
             result = await processor._classify_target(request)
 
         assert result == "CLARA"
@@ -100,7 +100,7 @@ class TestTargetClassifierRules:
             ],
         )
 
-        with patch("config.bot.BOT_NAME", "Clara"):
+        with patch("mypalclara.config.bot.BOT_NAME", "Clara"):
             result = await processor._classify_target(request)
 
         assert result == "CLARA"
@@ -117,10 +117,10 @@ class TestTargetClassifierRules:
 
         # Mock the LLM layer to avoid actual calls
         with (
-            patch("config.bot.BOT_NAME", "Clara"),
+            patch("mypalclara.config.bot.BOT_NAME", "Clara"),
             patch.object(processor, "_get_channel_context", return_value=[]),
-            patch("clara_core.make_llm") as mock_make_llm,
-            patch("clara_core.ModelTier"),
+            patch("mypalclara.core.make_llm") as mock_make_llm,
+            patch("mypalclara.core.ModelTier"),
         ):
             mock_llm = MagicMock(return_value="OTHER")
             mock_make_llm.return_value = mock_llm
@@ -139,10 +139,10 @@ class TestTargetClassifierLLM:
         request = make_request(content="can someone help me with this?")
 
         with (
-            patch("config.bot.BOT_NAME", "Clara"),
+            patch("mypalclara.config.bot.BOT_NAME", "Clara"),
             patch.object(processor, "_get_channel_context", return_value=[]),
-            patch("clara_core.make_llm") as mock_make_llm,
-            patch("clara_core.ModelTier"),
+            patch("mypalclara.core.make_llm") as mock_make_llm,
+            patch("mypalclara.core.ModelTier"),
         ):
             mock_llm = MagicMock(return_value="CLARA")
             mock_make_llm.return_value = mock_llm
@@ -157,10 +157,10 @@ class TestTargetClassifierLLM:
         request = make_request(content="@bob what did you think of the movie?")
 
         with (
-            patch("config.bot.BOT_NAME", "Clara"),
+            patch("mypalclara.config.bot.BOT_NAME", "Clara"),
             patch.object(processor, "_get_channel_context", return_value=[]),
-            patch("clara_core.make_llm") as mock_make_llm,
-            patch("clara_core.ModelTier"),
+            patch("mypalclara.core.make_llm") as mock_make_llm,
+            patch("mypalclara.core.ModelTier"),
         ):
             mock_llm = MagicMock(return_value="OTHER")
             mock_make_llm.return_value = mock_llm
@@ -175,10 +175,10 @@ class TestTargetClassifierLLM:
         request = make_request(content="that's interesting")
 
         with (
-            patch("config.bot.BOT_NAME", "Clara"),
+            patch("mypalclara.config.bot.BOT_NAME", "Clara"),
             patch.object(processor, "_get_channel_context", return_value=[]),
-            patch("clara_core.make_llm") as mock_make_llm,
-            patch("clara_core.ModelTier"),
+            patch("mypalclara.core.make_llm") as mock_make_llm,
+            patch("mypalclara.core.ModelTier"),
         ):
             mock_llm = MagicMock(return_value="MAYBE")
             mock_make_llm.return_value = mock_llm
@@ -199,10 +199,10 @@ class TestTargetClassifierLLM:
         mock_msg.content = "I think so too!"
 
         with (
-            patch("config.bot.BOT_NAME", "Clara"),
+            patch("mypalclara.config.bot.BOT_NAME", "Clara"),
             patch.object(processor, "_get_channel_context", return_value=[mock_msg]),
-            patch("clara_core.make_llm") as mock_make_llm,
-            patch("clara_core.ModelTier"),
+            patch("mypalclara.core.make_llm") as mock_make_llm,
+            patch("mypalclara.core.ModelTier"),
         ):
             mock_llm = MagicMock(return_value="MAYBE")
             mock_make_llm.return_value = mock_llm
@@ -217,10 +217,10 @@ class TestTargetClassifierLLM:
         request = make_request(content="something something")
 
         with (
-            patch("config.bot.BOT_NAME", "Clara"),
+            patch("mypalclara.config.bot.BOT_NAME", "Clara"),
             patch.object(processor, "_get_channel_context", return_value=[]),
-            patch("clara_core.make_llm", side_effect=RuntimeError("API down")),
-            patch("clara_core.ModelTier"),
+            patch("mypalclara.core.make_llm", side_effect=RuntimeError("API down")),
+            patch("mypalclara.core.ModelTier"),
         ):
             result = await processor._classify_target(request)
 

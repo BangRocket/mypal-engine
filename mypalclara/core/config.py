@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-logger = logging.getLogger("clara_core.config")
+logger = logging.getLogger("mypalclara.core.config")
 
 if TYPE_CHECKING:
     from collections.abc import Callable

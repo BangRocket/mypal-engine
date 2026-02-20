@@ -38,7 +38,7 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("openai").setLevel(logging.WARNING)
 logging.getLogger("anthropic").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("clara_core.memory").setLevel(logging.WARNING)
+logging.getLogger("mypalclara.core.memory").setLevel(logging.WARNING)
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session as OrmSession
