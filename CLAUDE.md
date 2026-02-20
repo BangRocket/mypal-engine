@@ -49,29 +49,31 @@ git config core.hooksPath .githooks  # Enable hooks (run once)
 ## Architecture
 
 ### Core Structure
-- `discord_bot.py` - Discord bot with multi-user support, reply chains, and streaming responses
-- `discord_monitor.py` - Web dashboard for monitoring Discord bot status and activity
-- `memory_manager.py` - Core orchestrator: session handling, Rook integration, prompt building with Clara's persona
-- `clara_core/llm/` - Unified LLM provider architecture (modular, supports OpenRouter, NanoGPT, OpenAI, Anthropic)
-- `clara_core/memory/` - Rook memory system (Qdrant/pgvector for vectors, OpenAI embeddings)
-- `models.py` - SQLAlchemy models: Project, Session, Message, ChannelSummary
-- `db.py` - Database setup (SQLite for dev, PostgreSQL for production)
-- `clara_core/email/` - Email monitoring and auto-response system
+- `mypalclara/core/memory_manager.py` - Core orchestrator: session handling, Rook integration, prompt building with Clara's persona
+- `mypalclara/core/llm/` - Unified LLM provider architecture (modular, supports OpenRouter, NanoGPT, OpenAI, Anthropic)
+- `mypalclara/core/memory/` - Rook memory system (Qdrant/pgvector for vectors, OpenAI embeddings)
+- `mypalclara/db/models.py` - SQLAlchemy models: Project, Session, Message, ChannelSummary
+- `mypalclara/db/db.py` - Database setup (SQLite for dev, PostgreSQL for production)
+- `mypalclara/core/email/` - Email monitoring and auto-response system
+- `mypalclara/adapters/discord/` - Discord bot with multi-user support, reply chains, and streaming responses
 
 ### Directory Structure
 | Directory | Purpose |
 |-----------|---------|
+| `mypalclara/` | Top-level Python package (all code lives here) |
 | `mypalclara/gateway/` | WebSocket gateway for platform adapters |
-| `adapters/` | Platform adapters (Discord, Teams, Slack, etc.) |
-| `clara_core/memory/` | Rook memory system (Qdrant/pgvector, embeddings) |
-| `clara_core/mcp/` | MCP plugin system (servers, tools, OAuth) |
-| `clara_core/email/` | Email monitoring and alerts |
-| `clara_core/core_tools/` | Tool implementations including MCP management |
-| `db/` | Database models, migrations, connection |
-| `sandbox/` | Code execution (Docker, Incus containers/VMs) |
-| `storage/` | Local file storage |
-| `tools/` | Tool loader infrastructure |
-| `config/` | Configuration modules |
+| `mypalclara/adapters/` | Platform adapters (Discord, Teams, Slack, etc.) |
+| `mypalclara/core/memory/` | Rook memory system (Qdrant/pgvector, embeddings) |
+| `mypalclara/core/mcp/` | MCP plugin system (servers, tools, OAuth) |
+| `mypalclara/core/email/` | Email monitoring and alerts |
+| `mypalclara/core/core_tools/` | Tool implementations including MCP management |
+| `mypalclara/db/` | Database models, migrations, connection |
+| `mypalclara/sandbox/` | Code execution (Docker, Incus containers/VMs) |
+| `mypalclara/tools/` | Tool loader infrastructure |
+| `mypalclara/config/` | Configuration modules |
+| `mypalclara/services/email/` | Email monitoring service |
+| `mypalclara/services/backup/` | Automated database backup service |
+| `mypalclara/services/proactive/` | Proactive messaging engine |
 
 ### Memory System (Rook)
 - **User memories**: Persistent facts/preferences per user
@@ -266,7 +268,7 @@ When using `TOOL_CALL_MODE=xml`:
 The `make_llm_with_tools_unified()` function provides a standardized interface for all providers:
 
 ```python
-from clara_core import make_llm_with_tools_unified, ToolResponse
+from mypalclara.core import make_llm_with_tools_unified, ToolResponse
 
 # Create unified tool-calling LLM
 llm = make_llm_with_tools_unified(tools, tier="mid")
@@ -321,7 +323,7 @@ TAVILY_API_KEY=...                # Web search in sandbox
 ## Key Patterns
 
 - Discord bot uses global `MemoryManager` instance initialized at startup with LLM callable
-- **Unified LLM architecture** in `clara_core/llm/`:
+- **Unified LLM architecture** in `mypalclara/core/llm/`:
   - `LLMConfig` dataclass for configuration (supports tiers, env loading)
   - `LLMProvider` abstract interface with `LangChainProvider`, `DirectAnthropicProvider`, `DirectOpenAIProvider`
   - `ProviderRegistry` for provider caching and factory pattern
@@ -329,7 +331,7 @@ TAVILY_API_KEY=...                # Web search in sandbox
   - Backward compatibility via `make_llm()`, `make_llm_streaming()`, etc.
 - `LLM_PROVIDER=anthropic` uses native Anthropic SDK with native tool calling (recommended for clewdr)
 - Sandbox system auto-selects between Docker and Incus based on availability
-- Rook (Clara's memory system) is in `clara_core/memory/`
+- Rook (Clara's memory system) is in `mypalclara/core/memory/`
 
 ## Production Deployment
 
@@ -346,7 +348,7 @@ poetry run python scripts/migrate_to_postgres.py --all
 ```
 
 ### Backup Service
-Automated PostgreSQL backups to S3 (Wasabi). Located in `backup_service/`.
+Automated PostgreSQL backups to S3 (Wasabi). Located in `mypalclara/services/backup/`.
 
 ```bash
 S3_BUCKET=clara-backups
