@@ -19,11 +19,11 @@ import os
 from collections.abc import Callable, Generator
 from typing import TYPE_CHECKING, Any
 
-from clara_core.llm.config import LLMConfig
-from clara_core.llm.messages import Message, messages_from_dicts
-from clara_core.llm.providers.registry import get_provider
-from clara_core.llm.tiers import ModelTier
-from clara_core.llm.tools.response import ToolResponse
+from mypalclara.core.llm.config import LLMConfig
+from mypalclara.core.llm.messages import Message, messages_from_dicts
+from mypalclara.core.llm.providers.registry import get_provider
+from mypalclara.core.llm.tiers import ModelTier
+from mypalclara.core.llm.tools.response import ToolResponse
 
 if TYPE_CHECKING:
     import anthropic.types
@@ -152,7 +152,7 @@ def make_llm_with_tools_anthropic(
     """
     from anthropic import Anthropic
 
-    from clara_core.llm.tools.formats import (
+    from mypalclara.core.llm.tools.formats import (
         convert_message_to_anthropic,
         convert_tools_to_claude_format,
     )
@@ -306,7 +306,7 @@ def make_llm_with_xml_tools(
         - role: "assistant"
         - tool_calls: Parsed tool calls in OpenAI format (if any)
     """
-    from clara_core.plugins.xml_tools import (
+    from mypalclara.core.plugins.xml_tools import (
         convert_to_openai_tool_calls,
         extract_text_before_function_calls,
         parse_function_calls,
@@ -364,7 +364,7 @@ def make_llm_with_xml_tools_streaming(
     Returns:
         Function that yields response chunks
     """
-    from clara_core.plugins.xml_tools import tools_to_xml_from_dicts
+    from mypalclara.core.plugins.xml_tools import tools_to_xml_from_dicts
 
     # Generate XML tools block
     tools_xml = tools_to_xml_from_dicts(tools) if tools else ""
@@ -488,7 +488,7 @@ Your description (no quotes, no period at end):"""
         config = LLMConfig.from_env(tier=tier)  # type: ignore
         provider = get_provider("langchain")
 
-        from clara_core.llm.messages import UserMessage
+        from mypalclara.core.llm.messages import UserMessage
 
         msgs = [UserMessage(content=prompt)]
 

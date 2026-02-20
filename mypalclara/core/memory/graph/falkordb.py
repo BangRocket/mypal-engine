@@ -15,14 +15,14 @@ try:
 except ImportError:
     falkordb = None
 
-from clara_core.memory.embeddings.base import BaseEmbedderConfig
-from clara_core.memory.embeddings.openai import OpenAIEmbedding
-from clara_core.memory.graph.tools import EXTRACT_TRIPLES_TOOL
-from clara_core.memory.graph.utils import EXTRACT_TRIPLES_PROMPT, sanitize_relationship_for_cypher
-from clara_core.memory.llm.unified import UnifiedLLM, UnifiedLLMConfig
+from mypalclara.core.memory.embeddings.base import BaseEmbedderConfig
+from mypalclara.core.memory.embeddings.openai import OpenAIEmbedding
+from mypalclara.core.memory.graph.tools import EXTRACT_TRIPLES_TOOL
+from mypalclara.core.memory.graph.utils import EXTRACT_TRIPLES_PROMPT, sanitize_relationship_for_cypher
+from mypalclara.core.memory.llm.unified import UnifiedLLM, UnifiedLLMConfig
 
 if TYPE_CHECKING:
-    from clara_core.memory.cache.graph_cache import GraphCache
+    from mypalclara.core.memory.cache.graph_cache import GraphCache
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ class MemoryGraph:
     def cache(self) -> "GraphCache | None":
         if self._cache is None and self._cache_enabled:
             try:
-                from clara_core.memory.cache.graph_cache import GraphCache
+                from mypalclara.core.memory.cache.graph_cache import GraphCache
 
                 self._cache = GraphCache.get_instance()
             except Exception as e:

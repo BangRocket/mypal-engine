@@ -7,7 +7,7 @@ from typing import Any, List, Optional
 
 from pydantic import BaseModel
 
-from clara_core.memory.vector.base import VectorStoreBase
+from mypalclara.core.memory.vector.base import VectorStoreBase
 
 # Try to import psycopg (psycopg3) first, then fall back to psycopg2
 try:

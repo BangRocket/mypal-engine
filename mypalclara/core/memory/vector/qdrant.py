@@ -16,7 +16,7 @@ from qdrant_client.models import (
     VectorParams,
 )
 
-from clara_core.memory.vector.base import VectorStoreBase
+from mypalclara.core.memory.vector.base import VectorStoreBase
 
 logger = logging.getLogger("clara.memory.vector.qdrant")
 

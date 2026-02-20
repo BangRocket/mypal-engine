@@ -14,7 +14,7 @@ import logging
 import random
 from typing import Any
 
-from config.bot import SYSTEM_AGENT_ID
+from mypalclara.config.bot import SYSTEM_AGENT_ID
 
 logger = logging.getLogger("personality_evolution")
 
@@ -67,9 +67,9 @@ def _build_rook_llm() -> tuple[Any, Any]:
     if _rook_provider is not None and _rook_config is not None:
         return _rook_provider, _rook_config
 
-    from clara_core.llm.config import LLMConfig
-    from clara_core.llm.providers import get_provider
-    from clara_core.memory.config import (
+    from mypalclara.core.llm.config import LLMConfig
+    from mypalclara.core.llm.providers import get_provider
+    from mypalclara.core.memory.config import (
         PROVIDER_DEFAULTS,
         ROOK_API_KEY,
         ROOK_BASE_URL,
@@ -104,7 +104,7 @@ def _build_rook_llm() -> tuple[Any, Any]:
 
 def _format_current_traits() -> str:
     """Format current active traits for the prompt."""
-    from clara_core.personality import format_traits_for_prompt, get_active_traits
+    from mypalclara.core.personality import format_traits_for_prompt, get_active_traits
 
     traits = get_active_traits(SYSTEM_AGENT_ID)
     if not traits:
@@ -123,7 +123,7 @@ def _evaluate_evolution(user_message: str, assistant_reply: str) -> dict | None:
 
     Returns parsed JSON dict if evolution warranted, None otherwise.
     """
-    from clara_core.llm.messages import UserMessage
+    from mypalclara.core.llm.messages import UserMessage
 
     provider, config = _build_rook_llm()
 
@@ -161,7 +161,7 @@ def _evaluate_evolution(user_message: str, assistant_reply: str) -> dict | None:
 
 def _apply_evolution(decision: dict) -> None:
     """Apply a personality evolution decision."""
-    from clara_core.personality import add_trait, remove_trait, update_trait
+    from mypalclara.core.personality import add_trait, remove_trait, update_trait
 
     action = decision.get("action")
     reason = decision.get("reason", "")

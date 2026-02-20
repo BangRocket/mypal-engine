@@ -1,6 +1,6 @@
 """Email monitoring and tools for Clara."""
 
-from clara_core.email.monitor import (
+from mypalclara.core.email.monitor import (
     EMAIL_TOOLS,
     execute_email_tool,
     start_email_monitor,

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 if TYPE_CHECKING:
-    from backup_service.config import BackupConfig
+    from mypalclara.services.backup.config import BackupConfig
 
 logger = logging.getLogger(__name__)
 

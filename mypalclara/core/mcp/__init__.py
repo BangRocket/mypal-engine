@@ -15,7 +15,7 @@ Architecture:
   - Supports OAuth authentication (Smithery-hosted)
 
 Usage:
-    from clara_core.mcp import (
+    from mypalclara.core.mcp import (
         MCPServerManager,
         MCPInstaller,
         init_mcp,

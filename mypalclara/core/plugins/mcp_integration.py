@@ -102,7 +102,7 @@ class MCPPlugin:
 
         for tool_name, mcp_tool in all_tools.items():
             # Create tool definition
-            from tools._base import ToolDef
+            from mypalclara.tools._base import ToolDef
 
             # Create a factory to properly capture tool_name by value
             def make_handler(tn: str):

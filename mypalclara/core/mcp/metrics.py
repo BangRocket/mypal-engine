@@ -71,8 +71,8 @@ class MCPMetricsTracker:
             Call ID for tracking completion
         """
         try:
-            from db import SessionLocal
-            from db.mcp_models import MCPServer, MCPToolCall
+            from mypalclara.db import SessionLocal
+            from mypalclara.db.mcp_models import MCPServer, MCPToolCall
 
             db = SessionLocal()
             try:
@@ -179,8 +179,8 @@ class MCPMetricsTracker:
             return
 
         try:
-            from db import SessionLocal
-            from db.mcp_models import MCPServer, MCPToolCall
+            from mypalclara.db import SessionLocal
+            from mypalclara.db.mcp_models import MCPServer, MCPToolCall
 
             db = SessionLocal()
             try:
@@ -238,8 +238,8 @@ class MCPMetricsTracker:
     ) -> None:
         """Update daily aggregate metrics."""
         try:
-            from db import SessionLocal
-            from db.mcp_models import MCPUsageMetrics
+            from mypalclara.db import SessionLocal
+            from mypalclara.db.mcp_models import MCPUsageMetrics
 
             date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
@@ -315,7 +315,7 @@ class MCPMetricsTracker:
         retrieved later for tool suggestions.
         """
         try:
-            from clara_core.mcp.memory_integration import on_tool_success
+            from mypalclara.core.mcp.memory_integration import on_tool_success
 
             await on_tool_success(
                 user_id=user_id,
@@ -347,8 +347,8 @@ class MCPMetricsTracker:
             True if allowed, False if rate limited
         """
         try:
-            from db import SessionLocal
-            from db.mcp_models import MCPRateLimit
+            from mypalclara.db import SessionLocal
+            from mypalclara.db.mcp_models import MCPRateLimit
 
             db = SessionLocal()
             try:
@@ -426,8 +426,8 @@ class MCPMetricsTracker:
         try:
             from datetime import timedelta
 
-            from db import SessionLocal
-            from db.mcp_models import MCPUsageMetrics
+            from mypalclara.db import SessionLocal
+            from mypalclara.db.mcp_models import MCPUsageMetrics
 
             cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 

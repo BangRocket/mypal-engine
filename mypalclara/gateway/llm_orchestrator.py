@@ -17,7 +17,8 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
-from clara_core.llm.messages import (
+from mypalclara.config.logging import get_logger
+from mypalclara.core.llm.messages import (
     AssistantMessage,
     ContentPart,
     ContentPartType,
@@ -25,15 +26,14 @@ from clara_core.llm.messages import (
     SystemMessage,
     UserMessage,
 )
-from clara_core.llm.tools.formats import messages_to_openai
-from config.logging import get_logger
+from mypalclara.core.llm.tools.formats import messages_to_openai
 from mypalclara.gateway.protocol import AttachmentInfo, ResponseChunk, ToolResult, ToolStart
 
 if TYPE_CHECKING:
     from websockets.server import WebSocketServerProtocol
 
-    from clara_core.llm.tools.response import ToolResponse
-    from clara_core.llm.tools.schema import ToolSchema
+    from mypalclara.core.llm.tools.response import ToolResponse
+    from mypalclara.core.llm.tools.schema import ToolSchema
 
 logger = get_logger("gateway.llm")
 
@@ -279,7 +279,7 @@ class LLMOrchestrator:
                     output = self._truncate_output(output)
 
                 # Sandbox tool output before adding to messages
-                from clara_core.security.sandboxing import wrap_untrusted
+                from mypalclara.core.security.sandboxing import wrap_untrusted
 
                 output = wrap_untrusted(output, f"tool_{tc.name}")
 
@@ -335,7 +335,7 @@ class LLMOrchestrator:
         Converts list[Message] to list[dict] at the boundary for compat functions.
         Returns ToolResponse.
         """
-        from clara_core.llm.tools.response import ToolResponse
+        from mypalclara.core.llm.tools.response import ToolResponse
 
         if TOOL_CALL_MODE == "xml":
             return await self._call_llm_xml(messages, tools, tier, loop)
@@ -359,8 +359,8 @@ class LLMOrchestrator:
 
         Returns ToolResponse.
         """
-        from clara_core import ModelTier, make_llm_with_tools_langchain
-        from clara_core.llm.tools.response import ToolResponse
+        from mypalclara.core import ModelTier, make_llm_with_tools_langchain
+        from mypalclara.core.llm.tools.response import ToolResponse
 
         model_tier = ModelTier(tier) if tier else None
         msg_dicts = messages_to_openai(messages)
@@ -385,7 +385,7 @@ class LLMOrchestrator:
 
         Returns ToolResponse.
         """
-        from clara_core import ModelTier, make_llm_with_tools_unified
+        from mypalclara.core import ModelTier, make_llm_with_tools_unified
 
         model_tier = ModelTier(tier) if tier else None
         msg_dicts = messages_to_openai(messages)
@@ -410,8 +410,8 @@ class LLMOrchestrator:
 
         Returns ToolResponse.
         """
-        from clara_core import ModelTier, make_llm_with_xml_tools
-        from clara_core.llm.tools.response import ToolResponse
+        from mypalclara.core import ModelTier, make_llm_with_xml_tools
+        from mypalclara.core.llm.tools.response import ToolResponse
 
         model_tier = ModelTier(tier) if tier else None
         msg_dicts = messages_to_openai(messages)
@@ -436,7 +436,7 @@ class LLMOrchestrator:
         Yields:
             Response text chunks as they arrive
         """
-        from clara_core import ModelTier, make_llm_streaming
+        from mypalclara.core import ModelTier, make_llm_streaming
 
         model_tier = ModelTier(tier) if tier else None
         loop = asyncio.get_event_loop()
@@ -481,7 +481,7 @@ class LLMOrchestrator:
         Returns:
             Response text.
         """
-        from clara_core import ModelTier, make_llm
+        from mypalclara.core import ModelTier, make_llm
 
         model_tier = ModelTier(tier) if tier else None
         msg_dicts = messages_to_openai(messages)

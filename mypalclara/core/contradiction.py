@@ -17,8 +17,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from clara_core.llm.messages import SystemMessage, UserMessage
-from config.logging import get_logger
+from mypalclara.config.logging import get_logger
+from mypalclara.core.llm.messages import SystemMessage, UserMessage
 
 if TYPE_CHECKING:
     pass

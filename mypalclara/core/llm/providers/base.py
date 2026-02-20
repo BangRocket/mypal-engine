@@ -12,10 +12,10 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
 
-    from clara_core.llm.config import LLMConfig
-    from clara_core.llm.messages import Message
-    from clara_core.llm.tools.response import ToolResponse
-    from clara_core.llm.tools.schema import ToolSchema
+    from mypalclara.core.llm.config import LLMConfig
+    from mypalclara.core.llm.messages import Message
+    from mypalclara.core.llm.tools.response import ToolResponse
+    from mypalclara.core.llm.tools.schema import ToolSchema
 
 
 def _normalize_tools(tools: "list[ToolSchema | dict[str, Any]]") -> list[dict[str, Any]]:
@@ -29,7 +29,7 @@ def _normalize_tools(tools: "list[ToolSchema | dict[str, Any]]") -> list[dict[st
     Returns:
         List of dicts in OpenAI format.
     """
-    from clara_core.llm.tools.schema import ToolSchema
+    from mypalclara.core.llm.tools.schema import ToolSchema
 
     result = []
     for t in tools:

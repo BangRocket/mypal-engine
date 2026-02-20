@@ -59,8 +59,8 @@ class UserMCPContext:
             return
 
         try:
-            from db import SessionLocal
-            from db.mcp_models import MCPServer
+            from mypalclara.db import SessionLocal
+            from mypalclara.db.mcp_models import MCPServer
 
             db = SessionLocal()
             try:
@@ -115,8 +115,8 @@ class UserMCPContext:
 
         # Check if server exists in DB for this user
         try:
-            from db import SessionLocal
-            from db.mcp_models import MCPServer
+            from mypalclara.db import SessionLocal
+            from mypalclara.db.mcp_models import MCPServer
 
             db = SessionLocal()
             try:
@@ -286,8 +286,8 @@ async def register_server_for_user(
         Server ID
     """
     try:
-        from db import SessionLocal
-        from db.mcp_models import MCPServer
+        from mypalclara.db import SessionLocal
+        from mypalclara.db.mcp_models import MCPServer
 
         db = SessionLocal()
         try:
@@ -341,8 +341,8 @@ async def unregister_server_for_user(user_id: str, server_name: str) -> bool:
         True if removed, False if not found
     """
     try:
-        from db import SessionLocal
-        from db.mcp_models import MCPServer
+        from mypalclara.db import SessionLocal
+        from mypalclara.db.mcp_models import MCPServer
 
         db = SessionLocal()
         try:
@@ -378,8 +378,8 @@ async def get_user_servers(user_id: str) -> list[dict[str, Any]]:
         List of server info dicts
     """
     try:
-        from db import SessionLocal
-        from db.mcp_models import MCPServer
+        from mypalclara.db import SessionLocal
+        from mypalclara.db.mcp_models import MCPServer
 
         db = SessionLocal()
         try:

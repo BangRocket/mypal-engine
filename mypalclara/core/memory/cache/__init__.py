@@ -7,12 +7,12 @@ Performance optimizations:
 - TTL-based expiration
 """
 
-from clara_core.memory.cache.graph_cache import (
+from mypalclara.core.memory.cache.graph_cache import (
     GRAPH_ALL_TTL,
     GRAPH_SEARCH_TTL,
     GraphCache,
 )
-from clara_core.memory.cache.redis_cache import (
+from mypalclara.core.memory.cache.redis_cache import (
     EMBEDDING_TTL,
     KEY_MEMORIES_TTL,
     SEARCH_RESULTS_TTL,

@@ -5,7 +5,7 @@ Provides sandboxed code execution via:
 - Incus containers or VMs
 
 Usage:
-    from sandbox import get_sandbox_manager
+    from mypalclara.sandbox import get_sandbox_manager
 
     manager = get_sandbox_manager()
     result = await manager.execute_code("user123", "print('hello')")
@@ -17,8 +17,8 @@ The manager automatically selects the appropriate backend based on SANDBOX_MODE:
 - "auto" (default): Use Incus if available, fall back to Docker
 """
 
-from sandbox.docker import DOCKER_AVAILABLE, DOCKER_TOOLS, DockerSandboxManager
-from sandbox.manager import (
+from mypalclara.sandbox.docker import DOCKER_AVAILABLE, DOCKER_TOOLS, DockerSandboxManager
+from mypalclara.sandbox.manager import (
     UnifiedSandboxManager,
     get_sandbox_manager,
     reset_sandbox_manager,

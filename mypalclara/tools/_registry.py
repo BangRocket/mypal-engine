@@ -1,7 +1,7 @@
 """Tool registry for the Clara tool system.
 
 This module provides a backwards-compatible singleton that wraps the
-PluginRegistry from clara_core.plugins. All tool management now goes
+PluginRegistry from mypalclara.core.plugins. All tool management now goes
 through the unified plugin system.
 
 The ToolRegistry class maintains the same API as before, but delegates
@@ -103,7 +103,7 @@ class ToolRegistry:
     """Backwards-compatible wrapper around PluginRegistry.
 
     This class maintains the original ToolRegistry API while delegating
-    all operations to the unified PluginRegistry from clara_core.plugins.
+    all operations to the unified PluginRegistry from mypalclara.core.plugins.
 
     Usage:
         registry = ToolRegistry.get_instance()
@@ -122,7 +122,7 @@ class ToolRegistry:
     def _get_plugin_registry(self):
         """Lazy-load the plugin registry to avoid circular imports."""
         if self._plugin_registry is None:
-            from clara_core.plugins import get_registry
+            from mypalclara.core.plugins import get_registry
 
             self._plugin_registry = get_registry()
         return self._plugin_registry

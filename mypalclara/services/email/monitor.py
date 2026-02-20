@@ -12,13 +12,13 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from config.logging import get_logger
-from db.connection import SessionLocal
-from db.models import EmailAccount, EmailAlert, EmailRule
-from email_service.providers.base import EmailMessage, EmailProvider
-from email_service.providers.gmail import GmailProvider
-from email_service.providers.imap import IMAPProvider
-from email_service.rules_engine import RuleMatch, evaluate_email
+from mypalclara.config.logging import get_logger
+from mypalclara.db.connection import SessionLocal
+from mypalclara.db.models import EmailAccount, EmailAlert, EmailRule
+from mypalclara.services.email.providers.base import EmailMessage, EmailProvider
+from mypalclara.services.email.providers.gmail import GmailProvider
+from mypalclara.services.email.providers.imap import IMAPProvider
+from mypalclara.services.email.rules_engine import RuleMatch, evaluate_email
 
 if TYPE_CHECKING:
     from discord import Client

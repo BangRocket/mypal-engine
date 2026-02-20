@@ -1,6 +1,6 @@
 """Database layer for Clara."""
 
-from db.connection import SessionLocal, get_engine, init_db, run_alembic_migrations
+from mypalclara.db.connection import SessionLocal, get_engine, init_db, run_alembic_migrations
 
 __all__ = [
     "SessionLocal",

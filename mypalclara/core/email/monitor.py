@@ -20,8 +20,8 @@ from email.header import decode_header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-from clara_core import make_llm
-from config.bot import BOT_NAME
+from mypalclara.config.bot import BOT_NAME
+from mypalclara.core import make_llm
 
 # Email configuration - loaded from environment or hardcoded for now
 EMAIL_ADDRESS = os.environ.get("CLARA_EMAIL_ADDRESS")
@@ -446,7 +446,7 @@ Respond with a JSON object (no markdown, just raw JSON):
 If you do respond, write as {BOT_NAME} - be helpful, friendly, and concise. Sign off naturally."""
 
     try:
-        from clara_core.llm.messages import UserMessage
+        from mypalclara.core.llm.messages import UserMessage
 
         result = llm([UserMessage(content=prompt)])
 

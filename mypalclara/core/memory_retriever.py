@@ -14,13 +14,13 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-from clara_core.memory_manager import (
+from mypalclara.config.logging import get_logger
+from mypalclara.core.memory_manager import (
     MAX_GRAPH_RELATIONS,
     MAX_KEY_MEMORIES,
     MAX_MEMORIES_PER_TYPE,
     MAX_SEARCH_QUERY_CHARS,
 )
-from config.logging import get_logger
 
 logger = get_logger("rook")
 memory_logger = get_logger("memory")
@@ -46,7 +46,7 @@ class MemoryRetriever:
     def _get_cache(self):
         """Get Redis cache instance (lazy-loaded)."""
         try:
-            from clara_core.memory.cache.redis_cache import RedisCache
+            from mypalclara.core.memory.cache.redis_cache import RedisCache
 
             return RedisCache.get_instance()
         except Exception:
@@ -99,7 +99,7 @@ class MemoryRetriever:
             Tuple of (user_memories, project_memories, graph_relations)
             graph_relations is a list of dicts with keys: source, relationship, destination
         """
-        from clara_core.memory import ROOK
+        from mypalclara.core.memory import ROOK
 
         if ROOK is None:
             return [], [], []

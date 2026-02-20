@@ -22,7 +22,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
-from db.base import Base
+from mypalclara.db.base import Base
 
 
 def gen_uuid() -> str:
@@ -762,7 +762,7 @@ class PersonalityTraitHistory(Base):
 # =============================================================================
 
 # Import MCP database models for multi-user support and metrics tracking
-from db.mcp_models import (
+from mypalclara.db.mcp_models import (
     MCPOAuthToken,
     MCPRateLimit,
     MCPServer,

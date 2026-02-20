@@ -17,20 +17,20 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
-from clara_core.llm.providers.base import LLMProvider, _normalize_tools
-from clara_core.llm.tools.formats import (
+from mypalclara.core.llm.providers.base import LLMProvider, _normalize_tools
+from mypalclara.core.llm.tools.formats import (
     messages_to_anthropic,
     messages_to_langchain,
     messages_to_openai,
 )
-from clara_core.llm.tools.response import ToolResponse
+from mypalclara.core.llm.tools.response import ToolResponse
 
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
 
-    from clara_core.llm.config import LLMConfig
-    from clara_core.llm.messages import Message
-    from clara_core.llm.tools.schema import ToolSchema
+    from mypalclara.core.llm.config import LLMConfig
+    from mypalclara.core.llm.messages import Message
+    from mypalclara.core.llm.tools.schema import ToolSchema
 
 
 # Cached LangChain models keyed by (provider, model, base_url)
@@ -311,7 +311,7 @@ class DirectAnthropicProvider(LLMProvider):
         config: "LLMConfig",
     ) -> ToolResponse:
         """Generate a response with native Anthropic tool calling."""
-        from clara_core.llm.tools.formats import convert_tools_to_claude_format
+        from mypalclara.core.llm.tools.formats import convert_tools_to_claude_format
 
         client = self._get_client(config)
         system, api_messages = messages_to_anthropic(messages)

@@ -19,21 +19,21 @@ from typing import Any, Dict, List, Optional
 import pytz
 from pydantic import BaseModel, Field, ValidationError
 
-from clara_core.memory.core.base import MemoryBase
-from clara_core.memory.core.prompts import get_update_memory_messages
-from clara_core.memory.core.storage import get_history_manager
-from clara_core.memory.core.utils import (
+from mypalclara.core.memory.core.base import MemoryBase
+from mypalclara.core.memory.core.prompts import get_update_memory_messages
+from mypalclara.core.memory.core.storage import get_history_manager
+from mypalclara.core.memory.core.utils import (
     extract_json,
     get_fact_retrieval_messages,
     parse_messages,
     parse_vision_messages,
     remove_code_blocks,
 )
-from clara_core.memory.embeddings.base import BaseEmbedderConfig
-from clara_core.memory.embeddings.cached import CachedEmbedding
-from clara_core.memory.embeddings.openai import OpenAIEmbedding
-from clara_core.memory.llm.unified import UnifiedLLM, UnifiedLLMConfig
-from clara_core.memory.vector.factory import VectorStoreFactory
+from mypalclara.core.memory.embeddings.base import BaseEmbedderConfig
+from mypalclara.core.memory.embeddings.cached import CachedEmbedding
+from mypalclara.core.memory.embeddings.openai import OpenAIEmbedding
+from mypalclara.core.memory.llm.unified import UnifiedLLM, UnifiedLLMConfig
+from mypalclara.core.memory.vector.factory import VectorStoreFactory
 
 # Suppress SWIG deprecation warnings globally
 warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*SwigPy.*")
@@ -210,7 +210,7 @@ class ClaraMemory(MemoryBase):
         self.enable_graph = False
         if hasattr(self.config, "graph_store") and self.config.graph_store and self.config.graph_store.config:
             try:
-                from clara_core.memory.graph.factory import GraphStoreFactory
+                from mypalclara.core.memory.graph.factory import GraphStoreFactory
 
                 provider = self.config.graph_store.provider
                 self.graph = GraphStoreFactory.create(provider, self.config)
@@ -851,7 +851,7 @@ class ClaraMemory(MemoryBase):
 
     def _create_procedural_memory(self, messages, metadata=None, prompt=None):
         """Create a procedural memory from messages."""
-        from clara_core.memory.core.prompts import PROCEDURAL_MEMORY_SYSTEM_PROMPT
+        from mypalclara.core.memory.core.prompts import PROCEDURAL_MEMORY_SYSTEM_PROMPT
 
         logger.info("Creating procedural memory")
 

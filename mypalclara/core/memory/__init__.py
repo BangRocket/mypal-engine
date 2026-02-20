@@ -3,14 +3,14 @@
 This module provides Clara's memory system, called "Rook" internally.
 
 Usage:
-    from clara_core.memory import ROOK
+    from mypalclara.core.memory import ROOK
 
     if ROOK:
         ROOK.add(messages, user_id="user-123", agent_id="clara")
         results = ROOK.search("preferences", user_id="user-123")
 """
 
-from clara_core.memory.config import (
+from mypalclara.core.memory.config import (
     ENABLE_GRAPH_MEMORY,
     GRAPH_STORE_PROVIDER,
     ROOK,
@@ -19,7 +19,7 @@ from clara_core.memory.config import (
     ROOK_PROVIDER,
     config,
 )
-from clara_core.memory.core.memory import (
+from mypalclara.core.memory.core.memory import (
     ClaraMemory,
     ClaraMemoryConfig,
     ClaraMemoryItem,

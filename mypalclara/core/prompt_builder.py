@@ -9,11 +9,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
-from clara_core.llm.messages import AssistantMessage, Message, SystemMessage, UserMessage
-from clara_core.memory_manager import _format_message_timestamp
-from clara_core.token_counter import count_message_tokens, get_context_window
-from config.bot import PERSONALITY
-from config.logging import get_logger
+from mypalclara.config.bot import PERSONALITY
+from mypalclara.config.logging import get_logger
+from mypalclara.core.llm.messages import AssistantMessage, Message, SystemMessage, UserMessage
+from mypalclara.core.memory_manager import _format_message_timestamp
+from mypalclara.core.token_counter import count_message_tokens, get_context_window
 
 logger = get_logger("prompt_builder")
 
@@ -63,7 +63,7 @@ class PromptBuilder:
             - is_dm: Whether it was a DM
         """
 
-        from clara_core.memory import ROOK
+        from mypalclara.core.memory import ROOK
 
         if ROOK is None:
             return []
@@ -156,7 +156,7 @@ class PromptBuilder:
         Returns:
             List of typed Messages ready for LLM
         """
-        from clara_core.security.worm_persona import build_worm_persona
+        from mypalclara.core.security.worm_persona import build_worm_persona
 
         system_base = build_worm_persona(PERSONALITY, tools)
 
@@ -164,13 +164,13 @@ class PromptBuilder:
         context_parts = []
 
         if user_mems:
-            from clara_core.security.sandboxing import wrap_untrusted
+            from mypalclara.core.security.sandboxing import wrap_untrusted
 
             user_block = "\n".join(f"- {wrap_untrusted(m, 'memory')}" for m in user_mems)
             context_parts.append(f"USER MEMORIES:\n{user_block}")
 
         if proj_mems:
-            from clara_core.security.sandboxing import wrap_untrusted
+            from mypalclara.core.security.sandboxing import wrap_untrusted
 
             proj_block = "\n".join(f"- {wrap_untrusted(m, 'memory')}" for m in proj_mems)
             context_parts.append(f"PROJECT MEMORIES:\n{proj_block}")
@@ -466,7 +466,7 @@ class PromptBuilder:
             - pattern_note: Natural language description
             - channels: List of channel names where mentioned
         """
-        from clara_core.topic_recurrence import fetch_topic_recurrence
+        from mypalclara.core.topic_recurrence import fetch_topic_recurrence
 
         return fetch_topic_recurrence(
             user_id=user_id,

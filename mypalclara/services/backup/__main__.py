@@ -1,5 +1,5 @@
 """Entry point for `python -m backup_service`."""
 
-from backup_service.cli import app
+from mypalclara.services.backup.cli import app
 
 app()

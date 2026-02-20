@@ -43,8 +43,8 @@ logging.getLogger("clara_core.memory").setLevel(logging.WARNING)
 from sqlalchemy import func
 from sqlalchemy.orm import Session as OrmSession
 
-from db import SessionLocal
-from db.models import Message, Session
+from mypalclara.db import SessionLocal
+from mypalclara.db.models import Message, Session
 
 # Configure logging - only show our messages
 logging.basicConfig(
@@ -475,7 +475,7 @@ def main():
 
     # Check if graph memory is enabled
     logger.info("Initializing mem0...")
-    from clara_core.memory import ENABLE_GRAPH_MEMORY, ROOK
+    from mypalclara.core.memory import ENABLE_GRAPH_MEMORY, ROOK
 
     if not ENABLE_GRAPH_MEMORY:
         logger.error("✗ Graph memory is not enabled. Set ENABLE_GRAPH_MEMORY=true")

@@ -9,18 +9,18 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from clara_core.llm.messages import AssistantMessage, UserMessage
-from clara_core.memory_manager import MEMORY_CONTEXT_SLICE
-from config.logging import get_logger
+from mypalclara.config.logging import get_logger
+from mypalclara.core.llm.messages import AssistantMessage, UserMessage
+from mypalclara.core.memory_manager import MEMORY_CONTEXT_SLICE
 
 # Module loggers (matching memory_manager.py conventions)
 logger = get_logger("rook")
 memory_logger = get_logger("memory")
 
 if TYPE_CHECKING:
-    from clara_core.memory_dynamics_manager import MemoryDynamicsManager
-    from clara_core.memory_ingestion import MemoryIngestionManager
-    from db.models import Message
+    from mypalclara.core.memory_dynamics_manager import MemoryDynamicsManager
+    from mypalclara.core.memory_ingestion import MemoryIngestionManager
+    from mypalclara.db.models import Message
 
 
 class MemoryWriter:
@@ -90,7 +90,7 @@ class MemoryWriter:
             participants: List of {"id": str, "name": str} for people mentioned
             is_dm: Whether this is a DM conversation (stores as "personal" vs "project")
         """
-        from clara_core.memory import ROOK
+        from mypalclara.core.memory import ROOK
 
         if ROOK is None:
             return
@@ -271,8 +271,8 @@ class MemoryWriter:
         """
         from datetime import UTC, datetime
 
-        from db import SessionLocal
-        from db.models import MemoryDynamics
+        from mypalclara.db import SessionLocal
+        from mypalclara.db.models import MemoryDynamics
 
         if not memory_results:
             return

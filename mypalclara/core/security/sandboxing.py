@@ -41,7 +41,7 @@ def wrap_untrusted(content: str, source: str, scan: bool = True) -> str:
     # Scan raw content BEFORE escaping so patterns like <|im_start|> match
     scan_result = None
     if scan:
-        from clara_core.security.injection_scanner import scan_for_injection
+        from mypalclara.core.security.injection_scanner import scan_for_injection
 
         scan_result = scan_for_injection(content, source)
 

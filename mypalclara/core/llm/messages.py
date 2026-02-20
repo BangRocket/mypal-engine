@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from clara_core.llm.tools.response import ToolCall
+from mypalclara.core.llm.tools.response import ToolCall
 
 
 class ContentPartType(str, Enum):

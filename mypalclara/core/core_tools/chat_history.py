@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from tools._base import ToolContext, ToolDef
+from mypalclara.tools._base import ToolContext, ToolDef
 
 MODULE_NAME = "chat_history"
 MODULE_VERSION = "1.0.0"

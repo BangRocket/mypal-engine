@@ -12,10 +12,10 @@ import logging
 import os
 from typing import TYPE_CHECKING, Literal, Optional
 
-from clara_core.memory.embeddings.base import EmbeddingBase
+from mypalclara.core.memory.embeddings.base import EmbeddingBase
 
 if TYPE_CHECKING:
-    from clara_core.memory.cache.redis_cache import RedisCache
+    from mypalclara.core.memory.cache.redis_cache import RedisCache
 
 logger = logging.getLogger("clara.memory.embeddings.cached")
 
@@ -51,7 +51,7 @@ class CachedEmbedding(EmbeddingBase):
     def cache(self) -> "RedisCache | None":
         """Lazy-load cache singleton."""
         if self._cache is None and self._enabled:
-            from clara_core.memory.cache.redis_cache import RedisCache
+            from mypalclara.core.memory.cache.redis_cache import RedisCache
 
             self._cache = RedisCache.get_instance()
         return self._cache

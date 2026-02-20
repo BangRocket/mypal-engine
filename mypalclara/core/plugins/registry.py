@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable
 
 if TYPE_CHECKING:
-    from tools._base import ToolContext, ToolDef
+    from mypalclara.tools._base import ToolContext, ToolDef
 
     from .types import Diagnostic, PluginContext, PluginManifest
 
@@ -169,7 +169,7 @@ class PluginRegistry:
             optional: Whether tool is optional (needs allowlist)
             source: Source file/path
         """
-        from tools._base import ToolDef
+        from mypalclara.tools._base import ToolDef
 
         registration = PluginToolRegistration(
             plugin_id=plugin_id,
@@ -744,7 +744,7 @@ class PluginRegistry:
                 if result is None:
                     continue
 
-                from tools._base import ToolDef
+                from mypalclara.tools._base import ToolDef
 
                 tools: list[ToolDef] = [result] if isinstance(result, ToolDef) else result
 

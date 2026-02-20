@@ -1,6 +1,6 @@
 """Tool-related utilities for LLM providers."""
 
-from clara_core.llm.tools.formats import (
+from mypalclara.core.llm.tools.formats import (
     convert_message_to_anthropic,
     convert_to_claude_format,
     convert_to_mcp_format,
@@ -12,8 +12,8 @@ from clara_core.llm.tools.formats import (
     messages_to_langchain,
     messages_to_openai,
 )
-from clara_core.llm.tools.response import ToolCall, ToolResponse
-from clara_core.llm.tools.schema import ToolSchema
+from mypalclara.core.llm.tools.response import ToolCall, ToolResponse
+from mypalclara.core.llm.tools.schema import ToolSchema
 
 __all__ = [
     "ToolResponse",

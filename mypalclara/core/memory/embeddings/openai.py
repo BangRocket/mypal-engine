@@ -10,7 +10,7 @@ from typing import Literal, Optional
 import openai.resources.embeddings  # noqa: F401
 from openai import OpenAI
 
-from clara_core.memory.embeddings.base import BaseEmbedderConfig, EmbeddingBase
+from mypalclara.core.memory.embeddings.base import BaseEmbedderConfig, EmbeddingBase
 
 
 class OpenAIEmbedding(EmbeddingBase):

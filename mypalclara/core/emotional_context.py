@@ -18,9 +18,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from clara_core.llm.messages import SystemMessage
-from clara_core.sentiment import analyze_sentiment
-from config.logging import get_logger
+from mypalclara.config.logging import get_logger
+from mypalclara.core.llm.messages import SystemMessage
+from mypalclara.core.sentiment import analyze_sentiment
 
 logger = get_logger("emotional")
 
@@ -155,7 +155,7 @@ def finalize_conversation_emotional_context(
     Returns:
         EmotionalSummary if successful, None if no data to finalize
     """
-    from clara_core.memory import ROOK
+    from mypalclara.core.memory import ROOK
 
     sentiments = get_conversation_sentiments(user_id, channel_id)
 

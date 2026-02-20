@@ -8,11 +8,11 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from config.logging import get_logger
-from email_service.providers.base import EmailMessage, EmailProvider
+from mypalclara.config.logging import get_logger
+from mypalclara.services.email.providers.base import EmailMessage, EmailProvider
 
 if TYPE_CHECKING:
-    from db.models import EmailAccount
+    from mypalclara.db.models import EmailAccount
 
 logger = get_logger("email.gmail")
 
@@ -37,7 +37,7 @@ class GmailProvider(EmailProvider):
         """Get valid access token from Google OAuth."""
         try:
             # Import here to avoid circular imports
-            from tools.google_oauth import get_valid_token
+            from mypalclara.tools.google_oauth import get_valid_token
 
             token = await get_valid_token(self.account.user_id)
             if token:

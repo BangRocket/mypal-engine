@@ -9,7 +9,7 @@ import os
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from config.logging import get_logger
+from mypalclara.config.logging import get_logger
 
 logger = get_logger("email.credentials")
 

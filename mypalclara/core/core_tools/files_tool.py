@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from tools._base import ToolContext, ToolDef
+from mypalclara.tools._base import ToolContext, ToolDef
 
 MODULE_NAME = "files"
 MODULE_VERSION = "1.0.0"
@@ -948,7 +948,7 @@ async def download_from_sandbox(args: dict[str, Any], ctx: ToolContext) -> str:
 
     try:
         # Try to get sandbox manager
-        from sandbox.manager import get_sandbox_manager
+        from mypalclara.sandbox.manager import get_sandbox_manager
 
         sandbox = await get_sandbox_manager()
 
@@ -1002,7 +1002,7 @@ async def upload_to_sandbox(args: dict[str, Any], ctx: ToolContext) -> str:
             sandbox_path = f"/home/user/{local_filename}"
 
         # Try to get sandbox manager
-        from sandbox.manager import get_sandbox_manager
+        from mypalclara.sandbox.manager import get_sandbox_manager
 
         sandbox = await get_sandbox_manager()
 

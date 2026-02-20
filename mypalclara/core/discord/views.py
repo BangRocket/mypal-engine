@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 import discord
 
-from config.logging import get_logger
+from mypalclara.config.logging import get_logger
 
 from .embeds import (
     EMBED_COLOR_PRIMARY,

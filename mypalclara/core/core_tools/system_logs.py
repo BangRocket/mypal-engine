@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from tools._base import ToolContext, ToolDef
+from mypalclara.tools._base import ToolContext, ToolDef
 
 MODULE_NAME = "system_logs"
 MODULE_VERSION = "1.0.0"
@@ -51,7 +51,7 @@ def _get_session():
 
 async def search_logs(args: dict[str, Any], ctx: ToolContext) -> str:
     """Search system logs by keyword, logger, or level."""
-    from db.models import LogEntry
+    from mypalclara.db.models import LogEntry
 
     query = args.get("query", "")
     logger_name = args.get("logger_name", "")
@@ -109,7 +109,7 @@ async def search_logs(args: dict[str, Any], ctx: ToolContext) -> str:
 
 async def get_recent_logs(args: dict[str, Any], ctx: ToolContext) -> str:
     """Get the most recent log entries."""
-    from db.models import LogEntry
+    from mypalclara.db.models import LogEntry
 
     limit = min(args.get("limit", 30), 100)
     logger_name = args.get("logger_name", "")
@@ -144,7 +144,7 @@ async def get_recent_logs(args: dict[str, Any], ctx: ToolContext) -> str:
 
 async def get_error_logs(args: dict[str, Any], ctx: ToolContext) -> str:
     """Get recent error and exception logs."""
-    from db.models import LogEntry
+    from mypalclara.db.models import LogEntry
 
     limit = min(args.get("limit", 20), 50)
     hours = args.get("hours", 24)
@@ -286,7 +286,7 @@ async def initialize() -> None:
     global _session_factory
 
     try:
-        from db import SessionLocal
+        from mypalclara.db import SessionLocal
 
         _session_factory = SessionLocal
     except Exception:

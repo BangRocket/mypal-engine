@@ -1,16 +1,16 @@
 """Rook - Clara's memory system configuration.
 
-Re-exports from clara_core.memory for convenience.
+Re-exports from mypalclara.core.memory for convenience.
 
 Usage:
-    from config.rook import ROOK, ClaraMemory
+    from mypalclara.config.rook import ROOK, ClaraMemory
     # or (preferred)
-    from clara_core.memory import ROOK, ClaraMemory
+    from mypalclara.core.memory import ROOK, ClaraMemory
 """
 
 from __future__ import annotations
 
-from clara_core.memory import (
+from mypalclara.core.memory import (
     ENABLE_GRAPH_MEMORY,
     GRAPH_STORE_PROVIDER,
     ROOK,

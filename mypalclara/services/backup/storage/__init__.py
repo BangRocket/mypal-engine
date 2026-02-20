@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from backup_service.config import BackupConfig
+    from mypalclara.services.backup.config import BackupConfig
 
 
 @dataclass
@@ -42,10 +42,10 @@ class StorageBackend(Protocol):
 def create_backend(config: BackupConfig) -> StorageBackend:
     """Create a storage backend based on configuration."""
     if config.storage_type == "s3":
-        from backup_service.storage.s3 import S3Backend
+        from mypalclara.services.backup.storage.s3 import S3Backend
 
         return S3Backend(config)
 
-    from backup_service.storage.local import LocalBackend
+    from mypalclara.services.backup.storage.local import LocalBackend
 
     return LocalBackend(config)

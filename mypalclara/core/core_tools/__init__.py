@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from tools._registry import ToolRegistry
+    from mypalclara.tools._registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -210,8 +210,8 @@ async def setup_official_mcp_servers() -> dict[str, bool]:
     Returns:
         Dict mapping server names to success status
     """
-    from clara_core.mcp import get_mcp_manager
-    from clara_core.mcp.installer import MCPInstaller
+    from mypalclara.core.mcp import get_mcp_manager
+    from mypalclara.core.mcp.installer import MCPInstaller
 
     results = {}
     available = get_available_official_servers()
