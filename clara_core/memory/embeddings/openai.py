@@ -57,6 +57,9 @@ class OpenAIEmbedding(EmbeddingBase):
         Returns:
             list: The embedding vector.
         """
+        if not text or not text.strip():
+            return [0.0] * (self.config.embedding_dims or 1536)
+
         text = text.replace("\n", " ")
         # Normalize case for embeddings so "OpenBC" and "openbc" produce
         # identical vectors. Stored memory text preserves original case —

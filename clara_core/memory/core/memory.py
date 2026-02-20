@@ -689,6 +689,9 @@ class ClaraMemory(MemoryBase):
         Returns:
             dict: Results with list of memories
         """
+        if not query or not query.strip():
+            return {"results": []}
+
         _, effective_filters = _build_filters_and_metadata(
             user_id=user_id, agent_id=agent_id, run_id=run_id, input_filters=filters
         )
