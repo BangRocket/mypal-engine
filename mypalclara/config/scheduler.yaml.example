@@ -1,0 +1,61 @@
+# Clara Gateway Scheduler Configuration
+#
+# Scheduled tasks run automatically based on their schedule.
+# Copy this file to scheduler.yaml and customize.
+#
+# Task types:
+#   one_shot - Run once (after delay or at specific time)
+#   interval - Run every N seconds
+#   cron     - Run on cron schedule
+#
+# Cron expression format: minute hour day_of_month month day_of_week
+#   * * * * *       - Every minute
+#   0 * * * *       - Every hour
+#   0 9 * * *       - 9 AM daily
+#   0 9 * * 1-5     - 9 AM weekdays
+#   */15 * * * *    - Every 15 minutes
+#   0 0 1 * *       - First of every month
+#
+# Example tasks:
+
+tasks:
+  # Health check every 5 minutes
+  # - name: health-check
+  #   type: interval
+  #   interval: 300
+  #   command: curl -s http://localhost:8000/health
+  #   timeout: 30
+
+  # Cleanup idle sessions every hour
+  # - name: cleanup-sessions
+  #   type: interval
+  #   interval: 3600
+  #   command: poetry run python -m scripts.cleanup_sessions
+
+  # Daily summary at 9 AM
+  # - name: daily-summary
+  #   type: cron
+  #   cron: "0 9 * * *"
+  #   command: poetry run python -m scripts.daily_summary
+  #   description: Generate daily activity summary
+
+  # Memory consolidation at 3 AM
+  # - name: memory-consolidation
+  #   type: cron
+  #   cron: "0 3 * * *"
+  #   command: poetry run python -m scripts.consolidate_memories
+  #   timeout: 600
+
+  # Database backup at midnight
+  # - name: database-backup
+  #   type: cron
+  #   cron: "0 0 * * *"
+  #   command: ./scripts/backup_db.sh
+  #   working_dir: /opt/clara
+  #   timeout: 1800
+
+  # One-shot startup task (30 seconds after gateway starts)
+  # - name: startup-warmup
+  #   type: one_shot
+  #   delay: 30
+  #   command: poetry run python -m scripts.warmup_cache
