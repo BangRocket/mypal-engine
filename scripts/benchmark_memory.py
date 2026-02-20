@@ -78,8 +78,8 @@ def time_operation(func, *args, **kwargs) -> tuple[float, any]:
 
 def benchmark_embedding(iterations: int, text: str = "Hello, how are you today?") -> BenchmarkResult:
     """Benchmark embedding generation."""
-    from clara_core.memory.embeddings.base import BaseEmbedderConfig
-    from clara_core.memory.embeddings.openai import OpenAIEmbedding
+    from mypalclara.core.memory.embeddings.base import BaseEmbedderConfig
+    from mypalclara.core.memory.embeddings.openai import OpenAIEmbedding
 
     result = BenchmarkResult(operation="embedding")
 
@@ -102,8 +102,8 @@ def benchmark_embedding(iterations: int, text: str = "Hello, how are you today?"
 
 def benchmark_embedding_cache_hit(iterations: int) -> BenchmarkResult:
     """Benchmark embedding with guaranteed cache hits."""
-    from clara_core.memory.embeddings.base import BaseEmbedderConfig
-    from clara_core.memory.embeddings.openai import OpenAIEmbedding
+    from mypalclara.core.memory.embeddings.base import BaseEmbedderConfig
+    from mypalclara.core.memory.embeddings.openai import OpenAIEmbedding
 
     result = BenchmarkResult(operation="embedding_cache_hit")
 
@@ -126,7 +126,7 @@ def benchmark_embedding_cache_hit(iterations: int) -> BenchmarkResult:
 
 def benchmark_key_memories(iterations: int, user_id: str = "benchmark-user") -> BenchmarkResult:
     """Benchmark key memories retrieval."""
-    from clara_core.memory import ROOK
+    from mypalclara.core.memory import ROOK
 
     result = BenchmarkResult(operation="key_memories")
 
@@ -149,7 +149,7 @@ def benchmark_key_memories(iterations: int, user_id: str = "benchmark-user") -> 
 
 def benchmark_user_search(iterations: int, user_id: str = "benchmark-user") -> BenchmarkResult:
     """Benchmark user memory search."""
-    from clara_core.memory import ROOK
+    from mypalclara.core.memory import ROOK
 
     result = BenchmarkResult(operation="user_search")
 
@@ -184,7 +184,7 @@ def benchmark_project_search(
     project_id: str = "benchmark-project",
 ) -> BenchmarkResult:
     """Benchmark project memory search."""
-    from clara_core.memory import ROOK
+    from mypalclara.core.memory import ROOK
 
     result = BenchmarkResult(operation="project_search")
 
@@ -220,7 +220,7 @@ def benchmark_fetch_mem0_context(
     project_id: str = "benchmark-project",
 ) -> BenchmarkResult:
     """Benchmark the full fetch_mem0_context operation."""
-    from clara_core.memory_manager import MemoryManager
+    from mypalclara.core.memory_manager import MemoryManager
 
     result = BenchmarkResult(operation="fetch_mem0_context")
 
@@ -253,7 +253,7 @@ def benchmark_fetch_mem0_context(
 
 def benchmark_fsrs_ranking(iterations: int, user_id: str = "benchmark-user") -> BenchmarkResult:
     """Benchmark FSRS ranking (batched vs individual)."""
-    from clara_core.memory_manager import MemoryManager
+    from mypalclara.core.memory_manager import MemoryManager
 
     result = BenchmarkResult(operation="fsrs_ranking")
 

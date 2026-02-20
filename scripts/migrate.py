@@ -55,7 +55,7 @@ def get_alembic_config() -> Config:
 
 
 def get_engine():
-    """Get SQLAlchemy engine from config."""
+    """Get SQLAlchemy engine from mypalclara.config."""
     cfg = get_alembic_config()
     url = cfg.get_main_option("sqlalchemy.url")
     return create_engine(url)

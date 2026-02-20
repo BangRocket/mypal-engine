@@ -13,8 +13,8 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from db.connection import SessionLocal, init_db
-from db.models import CanonicalUser
+from mypalclara.db.connection import SessionLocal, init_db
+from mypalclara.db.models import CanonicalUser
 
 
 def find_user(db, identifier: str) -> CanonicalUser | None:

@@ -19,8 +19,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from db.connection import SessionLocal, init_db
-from db.models import (
+from mypalclara.db.connection import SessionLocal, init_db
+from mypalclara.db.models import (
     CanonicalUser,
     Intention,
     MemoryDynamics,

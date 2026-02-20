@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 import websockets
 from websockets.server import WebSocketServerProtocol, serve
 
-from config.logging import get_logger
+from mypalclara.config.logging import get_logger
 from mypalclara.gateway.protocol import (
     CancelledMessage,
     CancelMessage,
@@ -391,7 +391,7 @@ class GatewayServer:
     ) -> None:
         """Handle MCP list request."""
         try:
-            from clara_core.mcp import get_mcp_manager
+            from mypalclara.core.mcp import get_mcp_manager
 
             manager = get_mcp_manager()
             statuses = manager.get_all_server_status()
@@ -438,8 +438,8 @@ class GatewayServer:
     ) -> None:
         """Handle MCP install request."""
         try:
-            from clara_core.mcp import get_mcp_manager
-            from clara_core.mcp.installer import MCPInstaller
+            from mypalclara.core.mcp import get_mcp_manager
+            from mypalclara.core.mcp.installer import MCPInstaller
 
             installer = MCPInstaller()
             result = await installer.install(
@@ -491,8 +491,8 @@ class GatewayServer:
     ) -> None:
         """Handle MCP uninstall request."""
         try:
-            from clara_core.mcp import get_mcp_manager
-            from clara_core.mcp.installer import MCPInstaller
+            from mypalclara.core.mcp import get_mcp_manager
+            from mypalclara.core.mcp.installer import MCPInstaller
 
             manager = get_mcp_manager()
 
@@ -531,7 +531,7 @@ class GatewayServer:
     ) -> None:
         """Handle MCP status request."""
         try:
-            from clara_core.mcp import get_mcp_manager
+            from mypalclara.core.mcp import get_mcp_manager
 
             manager = get_mcp_manager()
             statuses = manager.get_all_server_status()
@@ -602,7 +602,7 @@ class GatewayServer:
     ) -> None:
         """Handle MCP restart request."""
         try:
-            from clara_core.mcp import get_mcp_manager
+            from mypalclara.core.mcp import get_mcp_manager
 
             manager = get_mcp_manager()
             success = await manager.restart_server(msg.server_name)
@@ -634,7 +634,7 @@ class GatewayServer:
     ) -> None:
         """Handle MCP enable/disable request."""
         try:
-            from clara_core.mcp import get_mcp_manager
+            from mypalclara.core.mcp import get_mcp_manager
 
             manager = get_mcp_manager()
 

@@ -28,7 +28,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from config.logging import get_logger, init_logging
+from mypalclara.config.logging import get_logger, init_logging
 from mypalclara.gateway.events import Event, EventType, emit, get_event_emitter
 from mypalclara.gateway.hooks import get_hook_manager
 from mypalclara.gateway.processor import MessageProcessor

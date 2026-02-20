@@ -16,12 +16,12 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from clara_core.llm.messages import AssistantMessage, SystemMessage, UserMessage
-from clara_core.llm.messages import Message as LLMMessage
-from config.logging import get_logger
-from db import SessionLocal
-from db.models import Message
-from db.models import Session as DBSession
+from mypalclara.config.logging import get_logger
+from mypalclara.core.llm.messages import AssistantMessage, SystemMessage, UserMessage
+from mypalclara.core.llm.messages import Message as LLMMessage
+from mypalclara.db import SessionLocal
+from mypalclara.db.models import Message
+from mypalclara.db.models import Session as DBSession
 from mypalclara.gateway.channel_summaries import ChannelSummaryManager, get_summary_manager
 from mypalclara.gateway.llm_orchestrator import LLMOrchestrator
 from mypalclara.gateway.protocol import (
@@ -147,7 +147,7 @@ class MessageProcessor:
     async def _init_memory_manager(self) -> None:
         """Initialize the memory manager."""
         try:
-            from clara_core import MemoryManager, init_platform, make_llm
+            from mypalclara.core import MemoryManager, init_platform, make_llm
 
             init_platform()
             self._memory_manager = MemoryManager(make_llm)
@@ -172,7 +172,7 @@ class MessageProcessor:
         Returns:
             Database Session object
         """
-        from db.models import Project
+        from mypalclara.db.models import Project
 
         db = SessionLocal()
         try:
@@ -203,7 +203,7 @@ class MessageProcessor:
 
             if session:
                 # Update activity timestamp
-                from db.models import utcnow
+                from mypalclara.db.models import utcnow
 
                 session.last_activity_at = utcnow()
                 db.commit()
@@ -687,7 +687,7 @@ class MessageProcessor:
         if not attachments:
             return ""
 
-        from clara_core.security.sandboxing import wrap_untrusted
+        from mypalclara.core.security.sandboxing import wrap_untrusted
 
         text_parts = []
         for att in attachments:
@@ -941,7 +941,7 @@ class MessageProcessor:
 
             # Personality evolution (probabilistic, low-cost gate)
             try:
-                from clara_core.personality_evolution import maybe_evolve_personality
+                from mypalclara.core.personality_evolution import maybe_evolve_personality
 
                 await loop.run_in_executor(
                     BLOCKING_EXECUTOR,
@@ -971,7 +971,7 @@ class MessageProcessor:
             context: The context dict
         """
         try:
-            from clara_core.emotional_context import track_message_sentiment
+            from mypalclara.core.emotional_context import track_message_sentiment
 
             track_message_sentiment(
                 user_id=context["user_id"],
@@ -1116,7 +1116,7 @@ class MessageProcessor:
         )
 
         try:
-            from clara_core import ModelTier, make_llm
+            from mypalclara.core import ModelTier, make_llm
 
             def classify():
                 # Use low-tier model for classification
@@ -1151,7 +1151,7 @@ class MessageProcessor:
         Returns:
             "CLARA", "OTHER", or "AMBIGUOUS"
         """
-        from config.bot import BOT_NAME
+        from mypalclara.config.bot import BOT_NAME
 
         # Build searchable content from message text + attachment filenames
         attachment_names = " ".join(att.filename for att in request.attachments if att.filename)
@@ -1218,7 +1218,7 @@ class MessageProcessor:
         )
 
         try:
-            from clara_core import ModelTier, make_llm
+            from mypalclara.core import ModelTier, make_llm
 
             def classify():
                 llm = make_llm(tier=ModelTier.LOW)

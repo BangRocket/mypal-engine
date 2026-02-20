@@ -223,7 +223,7 @@ def import_to_mem0(
         dry_run: If True, only show what would be imported without actually importing
         user_id: User ID for mem0 storage
     """
-    from clara_core.memory import ROOK
+    from mypalclara.core.memory import ROOK
 
     if ROOK is None:
         print("Error: mem0 is not initialized. Check your configuration.")

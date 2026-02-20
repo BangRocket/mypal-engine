@@ -77,8 +77,8 @@ cp .env.example .env
 ### Running
 
 ```bash
-# Run Discord bot directly
-poetry run python discord_bot.py
+# Run Discord adapter directly
+poetry run python -m mypalclara.adapters.discord
 
 # Or run via gateway (recommended for multi-platform)
 poetry run python -m mypalclara.gateway start
@@ -292,9 +292,9 @@ poetry run python -m src.bootstrap_memory --apply
 ### Clear Memory
 
 ```bash
-poetry run python clear_dbs.py              # With prompt
-poetry run python clear_dbs.py --yes        # Skip prompt
-poetry run python clear_dbs.py --user <id>  # Specific user
+poetry run python scripts/clear_dbs.py              # With prompt
+poetry run python scripts/clear_dbs.py --yes        # Skip prompt
+poetry run python scripts/clear_dbs.py --user <id>  # Specific user
 ```
 
 ## Discord Features
@@ -470,7 +470,7 @@ zip -r ../clara-teams-app.zip *
 
 ```bash
 # Standalone
-poetry run python -m adapters.teams
+poetry run python -m mypalclara.adapters.teams
 
 # Via gateway
 poetry run python -m mypalclara.gateway start --adapter teams
@@ -589,11 +589,10 @@ poetry run python scripts/migrate.py create "description"  # New migration
 
 ### Database Backups
 
-The `backup_service/` directory contains an automated backup service for S3-compatible storage:
+The `mypalclara/services/backup/` directory contains an automated backup service for S3-compatible storage:
 
 ```bash
-cd backup_service
-docker-compose up -d
+docker-compose --profile backup up -d
 ```
 
 ## Development

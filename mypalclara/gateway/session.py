@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from config.logging import get_logger
+from mypalclara.config.logging import get_logger
 
 if TYPE_CHECKING:
     from websockets.server import WebSocketServerProtocol
@@ -349,7 +349,7 @@ class SessionManager:
             session: The session being finalized
         """
         try:
-            from clara_core.emotional_context import (
+            from mypalclara.core.emotional_context import (
                 finalize_conversation_emotional_context,
                 get_conversation_sentiments,
                 has_pending_emotional_context,
@@ -399,8 +399,8 @@ class SessionManager:
             is_dm: Whether this is a DM
         """
         try:
-            from clara_core.emotional_context import get_conversation_sentiments
-            from clara_core.topic_recurrence import extract_and_store_topics
+            from mypalclara.core.emotional_context import get_conversation_sentiments
+            from mypalclara.core.topic_recurrence import extract_and_store_topics
 
             # Fetch recent messages from database for this session
             conversation_text = await self._fetch_session_conversation(session)
@@ -413,7 +413,7 @@ class SessionManager:
 
             # Create async LLM callable
             async def llm_call(messages):
-                from clara_core import ModelTier, make_llm
+                from mypalclara.core import ModelTier, make_llm
 
                 llm = make_llm(tier=ModelTier.LOW)
                 return llm(messages)
@@ -445,9 +445,9 @@ class SessionManager:
             Formatted conversation text
         """
         try:
-            from db import SessionLocal
-            from db.models import Message
-            from db.models import Session as DBSession
+            from mypalclara.db import SessionLocal
+            from mypalclara.db.models import Message
+            from mypalclara.db.models import Session as DBSession
 
             db = SessionLocal()
             try:
