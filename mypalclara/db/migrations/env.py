@@ -3,7 +3,7 @@
 This module configures Alembic to:
 - Use DATABASE_URL environment variable for production (PostgreSQL)
 - Fall back to SQLite for local development
-- Import Base metadata from db.models for autogenerate support
+- Import Base metadata from mypalclara.db.models for autogenerate support
 """
 
 import os
@@ -31,7 +31,7 @@ if config.config_file_name is not None:
 
 # Import Base metadata for autogenerate support
 # This allows Alembic to detect schema changes against our models
-from db.models import Base
+from mypalclara.db.models import Base
 
 target_metadata = Base.metadata
 

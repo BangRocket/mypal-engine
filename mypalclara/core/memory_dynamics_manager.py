@@ -8,18 +8,18 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from clara_core.memory_manager import (
+from mypalclara.config.logging import get_logger
+from mypalclara.core.memory_manager import (
     FSRS_DYNAMICS_WEIGHT,
     FSRS_SEMANTIC_WEIGHT,
     MEMORY_ACCESS_LOG_RETENTION_DAYS,
     PRUNE_CHECK_FREQUENCY,
 )
-from config.logging import get_logger
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session as OrmSession
 
-    from db.models import MemoryDynamics
+    from mypalclara.db.models import MemoryDynamics
 
 memory_logger = get_logger("memory")
 
@@ -37,8 +37,8 @@ class MemoryDynamicsManager:
         user_id: str,
     ) -> "MemoryDynamics | None":
         """Get FSRS dynamics for a memory."""
-        from db import SessionLocal
-        from db.models import MemoryDynamics
+        from mypalclara.db import SessionLocal
+        from mypalclara.db.models import MemoryDynamics
 
         db = SessionLocal()
         try:
@@ -53,8 +53,8 @@ class MemoryDynamicsManager:
         is_key: bool = False,
     ) -> "MemoryDynamics":
         """Ensure FSRS dynamics exist for a memory, creating if needed."""
-        from db import SessionLocal
-        from db.models import MemoryDynamics
+        from mypalclara.db import SessionLocal
+        from mypalclara.db.models import MemoryDynamics
 
         db = SessionLocal()
         try:
@@ -82,15 +82,15 @@ class MemoryDynamicsManager:
         signal_type: str = "used_in_response",
     ) -> None:
         """Mark memory as successfully recalled, updating FSRS state."""
-        from clara_core.memory.dynamics.fsrs import (
+        from mypalclara.core.memory.dynamics.fsrs import (
             FsrsParams,
             Grade,
             MemoryState,
             retrievability,
             review,
         )
-        from db import SessionLocal
-        from db.models import MemoryAccessLog, MemoryDynamics
+        from mypalclara.db import SessionLocal
+        from mypalclara.db.models import MemoryAccessLog, MemoryDynamics
 
         db = SessionLocal()
         try:
@@ -157,7 +157,7 @@ class MemoryDynamicsManager:
 
     def prune_old_access_logs(self, db: "OrmSession", retention_days: int = MEMORY_ACCESS_LOG_RETENTION_DAYS) -> int:
         """Delete MemoryAccessLog records older than retention period."""
-        from db.models import MemoryAccessLog
+        from mypalclara.db.models import MemoryAccessLog
 
         cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=retention_days)
         try:
@@ -192,9 +192,9 @@ class MemoryDynamicsManager:
         semantic_score: float,
     ) -> float:
         """Calculate composite score for memory ranking."""
-        from clara_core.memory.dynamics.fsrs import calculate_memory_score, retrievability
-        from db import SessionLocal
-        from db.models import MemoryDynamics
+        from mypalclara.core.memory.dynamics.fsrs import calculate_memory_score, retrievability
+        from mypalclara.db import SessionLocal
+        from mypalclara.db.models import MemoryDynamics
 
         db = SessionLocal()
         try:
@@ -243,9 +243,9 @@ class MemoryDynamicsManager:
         if not results:
             return results
 
-        from clara_core.memory.dynamics.fsrs import calculate_memory_score, retrievability
-        from db import SessionLocal
-        from db.models import MemoryDynamics
+        from mypalclara.core.memory.dynamics.fsrs import calculate_memory_score, retrievability
+        from mypalclara.db import SessionLocal
+        from mypalclara.db.models import MemoryDynamics
 
         memory_ids = [r.get("id") for r in results if r.get("id")]
 

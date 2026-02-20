@@ -17,7 +17,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from clara_core.memory.vector.base import VectorStoreBase
+    from mypalclara.core.memory.vector.base import VectorStoreBase
 
 logger = logging.getLogger("clara.memory.vector.dual_write")
 

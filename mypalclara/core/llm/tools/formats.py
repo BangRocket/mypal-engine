@@ -18,7 +18,7 @@ import json
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from clara_core.llm.messages import Message
+    from mypalclara.core.llm.messages import Message
 
 
 def convert_to_openai_format(tool: dict[str, Any]) -> dict[str, Any]:
@@ -297,19 +297,19 @@ def message_to_anthropic(msg: "Message") -> dict[str, Any]:
     Returns:
         Anthropic-format message dict.
     """
-    from clara_core.llm.messages import (
+    from mypalclara.core.llm.messages import (
         AssistantMessage as AssistantMsg,
     )
-    from clara_core.llm.messages import (
+    from mypalclara.core.llm.messages import (
         ContentPartType,
     )
-    from clara_core.llm.messages import (
+    from mypalclara.core.llm.messages import (
         SystemMessage as SystemMsg,
     )
-    from clara_core.llm.messages import (
+    from mypalclara.core.llm.messages import (
         ToolResultMessage as ToolResultMsg,
     )
-    from clara_core.llm.messages import (
+    from mypalclara.core.llm.messages import (
         UserMessage as UserMsg,
     )
 
@@ -395,7 +395,7 @@ def messages_to_anthropic(
         the joined system messages and api_messages is the list of
         non-system messages in Anthropic format.
     """
-    from clara_core.llm.messages import SystemMessage as SystemMsg
+    from mypalclara.core.llm.messages import SystemMessage as SystemMsg
 
     system_parts: list[str] = []
     api_messages: list[dict[str, Any]] = []
@@ -424,16 +424,16 @@ def messages_to_langchain(msgs: list["Message"]) -> list:
     from langchain_core.messages import SystemMessage as LCSystemMessage
     from langchain_core.messages import ToolMessage as LCToolMessage
 
-    from clara_core.llm.messages import (
+    from mypalclara.core.llm.messages import (
         AssistantMessage as AssistantMsg,
     )
-    from clara_core.llm.messages import (
+    from mypalclara.core.llm.messages import (
         SystemMessage as SystemMsg,
     )
-    from clara_core.llm.messages import (
+    from mypalclara.core.llm.messages import (
         ToolResultMessage as ToolResultMsg,
     )
-    from clara_core.llm.messages import (
+    from mypalclara.core.llm.messages import (
         UserMessage as UserMsg,
     )
 

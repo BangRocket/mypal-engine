@@ -20,7 +20,7 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from clara_core.memory.cache.redis_cache import RedisCache
+    from mypalclara.core.memory.cache.redis_cache import RedisCache
 
 logger = logging.getLogger("clara.memory.cache.graph")
 
@@ -65,7 +65,7 @@ class GraphCache:
         if not self._initialized:
             self._initialized = True
             if self._redis_cache is None:
-                from clara_core.memory.cache.redis_cache import RedisCache
+                from mypalclara.core.memory.cache.redis_cache import RedisCache
 
                 self._redis_cache = RedisCache.get_instance()
         return self._redis_cache

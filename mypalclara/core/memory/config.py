@@ -15,7 +15,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Use Clara's native memory system
-from clara_core.memory.core.memory import ClaraMemory
+from mypalclara.core.memory.core.memory import ClaraMemory
 
 load_dotenv()
 
@@ -123,7 +123,7 @@ def _get_graph_store_config() -> dict | None:
 def _get_llm_config() -> dict | None:
     """Build LLM config based on ROOK_PROVIDER.
 
-    Uses the unified provider from clara_core.llm for consistent behavior
+    Uses the unified provider from mypalclara.core.llm for consistent behavior
     across all LLM operations (chat, memory, tools).
     """
     if ROOK_PROVIDER not in PROVIDER_DEFAULTS:

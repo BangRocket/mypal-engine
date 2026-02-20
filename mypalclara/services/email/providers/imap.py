@@ -8,12 +8,12 @@ from typing import TYPE_CHECKING
 
 from imap_tools import AND, MailBox, MailboxLoginError
 
-from config.logging import get_logger
-from email_service.credentials import decrypt_credential
-from email_service.providers.base import EmailMessage, EmailProvider
+from mypalclara.config.logging import get_logger
+from mypalclara.services.email.credentials import decrypt_credential
+from mypalclara.services.email.providers.base import EmailMessage, EmailProvider
 
 if TYPE_CHECKING:
-    from db.models import EmailAccount
+    from mypalclara.db.models import EmailAccount
 
 logger = get_logger("email.imap")
 

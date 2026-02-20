@@ -7,15 +7,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from clara_core.memory_manager import (
+from mypalclara.config.logging import get_logger
+from mypalclara.core.memory_manager import (
     SMART_INGEST_SKIP_THRESHOLD,
     SMART_INGEST_SUPERSEDE_THRESHOLD,
     SMART_INGEST_UPDATE_THRESHOLD,
 )
-from config.logging import get_logger
 
 if TYPE_CHECKING:
-    from clara_core.memory_dynamics_manager import MemoryDynamicsManager
+    from mypalclara.core.memory_dynamics_manager import MemoryDynamicsManager
 
 memory_logger = get_logger("memory")
 
@@ -44,7 +44,7 @@ class MemoryIngestionManager:
         Returns:
             Filtered list of results (duplicates removed, contradictions superseded)
         """
-        from clara_core.memory import ROOK
+        from mypalclara.core.memory import ROOK
 
         if not mem_results or ROOK is None:
             return mem_results
@@ -122,8 +122,8 @@ class MemoryIngestionManager:
         Returns:
             Tuple of (decision, existing_memory_id)
         """
-        from clara_core.memory import ROOK
-        from clara_core.memory.dynamics.contradiction import (
+        from mypalclara.core.memory import ROOK
+        from mypalclara.core.memory.dynamics.contradiction import (
             calculate_similarity,
             detect_contradiction,
         )
@@ -207,8 +207,8 @@ class MemoryIngestionManager:
         reason: str = "contradiction",
     ) -> None:
         """Record a supersession relationship and demote the old memory."""
-        from db import SessionLocal
-        from db.models import MemorySupersession
+        from mypalclara.db import SessionLocal
+        from mypalclara.db.models import MemorySupersession
 
         db = SessionLocal()
         try:
@@ -251,7 +251,7 @@ class MemoryIngestionManager:
         Returns:
             New memory ID, or None on failure
         """
-        from clara_core.memory import ROOK
+        from mypalclara.core.memory import ROOK
 
         if ROOK is None:
             return None

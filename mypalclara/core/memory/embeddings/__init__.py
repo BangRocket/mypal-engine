@@ -1,8 +1,8 @@
 """Embeddings implementations for Clara Memory System."""
 
-from clara_core.memory.embeddings.base import BaseEmbedderConfig, EmbeddingBase
-from clara_core.memory.embeddings.cached import CachedEmbedding, wrap_with_cache
-from clara_core.memory.embeddings.openai import OpenAIEmbedding
+from mypalclara.core.memory.embeddings.base import BaseEmbedderConfig, EmbeddingBase
+from mypalclara.core.memory.embeddings.cached import CachedEmbedding, wrap_with_cache
+from mypalclara.core.memory.embeddings.openai import OpenAIEmbedding
 
 __all__ = [
     "EmbeddingBase",

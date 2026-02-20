@@ -10,8 +10,8 @@ import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from clara_core.llm.config import LLMConfig
-    from clara_core.llm.providers.base import LLMProvider
+    from mypalclara.core.llm.config import LLMConfig
+    from mypalclara.core.llm.providers.base import LLMProvider
 
 
 class ProviderRegistry:
@@ -59,7 +59,7 @@ class ProviderRegistry:
         Returns:
             LLMProvider instance
         """
-        from clara_core.llm.providers.langchain import (
+        from mypalclara.core.llm.providers.langchain import (
             DirectAnthropicProvider,
             DirectOpenAIProvider,
             LangChainProvider,

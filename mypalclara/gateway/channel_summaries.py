@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from config.logging import get_logger
+from mypalclara.config.logging import get_logger
 
 if TYPE_CHECKING:
     pass
@@ -62,7 +62,7 @@ class ChannelSummaryManager:
             return
 
         try:
-            from clara_core import make_llm
+            from mypalclara.core import make_llm
 
             self._llm_callable = make_llm
             self._initialized = True
@@ -85,8 +85,8 @@ class ChannelSummaryManager:
         Returns:
             tuple: (summary_text, recent_messages_within_threshold)
         """
-        from db import SessionLocal
-        from db.models import ChannelSummary
+        from mypalclara.db import SessionLocal
+        from mypalclara.db.models import ChannelSummary
 
         now = datetime.now(UTC)
         cutoff = now - timedelta(minutes=SUMMARY_AGE_MINUTES)
@@ -158,7 +158,7 @@ class ChannelSummaryManager:
         else:
             user_content = f"Conversation:\n{conversation}\n\nProvide a summary:"
 
-        from clara_core.llm.messages import SystemMessage, UserMessage
+        from mypalclara.core.llm.messages import SystemMessage, UserMessage
 
         prompt = [
             SystemMessage(
@@ -173,7 +173,7 @@ class ChannelSummaryManager:
         ]
 
         def call_llm():
-            from clara_core import ModelTier
+            from mypalclara.core import ModelTier
 
             llm = self._llm_callable(tier=ModelTier.LOW)  # Use fast model for summaries
             return llm(prompt)
@@ -190,8 +190,8 @@ class ChannelSummaryManager:
         Returns:
             True if cleared, False if not found
         """
-        from db import SessionLocal
-        from db.models import ChannelSummary
+        from mypalclara.db import SessionLocal
+        from mypalclara.db.models import ChannelSummary
 
         db = SessionLocal()
         try:
@@ -215,8 +215,8 @@ class ChannelSummaryManager:
         Returns:
             Summary text or None if not found
         """
-        from db import SessionLocal
-        from db.models import ChannelSummary
+        from mypalclara.db import SessionLocal
+        from mypalclara.db.models import ChannelSummary
 
         db = SessionLocal()
         try:

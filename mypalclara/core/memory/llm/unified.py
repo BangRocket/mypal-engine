@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from clara_core.memory.llm.base import BaseLlmConfig, LLMBase
+from mypalclara.core.memory.llm.base import BaseLlmConfig, LLMBase
 
 
 class UnifiedLLMConfig(BaseLlmConfig):
@@ -79,8 +79,8 @@ class UnifiedLLM(LLMBase):
             )
 
         # Import here to avoid circular imports
-        from clara_core.llm.config import LLMConfig
-        from clara_core.llm.providers.registry import get_provider
+        from mypalclara.core.llm.config import LLMConfig
+        from mypalclara.core.llm.providers.registry import get_provider
 
         # Build LLMConfig from memory config
         self._llm_config = LLMConfig(
@@ -150,7 +150,7 @@ class UnifiedLLM(LLMBase):
         """
         # Convert dict messages to typed Messages at the boundary.
         # Providers expect list[Message] after the Phase 3 migration.
-        from clara_core.llm.messages import Message, messages_from_dicts
+        from mypalclara.core.llm.messages import Message, messages_from_dicts
 
         if messages and isinstance(messages[0], dict):
             typed_messages = messages_from_dicts(messages)

@@ -58,7 +58,7 @@ def _get_version() -> str:
 
 def _print_startup_info(host: str, port: int, adapters: list[str] | None, no_adapters: bool = False) -> None:
     """Print the startup banner and configuration info."""
-    from config.bot import BOT_NAME
+    from mypalclara.config.bot import BOT_NAME
 
     print_banner(_get_version())
     print(f"  {_C.info('Persona')}  {_C.bold(BOT_NAME)}")
@@ -441,7 +441,7 @@ def _run_gateway(args: argparse.Namespace, adapter_names: list[str] | None) -> N
 
 async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] | None) -> None:
     """Async main function for running gateway with adapters."""
-    from config.logging import get_logger, init_logging
+    from mypalclara.config.logging import get_logger, init_logging
     from mypalclara.gateway.adapter_manager import get_adapter_manager
     from mypalclara.gateway.events import Event, EventType, emit
     from mypalclara.gateway.hooks import get_hook_manager

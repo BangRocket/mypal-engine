@@ -10,11 +10,11 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from config.logging import get_logger
+from mypalclara.config.logging import get_logger
 
 if TYPE_CHECKING:
-    from db.models import EmailRule
-    from email_service.providers.base import EmailMessage
+    from mypalclara.db.models import EmailRule
+    from mypalclara.services.email.providers.base import EmailMessage
 
 logger = get_logger("email.rules")
 

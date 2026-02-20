@@ -6,7 +6,7 @@ Provides proactive conversation capabilities through a state machine approach:
     SPEAK - There's a reason to reach out now with clear purpose.
 """
 
-from proactive.engine import (
+from mypalclara.services.proactive.engine import (
     ORS_ENABLED,
     ORSContext,
     ORSDecision,

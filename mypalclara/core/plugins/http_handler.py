@@ -4,11 +4,11 @@ This module provides FastAPI routes for HTTP-based tool invocation.
 Can be mounted in an existing FastAPI app or run standalone.
 
 Usage with existing app:
-    from clara_core.plugins.http_handler import create_tool_router
+    from mypalclara.core.plugins.http_handler import create_tool_router
     app.include_router(create_tool_router(), prefix="/api/tools")
 
 Standalone usage:
-    from clara_core.plugins.http_handler import create_app
+    from mypalclara.core.plugins.http_handler import create_app
     import uvicorn
     uvicorn.run(create_app(), host="0.0.0.0", port=8000)
 """
@@ -165,7 +165,7 @@ def create_tool_router(prefix: str = ""):
             POST /api/tools/web_search
             {"arguments": {"query": "Claude AI"}}
         """
-        from tools._base import ToolContext
+        from mypalclara.tools._base import ToolContext
 
         from . import get_registry, resolve_tool_name
 

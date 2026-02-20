@@ -18,8 +18,8 @@ from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Callable
 
-from clara_core.llm.messages import SystemMessage, UserMessage
-from config.logging import get_logger
+from mypalclara.config.logging import get_logger
+from mypalclara.core.llm.messages import SystemMessage, UserMessage
 
 if TYPE_CHECKING:
     pass
@@ -162,7 +162,7 @@ def store_topic_mention(
     Returns:
         True if stored successfully, False otherwise
     """
-    from clara_core.memory import ROOK
+    from mypalclara.core.memory import ROOK
 
     if ROOK is None:
         return False
@@ -302,7 +302,7 @@ def fetch_topic_mentions(
     Returns:
         List of topic mention dicts from mem0
     """
-    from clara_core.memory import ROOK
+    from mypalclara.core.memory import ROOK
 
     if ROOK is None:
         return []

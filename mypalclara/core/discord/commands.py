@@ -12,8 +12,8 @@ import discord
 from discord import option
 from discord.ext import commands
 
-from db import SessionLocal
-from db.models import GuildConfig
+from mypalclara.db import SessionLocal
+from mypalclara.db.models import GuildConfig
 
 from .embeds import (
     EMBED_COLOR_PRIMARY,
@@ -147,7 +147,7 @@ class ClaraCommands(commands.Cog):
                 ]
             else:
                 # Local mode
-                from clara_core.mcp import get_mcp_manager
+                from mypalclara.core.mcp import get_mcp_manager
 
                 manager = get_mcp_manager()
                 statuses = manager.get_all_server_status()
@@ -245,7 +245,7 @@ class ClaraCommands(commands.Cog):
                 return
 
             # Local mode
-            from clara_core.mcp import get_mcp_manager
+            from mypalclara.core.mcp import get_mcp_manager
 
             manager = get_mcp_manager()
 
@@ -307,7 +307,7 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
-            from clara_core.mcp import get_mcp_manager
+            from mypalclara.core.mcp import get_mcp_manager
 
             manager = get_mcp_manager()
 
@@ -353,7 +353,7 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
-            from clara_core.mcp.installer import SmitheryClient
+            from mypalclara.core.mcp.installer import SmitheryClient
 
             client = SmitheryClient()
             result = await client.search(query, page_size=10)
@@ -422,8 +422,8 @@ class ClaraCommands(commands.Cog):
                 return
 
             # Local mode
-            from clara_core.mcp import get_mcp_manager
-            from clara_core.mcp.installer import MCPInstaller
+            from mypalclara.core.mcp import get_mcp_manager
+            from mypalclara.core.mcp.installer import MCPInstaller
 
             installer = MCPInstaller()
             result = await installer.install(
@@ -491,8 +491,8 @@ class ClaraCommands(commands.Cog):
                 return
 
             # Local mode
-            from clara_core.mcp import get_mcp_manager
-            from clara_core.mcp.installer import MCPInstaller
+            from mypalclara.core.mcp import get_mcp_manager
+            from mypalclara.core.mcp.installer import MCPInstaller
 
             manager = get_mcp_manager()
             if server in manager:
@@ -540,7 +540,7 @@ class ClaraCommands(commands.Cog):
                 return
 
             # Local mode
-            from clara_core.mcp import get_mcp_manager
+            from mypalclara.core.mcp import get_mcp_manager
 
             manager = get_mcp_manager()
             success = await manager.enable_server(server)
@@ -580,7 +580,7 @@ class ClaraCommands(commands.Cog):
                 return
 
             # Local mode
-            from clara_core.mcp import get_mcp_manager
+            from mypalclara.core.mcp import get_mcp_manager
 
             manager = get_mcp_manager()
             success = await manager.disable_server(server)
@@ -620,7 +620,7 @@ class ClaraCommands(commands.Cog):
                 return
 
             # Local mode
-            from clara_core.mcp import get_mcp_manager
+            from mypalclara.core.mcp import get_mcp_manager
 
             manager = get_mcp_manager()
             success = await manager.restart_server(server)
@@ -642,7 +642,7 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
-            from clara_core.mcp import get_mcp_manager
+            from mypalclara.core.mcp import get_mcp_manager
 
             manager = get_mcp_manager()
             results = await manager.reload()
@@ -677,8 +677,8 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
-            from clara_core.mcp.models import load_server_config
-            from clara_core.mcp.oauth import SmitheryOAuthClient
+            from mypalclara.core.mcp.models import load_server_config
+            from mypalclara.core.mcp.oauth import SmitheryOAuthClient
 
             # Check if server exists
             config = load_server_config(server)
@@ -750,9 +750,9 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
-            from clara_core.mcp import get_mcp_manager
-            from clara_core.mcp.models import load_server_config, save_server_config
-            from clara_core.mcp.oauth import SmitheryOAuthClient
+            from mypalclara.core.mcp import get_mcp_manager
+            from mypalclara.core.mcp.models import load_server_config, save_server_config
+            from mypalclara.core.mcp.oauth import SmitheryOAuthClient
 
             # Check if server exists
             config = load_server_config(server)
@@ -822,8 +822,8 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
-            from clara_core.mcp.models import load_server_config
-            from clara_core.mcp.oauth import load_oauth_state
+            from mypalclara.core.mcp.models import load_server_config
+            from mypalclara.core.mcp.oauth import load_oauth_state
 
             # Check server config
             config = load_server_config(server)
@@ -882,9 +882,9 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
-            from clara_core.mcp import get_mcp_manager
-            from clara_core.mcp.models import load_server_config, save_server_config
-            from clara_core.mcp.oauth import SmitheryOAuthClient
+            from mypalclara.core.mcp import get_mcp_manager
+            from mypalclara.core.mcp.models import load_server_config, save_server_config
+            from mypalclara.core.mcp.oauth import SmitheryOAuthClient
 
             # Check server config
             config = load_server_config(server)
@@ -1175,7 +1175,7 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
-            from sandbox.manager import get_sandbox_manager
+            from mypalclara.sandbox.manager import get_sandbox_manager
 
             manager = get_sandbox_manager()
             status = await manager.get_status()
@@ -1234,7 +1234,7 @@ class ClaraCommands(commands.Cog):
 
         try:
             # Get memory stats from mem0
-            from clara_core.memory import ClaraMemory
+            from mypalclara.core.memory import ClaraMemory
 
             m = ClaraMemory()
             user_id = str(ctx.author.id)
@@ -1263,7 +1263,7 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
-            from clara_core.memory import ClaraMemory
+            from mypalclara.core.memory import ClaraMemory
 
             m = ClaraMemory()
             user_id = str(ctx.author.id)
@@ -1309,7 +1309,7 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
-            from clara_core.memory import ClaraMemory
+            from mypalclara.core.memory import ClaraMemory
 
             m = ClaraMemory()
             user_id = str(ctx.author.id)
@@ -1343,7 +1343,7 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
-            from db.models import EmailAccount
+            from mypalclara.db.models import EmailAccount
 
             user_id = str(ctx.author.id)
 
@@ -1425,7 +1425,7 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
-            from clara_core.services.backup import get_backup_service
+            from mypalclara.core.services.backup import get_backup_service
 
             service = get_backup_service()
             databases = [database] if database else None
@@ -1459,7 +1459,7 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
-            from clara_core.services.backup import get_backup_service
+            from mypalclara.core.services.backup import get_backup_service
 
             service = get_backup_service()
             status = await service.get_status()
@@ -1508,7 +1508,7 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
-            from clara_core.services.backup import get_backup_service
+            from mypalclara.core.services.backup import get_backup_service
 
             service = get_backup_service()
             backups = await service.list_backups(database=database, limit=limit)
@@ -1563,7 +1563,7 @@ class ClaraCommands(commands.Cog):
             provider = os.getenv("LLM_PROVIDER", "openrouter")
 
             # Get connected servers count
-            from clara_core.mcp import get_mcp_manager
+            from mypalclara.core.mcp import get_mcp_manager
 
             manager = get_mcp_manager()
             mcp_count = len(manager)
@@ -1590,7 +1590,7 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
-            from db.channel_config import set_channel_mode
+            from mypalclara.db.channel_config import set_channel_mode
 
             if not ctx.channel_id or not ctx.guild_id:
                 await ctx.respond(embed=create_error_embed("Error", "This command must be used in a server channel."))

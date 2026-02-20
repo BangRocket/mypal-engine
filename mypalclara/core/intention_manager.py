@@ -35,7 +35,7 @@ class IntentionManager:
         Returns:
             The created intention ID
         """
-        from clara_core.intentions import create_intention
+        from mypalclara.core.intentions import create_intention
 
         return create_intention(
             user_id=user_id,
@@ -62,7 +62,7 @@ class IntentionManager:
         Returns:
             List of fired intention dicts
         """
-        from clara_core.intentions import CheckStrategy, check_intentions
+        from mypalclara.core.intentions import CheckStrategy, check_intentions
 
         return check_intentions(
             user_id=user_id,
@@ -84,6 +84,6 @@ class IntentionManager:
         Returns:
             Formatted string for the prompt
         """
-        from clara_core.intentions import format_intentions_for_prompt
+        from mypalclara.core.intentions import format_intentions_for_prompt
 
         return format_intentions_for_prompt(fired_intentions)

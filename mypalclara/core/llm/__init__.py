@@ -11,7 +11,7 @@ Key Components:
 - Tier system: Model selection by capability level
 
 Quick Start:
-    from clara_core.llm import LLMConfig, get_provider
+    from mypalclara.core.llm import LLMConfig, get_provider
 
     # Get configured provider
     config = LLMConfig.from_env(tier="high")
@@ -38,7 +38,7 @@ Backward Compatibility:
 from __future__ import annotations
 
 # Backward compatibility imports
-from clara_core.llm.compat import (
+from mypalclara.core.llm.compat import (
     generate_tool_description,
     make_llm,
     make_llm_streaming,
@@ -51,8 +51,8 @@ from clara_core.llm.compat import (
 )
 
 # Core components
-from clara_core.llm.config import LLMConfig
-from clara_core.llm.messages import (
+from mypalclara.core.llm.config import LLMConfig
+from mypalclara.core.llm.messages import (
     AssistantMessage,
     ContentPart,
     ContentPartType,
@@ -63,14 +63,14 @@ from clara_core.llm.messages import (
     message_from_dict,
     messages_from_dicts,
 )
-from clara_core.llm.providers.base import LLMProvider
-from clara_core.llm.providers.langchain import (
+from mypalclara.core.llm.providers.base import LLMProvider
+from mypalclara.core.llm.providers.langchain import (
     DirectAnthropicProvider,
     DirectOpenAIProvider,
     LangChainProvider,
 )
-from clara_core.llm.providers.registry import ProviderRegistry, get_provider
-from clara_core.llm.tiers import (
+from mypalclara.core.llm.providers.registry import ProviderRegistry, get_provider
+from mypalclara.core.llm.tiers import (
     DEFAULT_MODELS,
     DEFAULT_TIER,
     ModelTier,
@@ -80,7 +80,7 @@ from clara_core.llm.tiers import (
     get_tier_info,
     get_tool_model,
 )
-from clara_core.llm.tools.formats import (
+from mypalclara.core.llm.tools.formats import (
     convert_message_to_anthropic,
     convert_to_claude_format,
     convert_to_mcp_format,
@@ -92,8 +92,8 @@ from clara_core.llm.tools.formats import (
     messages_to_langchain,
     messages_to_openai,
 )
-from clara_core.llm.tools.response import ToolCall, ToolResponse
-from clara_core.llm.tools.schema import ToolSchema
+from mypalclara.core.llm.tools.response import ToolCall, ToolResponse
+from mypalclara.core.llm.tools.schema import ToolSchema
 
 __all__ = [
     # Core new API

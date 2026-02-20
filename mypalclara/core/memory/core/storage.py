@@ -60,7 +60,7 @@ class PostgresHistoryManager(HistoryManager):
     def __init__(self):
         """Initialize PostgreSQL history manager."""
         # Import here to avoid circular imports and allow lazy loading
-        from db import SessionLocal
+        from mypalclara.db import SessionLocal
 
         self._session_factory = SessionLocal
         logger.info("Memory history: PostgreSQL (DATABASE_URL)")
@@ -81,7 +81,7 @@ class PostgresHistoryManager(HistoryManager):
         """Add a history record to PostgreSQL."""
         from datetime import datetime
 
-        from db.models import MemoryHistory, utcnow
+        from mypalclara.db.models import MemoryHistory, utcnow
 
         session = self._session_factory()
         try:
@@ -125,7 +125,7 @@ class PostgresHistoryManager(HistoryManager):
 
     def get_history(self, memory_id: str) -> List[Dict[str, Any]]:
         """Get history for a memory from PostgreSQL."""
-        from db.models import MemoryHistory
+        from mypalclara.db.models import MemoryHistory
 
         session = self._session_factory()
         try:
@@ -156,7 +156,7 @@ class PostgresHistoryManager(HistoryManager):
 
     def reset(self) -> None:
         """Delete all history records."""
-        from db.models import MemoryHistory
+        from mypalclara.db.models import MemoryHistory
 
         session = self._session_factory()
         try:

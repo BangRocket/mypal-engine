@@ -9,7 +9,7 @@ Incus provides:
 - VMs (stronger isolation for untrusted code)
 
 Usage:
-    from sandbox.incus import IncusSandboxManager
+    from mypalclara.sandbox.incus import IncusSandboxManager
 
     manager = IncusSandboxManager()
     result = await manager.execute_code(user_id, "print('Hello!')")
@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from config.logging import get_logger
+from mypalclara.config.logging import get_logger
 
 logger = get_logger("sandbox.incus")
 

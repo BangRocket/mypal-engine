@@ -212,10 +212,10 @@ def init_platform(
             or "memory_extracted". Platform adapters (e.g., Discord) use this to
             display notifications when memories are accessed.
     """
-    from clara_core.llm import make_llm
-    from clara_core.memory_manager import MemoryManager
-    from clara_core.tools import ToolRegistry
-    from db.connection import init_db
+    from mypalclara.core.llm import make_llm
+    from mypalclara.core.memory_manager import MemoryManager
+    from mypalclara.core.tools import ToolRegistry
+    from mypalclara.db.connection import init_db
 
     config = get_config()
 

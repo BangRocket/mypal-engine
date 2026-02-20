@@ -99,7 +99,7 @@ class AuditLogger:
 
     async def _log_to_db(self, entry: AuditEntry) -> None:
         """Log entry to database."""
-        from db.models import ToolAuditLog
+        from mypalclara.db.models import ToolAuditLog
 
         session = self.session_factory()
         try:
@@ -146,7 +146,7 @@ class AuditLogger:
 
         from sqlalchemy import select
 
-        from db.models import ToolAuditLog
+        from mypalclara.db.models import ToolAuditLog
 
         session = self.session_factory()
         try:
@@ -203,7 +203,7 @@ class AuditLogger:
 
         from sqlalchemy import func, select
 
-        from db.models import ToolAuditLog
+        from mypalclara.db.models import ToolAuditLog
 
         session = self.session_factory()
         try:

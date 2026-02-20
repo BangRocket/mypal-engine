@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from tools._base import ToolContext, ToolDef
+from mypalclara.tools._base import ToolContext, ToolDef
 
 MODULE_NAME = "process"
 MODULE_VERSION = "1.0.0"

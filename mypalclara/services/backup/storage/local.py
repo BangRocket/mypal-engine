@@ -8,10 +8,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from backup_service.storage import BackupEntry
+from mypalclara.services.backup.storage import BackupEntry
 
 if TYPE_CHECKING:
-    from backup_service.config import BackupConfig
+    from mypalclara.services.backup.config import BackupConfig
 
 logger = logging.getLogger(__name__)
 

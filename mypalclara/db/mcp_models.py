@@ -25,7 +25,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
-from db.base import Base
+from mypalclara.db.base import Base
 
 
 def utcnow():

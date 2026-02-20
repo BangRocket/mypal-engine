@@ -13,7 +13,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Coroutine
 
-from config.logging import get_logger
+from mypalclara.config.logging import get_logger
 
 logger = get_logger("gateway.events")
 

@@ -20,8 +20,8 @@ from typing import Any
 
 import yaml
 
-from adapters.manifest import get_adapter, list_adapters
-from config.logging import get_logger
+from mypalclara.adapters.manifest import get_adapter, list_adapters
+from mypalclara.config.logging import get_logger
 from mypalclara.gateway.daemon import get_adapter_pidfile
 
 logger = get_logger("adapter_manager")

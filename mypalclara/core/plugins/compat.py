@@ -10,7 +10,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Awaitable
 
 if TYPE_CHECKING:
-    from tools._base import ToolContext, ToolDef
+    from mypalclara.tools._base import ToolContext, ToolDef
 
     from ..plugins.registry import PluginRegistry
 
@@ -73,7 +73,7 @@ class ToolRegistryAdapter:
             logger.warning("Plugin registry not set, tool will not be registered")
             return
 
-        from tools._base import ToolDef
+        from mypalclara.tools._base import ToolDef
 
         if not isinstance(tool, ToolDef):
             logger.warning(f"Skipping non-ToolDef registration from {source_module}")

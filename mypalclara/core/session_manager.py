@@ -7,18 +7,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from clara_core.llm.messages import SystemMessage, UserMessage
-from config.logging import get_logger
+from mypalclara.config.logging import get_logger
+from mypalclara.core.llm.messages import SystemMessage, UserMessage
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from sqlalchemy.orm import Session as OrmSession
 
-    from db.models import Message, Session
+    from mypalclara.db.models import Message, Session
 
 # Re-use constants from memory_manager
-from clara_core.memory_manager import CONTEXT_MESSAGE_COUNT, SUMMARY_INTERVAL, THREAD_SUMMARY_MAX_MESSAGES
+from mypalclara.core.memory_manager import CONTEXT_MESSAGE_COUNT, SUMMARY_INTERVAL, THREAD_SUMMARY_MAX_MESSAGES
 
 thread_logger = get_logger("thread")
 
@@ -58,7 +58,7 @@ class SessionManager:
         Returns:
             Session object (existing or newly created)
         """
-        from db.models import Project, Session
+        from mypalclara.db.models import Project, Session
 
         # Ensure we have a project
         if project_id is None:
@@ -104,13 +104,13 @@ class SessionManager:
 
     def get_thread(self, db: "OrmSession", thread_id: str) -> "Session | None":
         """Get a thread by ID."""
-        from db.models import Session
+        from mypalclara.db.models import Session
 
         return db.query(Session).filter_by(id=thread_id).first()
 
     def get_recent_messages(self, db: "OrmSession", thread_id: str) -> list["Message"]:
         """Get recent messages from a thread."""
-        from db.models import Message
+        from mypalclara.db.models import Message
 
         msgs = (
             db.query(Message)
@@ -123,7 +123,7 @@ class SessionManager:
 
     def get_message_count(self, db: "OrmSession", thread_id: str) -> int:
         """Get total message count for a thread."""
-        from db.models import Message
+        from mypalclara.db.models import Message
 
         return db.query(Message).filter_by(session_id=thread_id).count()
 
@@ -136,7 +136,7 @@ class SessionManager:
         content: str,
     ) -> "Message":
         """Store a message in a thread."""
-        from db.models import Message
+        from mypalclara.db.models import Message
 
         msg = Message(
             session_id=thread_id,
@@ -156,8 +156,8 @@ class SessionManager:
 
     def update_thread_summary(self, db: "OrmSession", thread: "Session") -> str:
         """Generate/update summary for a thread."""
-        from clara_core.memory_manager import _format_message_timestamp
-        from db.models import Message
+        from mypalclara.core.memory_manager import _format_message_timestamp
+        from mypalclara.db.models import Message
 
         all_msgs = db.query(Message).filter_by(session_id=thread.id).order_by(Message.created_at.asc()).all()
 

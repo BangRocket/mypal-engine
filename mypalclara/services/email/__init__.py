@@ -4,13 +4,13 @@ Background service that monitors user email accounts and sends
 Discord alerts for important messages based on configurable rules.
 """
 
-from email_service.credentials import (
+from mypalclara.services.email.credentials import (
     decrypt_credential,
     encrypt_credential,
     is_encryption_configured,
 )
-from email_service.providers.base import EmailMessage, EmailProvider
-from email_service.rules_engine import RuleMatch, evaluate_email
+from mypalclara.services.email.providers.base import EmailMessage, EmailProvider
+from mypalclara.services.email.rules_engine import RuleMatch, evaluate_email
 
 __all__ = [
     "EmailMessage",

@@ -297,8 +297,8 @@ def register_docker_tools(registry: ToolRegistry) -> None:
     """
     # Import here to avoid circular imports
     try:
-        from sandbox.docker import DOCKER_TOOLS
-        from sandbox.manager import get_sandbox_manager
+        from mypalclara.sandbox.docker import DOCKER_TOOLS
+        from mypalclara.sandbox.manager import get_sandbox_manager
     except ImportError:
         logger.debug("Docker tools not available (sandbox.docker module not found)")
         return
@@ -347,7 +347,7 @@ def register_local_file_tools(registry: ToolRegistry) -> None:
     These tools allow saving and reading files that persist across sessions.
     """
     try:
-        from clara_core.core_tools.files_tool import LOCAL_FILE_TOOLS, get_file_manager
+        from mypalclara.core.core_tools.files_tool import LOCAL_FILE_TOOLS, get_file_manager
     except ImportError:
         logger.debug("Local file tools not available")
         return
@@ -389,7 +389,7 @@ def register_local_file_tools(registry: ToolRegistry) -> None:
 def register_email_tools(registry: ToolRegistry) -> None:
     """Register email tools."""
     try:
-        from clara_core.email import EMAIL_TOOLS
+        from mypalclara.core.email import EMAIL_TOOLS
     except ImportError:
         logger.debug("Email tools not available")
         return
@@ -402,7 +402,7 @@ def register_email_tools(registry: ToolRegistry) -> None:
 
         async def make_handler(tool_name: str):
             async def handler(args: dict, context: Any) -> str:
-                from clara_core.email import execute_email_tool
+                from mypalclara.core.email import execute_email_tool
 
                 return await execute_email_tool(tool_name, args)
 

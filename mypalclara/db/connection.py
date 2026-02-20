@@ -54,7 +54,7 @@ def init_db(run_migrations: bool = True) -> None:
         run_migrations: If True, run Alembic migrations. If False, use create_all
                        (for testing or when migrations aren't available).
     """
-    from db.models import Base
+    from mypalclara.db.models import Base
 
     if run_migrations:
         try:

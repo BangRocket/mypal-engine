@@ -27,8 +27,8 @@ def resolve_all_user_ids(prefixed_user_id: str, db: "OrmSession | None" = None) 
     Returns:
         List of all prefixed user_ids for this canonical user.
     """
-    from db import SessionLocal
-    from db.models import PlatformLink
+    from mypalclara.db import SessionLocal
+    from mypalclara.db.models import PlatformLink
 
     close_db = False
     if db is None:
@@ -66,7 +66,7 @@ def resolve_all_user_ids_for_canonical(canonical_user_id: str, db: "OrmSession")
     Returns:
         List of prefixed user_ids (e.g. ``["discord-123", "teams-456"]``).
     """
-    from db.models import PlatformLink
+    from mypalclara.db.models import PlatformLink
 
     links = db.query(PlatformLink).filter(PlatformLink.canonical_user_id == canonical_user_id).all()
     return [link.prefixed_user_id for link in links]
@@ -86,8 +86,8 @@ def ensure_platform_link(
         display_name: Optional display name for the new CanonicalUser
         db: Optional DB session. One is created (and closed) if not provided.
     """
-    from db import SessionLocal
-    from db.models import CanonicalUser, PlatformLink
+    from mypalclara.db import SessionLocal
+    from mypalclara.db.models import CanonicalUser, PlatformLink
 
     close_db = False
     if db is None:

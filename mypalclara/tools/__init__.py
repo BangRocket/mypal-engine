@@ -6,7 +6,7 @@ This package provides the tool infrastructure for Clara:
 - MCP protocol support for external tool exposure
 
 Usage:
-    from tools import get_registry, get_loader, ToolContext, ToolDef
+    from mypalclara.tools import get_registry, get_loader, ToolContext, ToolDef
 
     # Initialize and load all tools
     loader = get_loader()
@@ -106,7 +106,7 @@ async def init_tools(
     skip_modules = []
     if use_mcp_replacements:
         try:
-            from clara_core.core_tools import get_replaced_tool_modules
+            from mypalclara.core.core_tools import get_replaced_tool_modules
 
             skip_modules = get_replaced_tool_modules()
             if skip_modules:
@@ -122,11 +122,11 @@ async def init_tools(
 
     # Register Clara's core tools (chat_history, system_logs)
     try:
-        from clara_core.core_tools import register_core_tools
+        from mypalclara.core.core_tools import register_core_tools
 
         registry = get_registry()
         core_count = await register_core_tools(registry)
-        logger.debug(f"Registered {core_count} core tools from clara_core")
+        logger.debug(f"Registered {core_count} core tools from mypalclara.core")
     except ImportError as e:
         logger.warning(f"Could not load core tools: {e}")
 

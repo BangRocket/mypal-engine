@@ -9,7 +9,7 @@ Standalone:
     python -m clara_core.mcp.oauth_callback --port 8080
 
 Integration:
-    from clara_core.mcp.oauth_callback import get_oauth_router
+    from mypalclara.core.mcp.oauth_callback import get_oauth_router
     app.include_router(get_oauth_router())
 """
 
@@ -105,7 +105,7 @@ async def handle_oauth_callback(
     logger.info(f"[OAuth Callback] Processing callback for server: {server_name}")
 
     try:
-        from clara_core.mcp.oauth import SmitheryOAuthClient
+        from mypalclara.core.mcp.oauth import SmitheryOAuthClient
 
         # Create client and exchange code
         client = SmitheryOAuthClient(server_name)
@@ -128,8 +128,8 @@ async def handle_oauth_callback(
             )
 
         # Try to connect the server
-        from clara_core.mcp.manager import MCPServerManager
-        from clara_core.mcp.models import load_remote_server_config, save_remote_server_config
+        from mypalclara.core.mcp.manager import MCPServerManager
+        from mypalclara.core.mcp.models import load_remote_server_config, save_remote_server_config
 
         config = load_remote_server_config(server_name)
         if config:
@@ -176,8 +176,8 @@ async def _store_token_in_db(
     try:
         from datetime import datetime
 
-        from db import SessionLocal
-        from db.mcp_models import MCPOAuthToken
+        from mypalclara.db import SessionLocal
+        from mypalclara.db.mcp_models import MCPOAuthToken
 
         db = SessionLocal()
         try:
@@ -298,7 +298,7 @@ def get_oauth_router():
     @router.get("/status/{server_name}")
     async def oauth_status(server_name: str):
         """Check OAuth status for a server."""
-        from clara_core.mcp.oauth import load_oauth_state
+        from mypalclara.core.mcp.oauth import load_oauth_state
 
         state = load_oauth_state(server_name)
         if not state:

@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from db.models import EmailAccount
+    from mypalclara.db.models import EmailAccount
 
 
 @dataclass

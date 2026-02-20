@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from config.logging import get_logger
+from mypalclara.config.logging import get_logger
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session as OrmSession
@@ -77,8 +77,8 @@ def check_intentions(
         - trigger_type: What triggered it
         - priority: Intention priority
     """
-    from db import SessionLocal
-    from db.models import Intention
+    from mypalclara.db import SessionLocal
+    from mypalclara.db.models import Intention
 
     close_db = False
     if db is None:
@@ -242,7 +242,7 @@ def _check_topic_trigger(
         return False, {}
 
     try:
-        from clara_core.memory import ROOK
+        from mypalclara.core.memory import ROOK
 
         if ROOK is None:
             return False, {}
@@ -426,8 +426,8 @@ def create_intention(
     Returns:
         The created intention ID
     """
-    from db import SessionLocal
-    from db.models import Intention
+    from mypalclara.db import SessionLocal
+    from mypalclara.db.models import Intention
 
     close_db = False
     if db is None:
@@ -474,8 +474,8 @@ def list_intentions(
     Returns:
         List of intention dicts
     """
-    from db import SessionLocal
-    from db.models import Intention
+    from mypalclara.db import SessionLocal
+    from mypalclara.db.models import Intention
 
     close_db = False
     if db is None:
@@ -528,8 +528,8 @@ def delete_intention(
     Returns:
         True if deleted, False if not found
     """
-    from db import SessionLocal
-    from db.models import Intention
+    from mypalclara.db import SessionLocal
+    from mypalclara.db.models import Intention
 
     close_db = False
     if db is None:
@@ -563,8 +563,8 @@ def cleanup_expired_intentions(db: "OrmSession | None" = None) -> int:
     Returns:
         Number of intentions deleted
     """
-    from db import SessionLocal
-    from db.models import Intention
+    from mypalclara.db import SessionLocal
+    from mypalclara.db.models import Intention
 
     close_db = False
     if db is None:

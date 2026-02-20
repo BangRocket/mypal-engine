@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from db.connection import SessionLocal
-from db.models import EmailRule
+from mypalclara.db.connection import SessionLocal
+from mypalclara.db.models import EmailRule
 
 if TYPE_CHECKING:
     pass

@@ -7,11 +7,11 @@ This plugin provides file system tools and shows how to:
 - Register hooks
 """
 
-from clara_core.plugins import (
+from mypalclara.core.plugins import (
     PluginAPI,
     PluginContext,
 )
-from tools._base import ToolContext, ToolDef
+from mypalclara.tools._base import ToolContext, ToolDef
 
 
 def register(api: PluginAPI):

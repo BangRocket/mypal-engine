@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from clara_core.llm.messages import AssistantMessage, ToolResultMessage
+    from mypalclara.core.llm.messages import AssistantMessage, ToolResultMessage
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ class ToolCall:
         Returns:
             A ToolResultMessage with this call's ID and the output.
         """
-        from clara_core.llm.messages import ToolResultMessage
+        from mypalclara.core.llm.messages import ToolResultMessage
 
         return ToolResultMessage(tool_call_id=self.id, content=output)
 
@@ -135,7 +135,7 @@ class ToolResponse:
         Returns:
             An AssistantMessage with this response's content and tool_calls.
         """
-        from clara_core.llm.messages import AssistantMessage
+        from mypalclara.core.llm.messages import AssistantMessage
 
         return AssistantMessage(content=self.content, tool_calls=list(self.tool_calls))
 

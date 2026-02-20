@@ -10,7 +10,7 @@ import logging
 import time
 from typing import Any
 
-from config.bot import SYSTEM_AGENT_ID
+from mypalclara.config.bot import SYSTEM_AGENT_ID
 
 logger = logging.getLogger("personality")
 
@@ -26,7 +26,7 @@ def _get_session():
     """Get a database session, lazily initializing the factory."""
     global _session_factory
     if _session_factory is None:
-        from db import SessionLocal
+        from mypalclara.db import SessionLocal
 
         _session_factory = SessionLocal
     return _session_factory()
@@ -44,7 +44,7 @@ def invalidate_cache(agent_id: str = SYSTEM_AGENT_ID) -> None:
 
 def get_active_traits(agent_id: str = SYSTEM_AGENT_ID) -> list[Any]:
     """Get all active traits for an agent, ordered by category then trait_key."""
-    from db.models import PersonalityTrait
+    from mypalclara.db.models import PersonalityTrait
 
     session = _get_session()
     try:
@@ -60,7 +60,7 @@ def get_active_traits(agent_id: str = SYSTEM_AGENT_ID) -> list[Any]:
 
 def get_trait_by_id(trait_id: str) -> Any | None:
     """Get a single trait by ID (active or inactive)."""
-    from db.models import PersonalityTrait
+    from mypalclara.db.models import PersonalityTrait
 
     session = _get_session()
     try:
@@ -71,7 +71,7 @@ def get_trait_by_id(trait_id: str) -> Any | None:
 
 def get_trait_history(agent_id: str = SYSTEM_AGENT_ID, limit: int = 20) -> list[Any]:
     """Get recent trait change history for an agent."""
-    from db.models import PersonalityTraitHistory
+    from mypalclara.db.models import PersonalityTraitHistory
 
     session = _get_session()
     try:
@@ -100,7 +100,7 @@ def add_trait(
     reason: str | None = None,
 ) -> Any:
     """Add a new personality trait. Returns the created trait."""
-    from db.models import PersonalityTrait, PersonalityTraitHistory, utcnow
+    from mypalclara.db.models import PersonalityTrait, PersonalityTraitHistory, utcnow
 
     session = _get_session()
     try:
@@ -150,7 +150,7 @@ def update_trait(
     source: str = "self",
 ) -> Any:
     """Update an existing trait. Returns the updated trait."""
-    from db.models import PersonalityTrait, PersonalityTraitHistory, utcnow
+    from mypalclara.db.models import PersonalityTrait, PersonalityTraitHistory, utcnow
 
     session = _get_session()
     try:
@@ -197,7 +197,7 @@ def update_trait(
 
 def remove_trait(trait_id: str, reason: str | None = None, source: str = "self") -> bool:
     """Soft-delete a trait. Returns True on success."""
-    from db.models import PersonalityTrait, PersonalityTraitHistory, utcnow
+    from mypalclara.db.models import PersonalityTrait, PersonalityTraitHistory, utcnow
 
     session = _get_session()
     try:
@@ -236,7 +236,7 @@ def remove_trait(trait_id: str, reason: str | None = None, source: str = "self")
 
 def restore_trait(trait_id: str, reason: str | None = None) -> Any:
     """Restore a soft-deleted trait. Returns the restored trait."""
-    from db.models import PersonalityTrait, PersonalityTraitHistory, utcnow
+    from mypalclara.db.models import PersonalityTrait, PersonalityTraitHistory, utcnow
 
     session = _get_session()
     try:

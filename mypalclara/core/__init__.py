@@ -7,7 +7,7 @@ This package provides the common components used by all Clara platform services:
 - Future platforms (Slack, Telegram, etc.)
 
 Usage:
-    from clara_core import init_platform, MemoryManager, ToolRegistry
+    from mypalclara.core import init_platform, MemoryManager, ToolRegistry
 
     # Initialize shared infrastructure (call once at startup)
     init_platform()
@@ -29,8 +29,8 @@ def get_version() -> str:
     return __version__
 
 
-from clara_core.config import get_config, init_platform
-from clara_core.llm import (
+from mypalclara.core.config import get_config, init_platform
+from mypalclara.core.llm import (
     DEFAULT_TIER,
     AssistantMessage,
     Message,
@@ -54,9 +54,9 @@ from clara_core.llm import (
     message_from_dict,
     messages_from_dicts,
 )
-from clara_core.memory_manager import MemoryManager
-from clara_core.platform import PlatformAdapter, PlatformContext, PlatformMessage
-from clara_core.tools import ToolRegistry
+from mypalclara.core.memory_manager import MemoryManager
+from mypalclara.core.platform import PlatformAdapter, PlatformContext, PlatformMessage
+from mypalclara.core.tools import ToolRegistry
 
 __all__ = [
     # Version

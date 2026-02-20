@@ -77,7 +77,7 @@ def migrate_sqlite_to_postgres():
     PostgresSession = sessionmaker(bind=postgres_engine)
 
     # Import models
-    from db.models import Base, ChannelSummary, Message, Project, Session
+    from mypalclara.db.models import Base, ChannelSummary, Message, Project, Session
 
     # Create tables in PostgreSQL
     print("[migrate] Creating tables in PostgreSQL...")

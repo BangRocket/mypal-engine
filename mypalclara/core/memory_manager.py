@@ -17,8 +17,8 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from clara_core.llm.messages import Message
-from config.logging import get_logger
+from mypalclara.config.logging import get_logger
+from mypalclara.core.llm.messages import Message
 
 # Module loggers
 logger = get_logger("rook")
@@ -31,7 +31,7 @@ DEFAULT_TIMEZONE = os.getenv("DEFAULT_TIMEZONE", "America/New_York")
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session as OrmSession
 
-    from db.models import MemoryDynamics, Message, Session
+    from mypalclara.db.models import MemoryDynamics, Message, Session
 
 # Configuration constants
 CONTEXT_MESSAGE_COUNT = 30  # Direct conversation history
@@ -120,13 +120,13 @@ class MemoryManager:
                 Called with (event_type, data) where event_type is "memory_retrieved"
                 or "memory_extracted" and data contains event-specific information.
         """
-        from clara_core.intention_manager import IntentionManager
-        from clara_core.memory_dynamics_manager import MemoryDynamicsManager
-        from clara_core.memory_ingestion import MemoryIngestionManager
-        from clara_core.memory_retriever import MemoryRetriever
-        from clara_core.memory_writer import MemoryWriter
-        from clara_core.prompt_builder import PromptBuilder
-        from clara_core.session_manager import SessionManager
+        from mypalclara.core.intention_manager import IntentionManager
+        from mypalclara.core.memory_dynamics_manager import MemoryDynamicsManager
+        from mypalclara.core.memory_ingestion import MemoryIngestionManager
+        from mypalclara.core.memory_retriever import MemoryRetriever
+        from mypalclara.core.memory_writer import MemoryWriter
+        from mypalclara.core.prompt_builder import PromptBuilder
+        from mypalclara.core.session_manager import SessionManager
 
         self.llm = llm_callable
         self.agent_id = agent_id

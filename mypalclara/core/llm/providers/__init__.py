@@ -1,12 +1,12 @@
 """LLM provider implementations."""
 
-from clara_core.llm.providers.base import LLMProvider
-from clara_core.llm.providers.langchain import (
+from mypalclara.core.llm.providers.base import LLMProvider
+from mypalclara.core.llm.providers.langchain import (
     DirectAnthropicProvider,
     DirectOpenAIProvider,
     LangChainProvider,
 )
-from clara_core.llm.providers.registry import ProviderRegistry, get_provider
+from mypalclara.core.llm.providers.registry import ProviderRegistry, get_provider
 
 __all__ = [
     "LLMProvider",

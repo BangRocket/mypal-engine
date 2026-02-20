@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from tools._base import ToolDef
+    from mypalclara.tools._base import ToolDef
 
 logger = logging.getLogger(__name__)
 

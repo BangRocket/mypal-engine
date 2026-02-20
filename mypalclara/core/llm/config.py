@@ -117,7 +117,7 @@ class LLMConfig:
             Cloudflare Access:
                 CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET
         """
-        from clara_core.llm.tiers import get_base_model, get_current_tier, get_model_for_tier
+        from mypalclara.core.llm.tiers import get_base_model, get_current_tier, get_model_for_tier
 
         if provider is None:
             provider = os.getenv("LLM_PROVIDER", "openrouter").lower()
@@ -223,7 +223,7 @@ class LLMConfig:
         Returns:
             New LLMConfig with updated tier and model
         """
-        from clara_core.llm.tiers import get_model_for_tier
+        from mypalclara.core.llm.tiers import get_model_for_tier
 
         return LLMConfig(
             provider=self.provider,

@@ -28,7 +28,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from tools._base import ToolContext, ToolDef
+from mypalclara.tools._base import ToolContext, ToolDef
 
 MODULE_NAME = "mcp_management"
 MODULE_VERSION = "1.0.0"
@@ -103,7 +103,7 @@ def _check_admin_permission(ctx: ToolContext) -> tuple[bool, str | None]:
             return True, None
 
         # Check for Clara-Admin role
-        from db.channel_config import CLARA_ADMIN_ROLE
+        from mypalclara.db.channel_config import CLARA_ADMIN_ROLE
 
         for role in member.roles:
             if role.name == CLARA_ADMIN_ROLE:
@@ -118,14 +118,14 @@ def _check_admin_permission(ctx: ToolContext) -> tuple[bool, str | None]:
 
 def _get_manager():
     """Get the MCP server manager singleton."""
-    from clara_core.mcp import get_mcp_manager
+    from mypalclara.core.mcp import get_mcp_manager
 
     return get_mcp_manager()
 
 
 def _get_installer():
     """Get the MCP installer."""
-    from clara_core.mcp.installer import MCPInstaller
+    from mypalclara.core.mcp.installer import MCPInstaller
 
     return MCPInstaller()
 
@@ -512,7 +512,7 @@ async def smithery_search(args: dict[str, Any], ctx: ToolContext) -> str:
         return "Error: No search query specified. Provide a search term like 'file system', 'github', or 'database'."
 
     try:
-        from clara_core.mcp.installer import SmitheryClient
+        from mypalclara.core.mcp.installer import SmitheryClient
 
         client = SmitheryClient()
         result = await client.search(query, page_size=10)
@@ -566,8 +566,8 @@ async def mcp_oauth_start(args: dict[str, Any], ctx: ToolContext) -> str:
             redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
 
     try:
-        from clara_core.mcp.models import load_remote_server_config
-        from clara_core.mcp.oauth import SmitheryOAuthClient
+        from mypalclara.core.mcp.models import load_remote_server_config
+        from mypalclara.core.mcp.oauth import SmitheryOAuthClient
 
         # Check if server exists and is smithery-hosted
         config = load_remote_server_config(server_name)
@@ -588,7 +588,7 @@ async def mcp_oauth_start(args: dict[str, Any], ctx: ToolContext) -> str:
 
         # Register the callback for automatic processing
         if redirect_uri != "urn:ietf:wg:oauth:2.0:oob" and oauth_client._state:
-            from clara_core.mcp.oauth_callback import register_callback
+            from mypalclara.core.mcp.oauth_callback import register_callback
 
             register_callback(
                 state_token=oauth_client._state.state,
@@ -632,8 +632,8 @@ async def mcp_oauth_complete(args: dict[str, Any], ctx: ToolContext) -> str:
         return "Error: No authorization code specified."
 
     try:
-        from clara_core.mcp.models import load_remote_server_config, save_remote_server_config
-        from clara_core.mcp.oauth import SmitheryOAuthClient
+        from mypalclara.core.mcp.models import load_remote_server_config, save_remote_server_config
+        from mypalclara.core.mcp.oauth import SmitheryOAuthClient
 
         # Check if server exists
         config = load_remote_server_config(server_name)
@@ -686,8 +686,8 @@ async def mcp_oauth_status(args: dict[str, Any], ctx: ToolContext) -> str:
         return "Error: No server name specified."
 
     try:
-        from clara_core.mcp.models import load_remote_server_config
-        from clara_core.mcp.oauth import load_oauth_state
+        from mypalclara.core.mcp.models import load_remote_server_config
+        from mypalclara.core.mcp.oauth import load_oauth_state
 
         # Check server config
         config = load_remote_server_config(server_name)
@@ -742,8 +742,8 @@ async def mcp_oauth_set_token(args: dict[str, Any], ctx: ToolContext) -> str:
         return "Error: No access token specified."
 
     try:
-        from clara_core.mcp.models import load_remote_server_config, save_remote_server_config
-        from clara_core.mcp.oauth import SmitheryOAuthClient
+        from mypalclara.core.mcp.models import load_remote_server_config, save_remote_server_config
+        from mypalclara.core.mcp.oauth import SmitheryOAuthClient
 
         # Check server config
         config = load_remote_server_config(server_name)
@@ -789,7 +789,7 @@ async def mcp_hot_reload(args: dict[str, Any], ctx: ToolContext) -> str:
         return "Error: No server name specified."
 
     try:
-        from clara_core.mcp.models import load_local_server_config
+        from mypalclara.core.mcp.models import load_local_server_config
 
         # Check if server exists and is local
         config = load_local_server_config(server_name)

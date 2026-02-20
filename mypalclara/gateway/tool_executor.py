@@ -12,7 +12,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from config.logging import get_logger
+from mypalclara.config.logging import get_logger
 
 logger = get_logger("gateway.tools")
 
@@ -31,7 +31,7 @@ class ToolExecutor:
         """Initialize the executor."""
         from collections.abc import Callable
 
-        from clara_core.security.circuit_breaker import CircuitBreaker
+        from mypalclara.core.security.circuit_breaker import CircuitBreaker
 
         self._initialized = False
         self._sandbox_manager: Any = None
@@ -52,12 +52,12 @@ class ToolExecutor:
             return
 
         # Import and initialize sandbox
-        from sandbox.manager import get_sandbox_manager
+        from mypalclara.sandbox.manager import get_sandbox_manager
 
         self._sandbox_manager = get_sandbox_manager()
 
         # Import and initialize file storage
-        from clara_core.core_tools.files_tool import get_file_manager
+        from mypalclara.core.core_tools.files_tool import get_file_manager
 
         self._file_manager = get_file_manager()
 
@@ -79,14 +79,14 @@ class ToolExecutor:
     async def _init_modular_tools(self) -> None:
         """Initialize modular tools system."""
         try:
-            from tools import init_tools
+            from mypalclara.tools import init_tools
 
             results = await init_tools(hot_reload=False)
             loaded = [name for name, success in results.items() if success]
             if loaded:
                 logger.info(f"Loaded tool modules: {', '.join(loaded)}")
 
-            from tools import get_registry
+            from mypalclara.tools import get_registry
 
             self._tool_registry = get_registry()
             self._modular_initialized = True
@@ -368,7 +368,7 @@ class ToolExecutor:
     async def _init_mcp(self) -> None:
         """Initialize MCP plugin system."""
         try:
-            from clara_core.mcp import get_mcp_manager, init_mcp
+            from mypalclara.core.mcp import get_mcp_manager, init_mcp
 
             await init_mcp()
             self._mcp_manager = get_mcp_manager()
@@ -376,7 +376,7 @@ class ToolExecutor:
 
             # Setup official MCP servers
             try:
-                from clara_core.core_tools import setup_official_mcp_servers
+                from mypalclara.core.core_tools import setup_official_mcp_servers
 
                 await setup_official_mcp_servers()
             except ImportError:
@@ -571,7 +571,7 @@ class ToolExecutor:
 
         # Modular registry fallback (GitHub, ADO, etc.)
         if self._modular_initialized and self._tool_registry and tool_name in self._tool_registry:
-            from tools import ToolContext
+            from mypalclara.tools import ToolContext
 
             ctx = ToolContext(
                 user_id=user_id,

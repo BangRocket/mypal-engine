@@ -23,11 +23,11 @@ from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from clara_core.llm import get_base_model, get_current_tier, get_model_for_tier
-from config.bot import BOT_NAME
-from config.logging import get_logger
-from db.connection import SessionLocal
-from db.models import (
+from mypalclara.config.bot import BOT_NAME
+from mypalclara.config.logging import get_logger
+from mypalclara.core.llm import get_base_model, get_current_tier, get_model_for_tier
+from mypalclara.db.connection import SessionLocal
+from mypalclara.db.models import (
     Message,
     ProactiveAssessment,
     ProactiveMessage,
@@ -385,7 +385,7 @@ async def get_calendar_context(user_id: str) -> dict:
     }
 
     try:
-        from tools.google_oauth import get_valid_token, is_configured
+        from mypalclara.tools.google_oauth import get_valid_token, is_configured
 
         if not is_configured():
             return result
@@ -1434,7 +1434,7 @@ async def extract_conversation_info(
 
 def update_interaction_from_extraction(user_id: str, extraction: dict):
     """Update UserInteractionPattern with extracted conversation info."""
-    from clara_core.emotional_context import finalize_conversation_emotional_context
+    from mypalclara.core.emotional_context import finalize_conversation_emotional_context
 
     with SessionLocal() as session:
         pattern = session.query(UserInteractionPattern).filter(UserInteractionPattern.user_id == user_id).first()

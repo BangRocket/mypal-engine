@@ -6,13 +6,13 @@ This module contains:
 - Prediction error gating for memory decisions
 """
 
-from clara_core.memory.dynamics.contradiction import (
+from mypalclara.core.memory.dynamics.contradiction import (
     ContradictionResult,
     ContradictionType,
     calculate_similarity,
     detect_contradiction,
 )
-from clara_core.memory.dynamics.fsrs import (
+from mypalclara.core.memory.dynamics.fsrs import (
     FsrsParams,
     Grade,
     MemoryState,

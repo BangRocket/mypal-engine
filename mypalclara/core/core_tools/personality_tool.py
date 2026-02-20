@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from tools._base import ToolContext, ToolDef
+from mypalclara.tools._base import ToolContext, ToolDef
 
 MODULE_NAME = "personality"
 MODULE_VERSION = "1.0.0"
@@ -38,7 +38,8 @@ You can evolve your own personality over time using the `update_personality` too
 
 async def _handle_update_personality(args: dict[str, Any], ctx: ToolContext) -> str:
     """Handle all personality evolution actions."""
-    from clara_core.personality import (
+    from mypalclara.config.bot import SYSTEM_AGENT_ID
+    from mypalclara.core.personality import (
         add_trait,
         format_traits_for_prompt,
         get_active_traits,
@@ -48,7 +49,6 @@ async def _handle_update_personality(args: dict[str, Any], ctx: ToolContext) -> 
         restore_trait,
         update_trait,
     )
-    from config.bot import SYSTEM_AGENT_ID
 
     action = args.get("action", "list")
     agent_id = SYSTEM_AGENT_ID
@@ -260,6 +260,6 @@ async def initialize() -> None:
 
 async def cleanup() -> None:
     """Cleanup on module unload."""
-    from clara_core.personality import _cache
+    from mypalclara.core.personality import _cache
 
     _cache.clear()

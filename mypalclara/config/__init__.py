@@ -9,7 +9,7 @@ Submodules:
 
 # Lazy imports to avoid circular dependencies
 # Import directly from submodules as needed:
-#   from config.bot import PERSONALITY, BOT_NAME
-#   from config.logging import init_logging, get_logger
-#   from config.rook import ROOK
-#   from clara_core.memory import ROOK  # Preferred
+#   from mypalclara.config.bot import PERSONALITY, BOT_NAME
+#   from mypalclara.config.logging import init_logging, get_logger
+#   from mypalclara.config.rook import ROOK
+#   from mypalclara.core.memory import ROOK  # Preferred

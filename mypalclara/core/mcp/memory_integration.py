@@ -18,7 +18,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from clara_core.llm.messages import SystemMessage, UserMessage
+from mypalclara.core.llm.messages import SystemMessage, UserMessage
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ class MCPMemoryIntegration:
             True if stored successfully, False otherwise
         """
         try:
-            from clara_core.memory import ROOK
+            from mypalclara.core.memory import ROOK
 
             if ROOK is None:
                 logger.debug("[MCPMemory] mem0 not available, skipping storage")
@@ -243,7 +243,7 @@ class MCPMemoryIntegration:
             True if stored successfully
         """
         try:
-            from clara_core.memory import ROOK
+            from mypalclara.core.memory import ROOK
 
             if ROOK is None:
                 return False
@@ -303,7 +303,7 @@ class MCPMemoryIntegration:
             - relevance_score: mem0's similarity score
         """
         try:
-            from clara_core.memory import ROOK
+            from mypalclara.core.memory import ROOK
 
             if ROOK is None:
                 return []
@@ -364,7 +364,7 @@ class MCPMemoryIntegration:
             - preference_type: Type of preference
         """
         try:
-            from clara_core.memory import ROOK
+            from mypalclara.core.memory import ROOK
 
             if ROOK is None:
                 return []
@@ -424,7 +424,7 @@ class MCPMemoryIntegration:
             - preferences: User preferences
         """
         try:
-            from clara_core.mcp.metrics import get_metrics_tracker
+            from mypalclara.core.mcp.metrics import get_metrics_tracker
 
             # Get metrics summary
             tracker = get_metrics_tracker()

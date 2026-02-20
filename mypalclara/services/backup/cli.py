@@ -13,16 +13,16 @@ from rich.panel import Panel
 from rich.prompt import Confirm, IntPrompt
 from rich.table import Table
 
-from backup_service.config import BackupConfig
-from backup_service.config_files import dump_config_files, restore_config_files
-from backup_service.database import (
+from mypalclara.services.backup.config import BackupConfig
+from mypalclara.services.backup.config_files import dump_config_files, restore_config_files
+from mypalclara.services.backup.database import (
     check_db_connection,
     dump_database,
     mask_url,
     restore_database,
 )
-from backup_service.health import backup_state, start_health_server
-from backup_service.storage import create_backend
+from mypalclara.services.backup.health import backup_state, start_health_server
+from mypalclara.services.backup.storage import create_backend
 
 app = typer.Typer(
     name="backup",
@@ -528,7 +528,7 @@ def serve(
     ] = None,
 ) -> None:
     """Run as long-lived daemon with built-in cron scheduler + health server."""
-    from backup_service.cron import run_scheduler
+    from mypalclara.services.backup.cron import run_scheduler
 
     config = _load_config()
     cron_schedule = schedule or config.cron_schedule
@@ -539,7 +539,7 @@ def serve(
     console.print(f"Health server on port {config.health_port}")
     console.print(f"Cron schedule: {cron_schedule}")
 
-    from backup_service.cron import next_run_time, parse_cron_schedule
+    from mypalclara.services.backup.cron import next_run_time, parse_cron_schedule
 
     cron_minute, cron_hour = parse_cron_schedule(cron_schedule)
     first_run = next_run_time(cron_minute, cron_hour)

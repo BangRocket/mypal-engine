@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 if TYPE_CHECKING:
-    from clara_core.llm.tools.schema import ToolSchema
+    from mypalclara.core.llm.tools.schema import ToolSchema
 
 
 @dataclass
@@ -69,7 +69,7 @@ class ToolDef:
 
     def to_schema(self) -> "ToolSchema":
         """Convert to a ToolSchema for the unified LLM pipeline."""
-        from clara_core.llm.tools.schema import ToolSchema
+        from mypalclara.core.llm.tools.schema import ToolSchema
 
         return ToolSchema(name=self.name, description=self.description, parameters=self.parameters)
 
