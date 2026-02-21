@@ -29,9 +29,18 @@ poetry run python scripts/migrate.py           # Run migrations
 poetry run python scripts/migrate.py status    # Check status
 poetry run python scripts/clear_dbs.py         # Clear memory data
 
+# Web UI (Rails backend)
+cd web-ui/backend && rails s -p 3000   # Start Rails API server
+
+# Web UI (React frontend)
+cd web-ui/frontend && npm run dev      # Start Vite dev server (port 5173)
+
 # Docker
 docker-compose --profile discord up
 docker-compose --profile discord --profile postgres up
+
+# Docker (unified web UI)
+cd web-ui && docker build -t clara-web .  # Build unified image
 ```
 
 ## Versioning
@@ -74,6 +83,9 @@ git config core.hooksPath .githooks  # Enable hooks (run once)
 | `mypalclara/services/email/` | Email monitoring service |
 | `mypalclara/services/backup/` | Automated database backup service |
 | `mypalclara/services/proactive/` | Proactive messaging engine |
+| `mypalclara/gateway/api/` | HTTP API endpoints (moved from web module) |
+| `web-ui/backend/` | Rails API-only backend (game logic, gateway proxy) |
+| `web-ui/frontend/` | React SPA (Vite, TypeScript, TailwindCSS) |
 
 ### Memory System (Rook)
 - **User memories**: Persistent facts/preferences per user
@@ -82,7 +94,7 @@ git config core.hooksPath .githooks  # Enable hooks (run once)
 - **Session summary**: LLM-generated on timeout (30 min idle)
 
 ### Gateway System
-WebSocket server for platform adapters with streaming support.
+WebSocket server for platform adapters with streaming support. Gateway now serves both WebSocket (port 18789) and HTTP API (port 18790).
 
 ```bash
 poetry run python -m mypalclara.gateway --host 127.0.0.1 --port 18789
@@ -93,6 +105,9 @@ poetry run python -m mypalclara.gateway --host 127.0.0.1 --port 18789
 | Discord | Yes | Message edits |
 | Teams/Slack/Telegram/Matrix | Yes | 1s cooldown / rate limits |
 | Signal/WhatsApp | No | APIs don't support editing |
+
+### Web UI
+Web UI uses Rails as BFF (backend-for-frontend). Rails handles game logic directly (own PostgreSQL) and proxies all other API requests to the Python gateway HTTP API (port 18790).
 
 ## Environment Variables
 
@@ -310,6 +325,8 @@ SMITHERY_API_KEY=...              # For Smithery registry access
 CLARA_GATEWAY_HOST=127.0.0.1
 CLARA_GATEWAY_PORT=18789
 CLARA_GATEWAY_SECRET=...          # Optional auth secret
+CLARA_GATEWAY_API_PORT=18790          # Gateway HTTP API port (default: 18790)
+CLARA_GATEWAY_API_URL=http://127.0.0.1:18790  # Gateway HTTP API URL (for Rails proxy)
 ```
 
 ### Optional Features
