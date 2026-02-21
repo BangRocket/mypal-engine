@@ -34,17 +34,24 @@ COLORS = {
 
 # Module-specific colors for tags — matched by prefix (first match wins)
 TAG_COLORS = {
-    "gateway": "\033[94m",  # Blue
-    "adapter": "\033[93m",  # Yellow
-    "clara": "\033[95m",  # Magenta
-    "rook": "\033[95m",  # Magenta
-    "db": "\033[92m",  # Green
-    "llm": "\033[91m",  # Red
-    "email": "\033[97m",  # White
+    "gateway": "\033[94m",  # Bright blue
+    "adapters": "\033[93m",  # Bright yellow
+    "adapter_manager": "\033[93m",  # Bright yellow (same family)
+    "rook": "\033[95m",  # Bright magenta
+    "memory": "\033[38;5;219m",  # Pink
+    "thread": "\033[38;5;81m",  # Sky blue
+    "db": "\033[92m",  # Bright green
+    "llm": "\033[91m",  # Bright red
+    "email": "\033[97m",  # Bright white
     "tools": "\033[36m",  # Cyan
-    "sandbox": "\033[35m",  # Magenta
+    "sandbox": "\033[38;5;208m",  # Orange
+    "emotional": "\033[38;5;213m",  # Hot pink
+    "intentions": "\033[38;5;141m",  # Light purple
+    "topic": "\033[38;5;179m",  # Gold
+    "contradiction": "\033[38;5;167m",  # Salmon
+    "ors": "\033[38;5;114m",  # Sage green
+    "prompt_builder": "\033[38;5;153m",  # Periwinkle
     "websockets": "\033[90m",  # Dark gray
-    "mypalclara.core.memory": "\033[95m",  # Magenta (memory subsystem)
 }
 
 
@@ -454,17 +461,9 @@ def init_logging(session_factory=None, console_level: int | None = None):
     if console_level is None:
         console_level = _get_console_level()
 
-    # Debug: show what level we're using
-    level_name = logging.getLevelName(console_level)
-    print(
-        f"[logging] Initializing with console level: {level_name} (LOG_LEVEL={os.getenv('LOG_LEVEL', 'not set')})",
-        file=sys.stderr,
-    )
-
     # Clear any existing handlers on root logger (from basicConfig or other sources)
     root_logger = logging.getLogger()
     if root_logger.handlers:
-        print(f"[logging] Clearing {len(root_logger.handlers)} existing handlers", file=sys.stderr)
         root_logger.handlers.clear()
 
     # Console handler
