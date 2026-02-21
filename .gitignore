@@ -93,3 +93,6 @@ webui/src-tauri/gen/
 .planning/
 
 node_modules/
+
+# Git worktrees
+.worktrees/
