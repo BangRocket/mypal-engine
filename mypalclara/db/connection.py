@@ -74,8 +74,8 @@ def run_alembic_migrations() -> None:
     from alembic.runtime.migration import MigrationContext
     from alembic.script import ScriptDirectory
 
-    # Find alembic.ini
-    project_root = Path(__file__).parent.parent
+    # Find alembic.ini at repo root (three levels up from db/connection.py)
+    project_root = Path(__file__).parent.parent.parent
     alembic_ini = project_root / "alembic.ini"
 
     if not alembic_ini.exists():
