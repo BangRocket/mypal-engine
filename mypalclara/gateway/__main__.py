@@ -492,6 +492,7 @@ async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] 
         host=args.host,
         port=api_port,
         log_level="info",
+        log_config=None,  # Use project logging instead of uvicorn's default
     )
     api_server = uvicorn.Server(api_config)
     api_task = asyncio.create_task(api_server.serve())

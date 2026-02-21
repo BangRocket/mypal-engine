@@ -64,11 +64,17 @@ class ColoredConsoleFormatter(logging.Formatter):
                 return color
         return "\033[37m"  # Default: white
 
+    # Display-friendly names for third-party loggers
+    TAG_RENAMES = {
+        "uvicorn": "gateway.api",
+        "uvicorn.error": "gateway.api",
+    }
+
     def format(self, record: logging.LogRecord) -> str:
         level_color = COLORS.get(record.levelname, "")
         reset = COLORS["RESET"]
 
-        tag = record.name
+        tag = self.TAG_RENAMES.get(record.name, record.name)
         tag_color = self._get_tag_color(tag)
 
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -482,7 +488,6 @@ def init_logging(session_factory=None, console_level: int | None = None):
     logging.getLogger("discord.gateway").setLevel(logging.WARNING)
     logging.getLogger("discord.client").setLevel(logging.WARNING)
     logging.getLogger("discord.http").setLevel(logging.WARNING)
-    logging.getLogger("uvicorn").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("watchfiles").setLevel(logging.WARNING)
     logging.getLogger("openai").setLevel(logging.WARNING)
