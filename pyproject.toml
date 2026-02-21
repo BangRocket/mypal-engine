@@ -101,7 +101,6 @@ clara-gateway = "mypalclara.gateway.__main__:main"
 clara-discord = "mypalclara.adapters.discord.main:run"
 clara-teams = "mypalclara.adapters.teams.main:run"
 clara-cli = "mypalclara.adapters.cli.main:run"
-clara-web = "mypalclara.web.__main__:main"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"
