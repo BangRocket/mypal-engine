@@ -480,6 +480,23 @@ async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] 
     # Start server
     await server.start()
 
+    # Start HTTP API server (FastAPI + uvicorn)
+    import uvicorn
+
+    from mypalclara.gateway.api.app import create_app
+
+    api_app = create_app()
+    api_port = int(os.getenv("CLARA_GATEWAY_API_PORT", "18790"))
+    api_config = uvicorn.Config(
+        api_app,
+        host=args.host,
+        port=api_port,
+        log_level="info",
+    )
+    api_server = uvicorn.Server(api_config)
+    api_task = asyncio.create_task(api_server.serve())
+    logger.info(f"HTTP API server started on {args.host}:{api_port}")
+
     # Initialize and start adapter manager
     # None = start all enabled, [] = start none, ["foo"] = start specific
     adapter_manager = None
@@ -517,6 +534,7 @@ async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] 
 
     logger.info("Gateway ready and accepting connections")
     logger.info(f"Connect adapters to: ws://{args.host}:{args.port}")
+    logger.info(f"HTTP API available at: http://{args.host}:{api_port}/api/v1/")
 
     # Wait for shutdown
     await stop_event.wait()
@@ -531,6 +549,11 @@ async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] 
 
     # Cleanup
     logger.info("Shutting down gateway...")
+
+    # Stop HTTP API server
+    api_server.should_exit = True
+    await api_task
+    logger.info("HTTP API server stopped")
 
     if adapter_manager:
         await adapter_manager.stop()
