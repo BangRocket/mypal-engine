@@ -37,7 +37,9 @@ TAG_COLORS = {
     "gateway": "\033[94m",  # Bright blue
     "adapter": "\033[93m",  # Bright yellow (covers adapter.* and adapter_manager)
     "adapters": "\033[93m",  # Bright yellow (covers adapters.*)
+    "clara.rook": "\033[95m",  # Bright magenta
     "rook": "\033[95m",  # Bright magenta
+    "clara.memory": "\033[38;5;219m",  # Pink
     "memory": "\033[38;5;219m",  # Pink
     "thread": "\033[38;5;81m",  # Sky blue
     "db": "\033[92m",  # Bright green
@@ -51,9 +53,10 @@ TAG_COLORS = {
     "contradiction": "\033[38;5;167m",  # Salmon
     "ors": "\033[38;5;114m",  # Sage green
     "prompt_builder": "\033[38;5;153m",  # Periwinkle
+    "uvicorn": "\033[94m",  # Bright blue (same as gateway)
     "mypalclara": "\033[38;5;147m",  # Lavender (core_tools, mcp, config, etc.)
     "alembic": "\033[38;5;244m",  # Medium gray
-    "websockets": "\033[38;5;244m",  # Medium gray
+    "websockets": "\033[38;5;117m",  # Light cyan
 }
 
 
