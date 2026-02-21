@@ -135,7 +135,7 @@ class AdapterConfig:
         return cls(
             name=name,
             enabled=data.get("enabled", True),
-            module=data.get("module", f"adapters.{name}"),
+            module=data.get("module", f"mypalclara.adapters.{name}"),
             env=data.get("env", {}),
             restart_policy=restart_policy,
             restart_delay=data.get("restart_delay", 5.0),
