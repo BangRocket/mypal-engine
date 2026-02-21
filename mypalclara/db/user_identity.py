@@ -130,3 +130,61 @@ def ensure_platform_link(
     finally:
         if close_db:
             db.close()
+
+
+def ensure_platform_link_via_service(
+    prefixed_user_id: str,
+    display_name: str | None = None,
+) -> str | None:
+    """Create user+link via the identity service (preferred path).
+
+    Falls back to local ensure_platform_link() if identity service
+    is unavailable.
+
+    Returns the canonical_user_id, or None on failure.
+    """
+    import os
+
+    import httpx
+
+    identity_url = os.getenv("IDENTITY_SERVICE_URL")
+    if not identity_url:
+        # No identity service configured — use local path
+        ensure_platform_link(prefixed_user_id, display_name)
+        return None
+
+    # Parse prefixed_user_id
+    parts = prefixed_user_id.split("-", 1)
+    if len(parts) != 2:
+        logger.warning(f"Invalid prefixed_user_id format: {prefixed_user_id}")
+        ensure_platform_link(prefixed_user_id, display_name)
+        return None
+
+    provider, platform_user_id = parts
+
+    try:
+        headers = {"Content-Type": "application/json"}
+        service_secret = os.getenv("IDENTITY_SERVICE_SECRET")
+        if service_secret:
+            headers["X-Service-Secret"] = service_secret
+
+        resp = httpx.post(
+            f"{identity_url}/users/ensure-link",
+            json={
+                "provider": provider,
+                "platform_user_id": platform_user_id,
+                "display_name": display_name or "User",
+            },
+            headers=headers,
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return resp.json().get("canonical_user_id")
+        else:
+            logger.warning(f"Identity service returned {resp.status_code}: {resp.text}")
+    except Exception as e:
+        logger.warning(f"Identity service unavailable ({e}), falling back to local")
+
+    # Fallback
+    ensure_platform_link(prefixed_user_id, display_name)
+    return None
