@@ -96,3 +96,5 @@ node_modules/
 
 # Git worktrees
 .worktrees/
+
+games/
