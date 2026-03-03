@@ -43,6 +43,13 @@ class ToolExecutor:
         self._circuit_breaker = CircuitBreaker()
         self._tool_handlers: dict[str, Callable[..., Any]] = {}
 
+        # Subagent orchestration
+        from mypalclara.core.subagent.registry import SubagentRegistry
+        from mypalclara.core.subagent.runner import SubagentRunner
+
+        self._subagent_registry = SubagentRegistry()
+        self._subagent_runner = SubagentRunner(self._subagent_registry)
+
     async def initialize(self) -> None:
         """Initialize tool systems.
 
@@ -442,6 +449,23 @@ class ToolExecutor:
             except Exception as e:
                 logger.warning(f"Failed to get MCP tools: {e}")
 
+        # Add subagent tools
+        from mypalclara.core.subagent.tools import make_subagent_tools
+
+        subagent_tool_defs = make_subagent_tools(self._subagent_registry, self._subagent_runner)
+        # Wrap in OpenAI format to match other tools
+        for td in subagent_tool_defs:
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": td["name"],
+                        "description": td["description"],
+                        "parameters": td["parameters"],
+                    },
+                }
+            )
+
         # Deduplicate
         seen = set()
         unique_tools = []
@@ -559,6 +583,21 @@ class ToolExecutor:
         platform_context: dict[str, Any],
     ) -> str:
         """Route tool call to appropriate handler."""
+        # Subagent tools
+        if tool_name.startswith("subagent_"):
+            from mypalclara.core.subagent.tools import handle_subagent_tool
+
+            parent_id = platform_context.get("request_id", user_id)
+            return await handle_subagent_tool(
+                tool_name=tool_name,
+                arguments=arguments,
+                parent_id=parent_id,
+                registry=self._subagent_registry,
+                runner=self._subagent_runner,
+                available_tools=self.get_all_tools(),
+                user_id=user_id,
+            )
+
         # MCP tools (dynamic, checked by prefix)
         if "__" in tool_name and self._mcp_initialized:
             if self._mcp_manager.is_mcp_tool(tool_name):

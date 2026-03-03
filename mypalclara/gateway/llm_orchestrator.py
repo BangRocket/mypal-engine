@@ -18,6 +18,8 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from mypalclara.config.logging import get_logger
+from mypalclara.core.context_compactor import ContextCompactor
+from mypalclara.core.llm.failover import CooldownManager, FailoverReason, classify_error
 from mypalclara.core.llm.messages import (
     AssistantMessage,
     ContentPart,
@@ -28,6 +30,7 @@ from mypalclara.core.llm.messages import (
 )
 from mypalclara.core.llm.tools.formats import messages_to_openai
 from mypalclara.core.tool_guard import LoopAction, ToolLoopGuard
+from mypalclara.core.tool_result_guard import ToolResultGuard
 from mypalclara.gateway.protocol import AttachmentInfo, ResponseChunk, ToolResult, ToolStart
 
 if TYPE_CHECKING:
@@ -90,6 +93,9 @@ class LLMOrchestrator:
         self._tool_executor: Any = None  # Will be set during initialization
         self._initialized = False
         self._loop_guard = ToolLoopGuard()
+        self._result_guard = ToolResultGuard(max_chars=MAX_TOOL_RESULT_CHARS)
+        self._context_compactor = ContextCompactor()
+        self._cooldown_manager = CooldownManager()
 
     async def initialize(self, tool_executor: Any) -> None:
         """Initialize with a tool executor.
@@ -158,6 +164,16 @@ class LLMOrchestrator:
 
         for iteration in range(MAX_TOOL_ITERATIONS):
             logger.debug(f"[{request_id}] Iteration {iteration + 1}/{MAX_TOOL_ITERATIONS}")
+
+            # Compact context if it's grown too large from tool results
+            if iteration > 0:
+                from mypalclara.core.token_counter import get_context_window
+
+                budget = get_context_window("claude")
+                compaction = await self._context_compactor.compact_if_needed(working_messages, budget)
+                if compaction.was_compacted:
+                    working_messages = compaction.messages
+                    logger.info(f"[{request_id}] Context compacted: saved {compaction.tokens_saved} tokens")
 
             # Call LLM (returns ToolResponse)
             tool_response = await self._call_llm(
@@ -271,9 +287,7 @@ class LLMOrchestrator:
                 # Loop guard check
                 loop_check = self._loop_guard.check(tc.name, tc.arguments)
                 if loop_check.action == LoopAction.STOP:
-                    logger.warning(
-                        f"[{request_id}] Loop guard STOP: {loop_check.reason}"
-                    )
+                    logger.warning(f"[{request_id}] Loop guard STOP: {loop_check.reason}")
                     output = f"[Tool loop detected: {loop_check.reason}]"
                     working_messages.append(tc.to_result_message(output))
                     yield {
@@ -284,9 +298,7 @@ class LLMOrchestrator:
                     }
                     break
                 if loop_check.action == LoopAction.WARN:
-                    logger.warning(
-                        f"[{request_id}] Loop guard WARN: {loop_check.reason}"
-                    )
+                    logger.warning(f"[{request_id}] Loop guard WARN: {loop_check.reason}")
 
                 # Execute tool
                 output = await self._tool_executor.execute(
@@ -296,9 +308,14 @@ class LLMOrchestrator:
                     files_to_send=files_to_send,
                 )
 
-                # Truncate if needed
-                if len(output) > MAX_TOOL_RESULT_CHARS:
-                    output = self._truncate_output(output)
+                # Cap result size with content-aware truncation
+                capped = self._result_guard.cap(tc.name, tc.id, output)
+                if capped.was_truncated:
+                    logger.info(
+                        f"[{request_id}] Capped {tc.name} result: "
+                        f"{capped.original_size} -> {len(capped.content)} chars ({capped.strategy})"
+                    )
+                output = capped.content
 
                 # Sandbox tool output before adding to messages
                 from mypalclara.core.security.sandboxing import wrap_untrusted
@@ -350,25 +367,62 @@ class LLMOrchestrator:
         tier: str | None,
         loop: asyncio.AbstractEventLoop,
     ) -> "ToolResponse":
-        """Call LLM with tools.
+        """Call LLM with tools, retry on transient errors, classify failures.
 
         Supports three modes (controlled by TOOL_CALL_MODE env var):
         - "langchain": LangChain bind_tools() for unified tool calling (default)
         - "native": Uses API-native tool calling (OpenAI/Anthropic format)
         - "xml": OpenClaw-style system prompt injection
 
-        Converts list[Message] to list[dict] at the boundary for compat functions.
+        Wraps calls with failover error classification and retry logic.
         Returns ToolResponse.
         """
-        from mypalclara.core.llm.tools.response import ToolResponse
+        import random
 
-        if TOOL_CALL_MODE == "xml":
-            return await self._call_llm_xml(messages, tools, tier, loop)
-        elif TOOL_CALL_MODE == "native":
-            return await self._call_llm_native(messages, tools, tier, loop)
-        else:
-            # Default to langchain
-            return await self._call_llm_langchain(messages, tools, tier, loop)
+        max_retries = 3
+        base_delay = 1.0
+        provider_name = os.getenv("LLM_PROVIDER", "openrouter")
+
+        for attempt in range(max_retries):
+            try:
+                if TOOL_CALL_MODE == "xml":
+                    return await self._call_llm_xml(messages, tools, tier, loop)
+                elif TOOL_CALL_MODE == "native":
+                    return await self._call_llm_native(messages, tools, tier, loop)
+                else:
+                    return await self._call_llm_langchain(messages, tools, tier, loop)
+            except Exception as e:
+                reason = classify_error(e)
+
+                if reason == FailoverReason.CONTEXT_OVERFLOW:
+                    raise  # Never retry context overflow
+
+                if reason == FailoverReason.AUTH:
+                    self._cooldown_manager.set_cooldown(provider_name, None, 600.0, reason)
+                    raise  # Can't retry auth errors
+
+                if reason == FailoverReason.RATE_LIMIT:
+                    model = os.getenv(f"{provider_name.upper()}_MODEL", "unknown")
+                    self._cooldown_manager.set_cooldown(provider_name, model, 30.0, reason)
+                    # Wait out the rate limit and retry
+                    await asyncio.sleep(30.0)
+                    continue
+
+                # Transient/Unknown: retry with exponential backoff + jitter
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2**attempt)
+                    jitter = random.uniform(0, delay * 0.1)  # noqa: S311
+                    logger.warning(
+                        "LLM call failed (attempt %d/%d, %s), retrying in %.1fs: %s",
+                        attempt + 1,
+                        max_retries,
+                        reason.value,
+                        delay + jitter,
+                        e,
+                    )
+                    await asyncio.sleep(delay + jitter)
+                else:
+                    raise  # Exhausted retries
 
     async def _call_llm_langchain(
         self,
@@ -538,15 +592,6 @@ class LLMOrchestrator:
 
         if current_chunk:
             yield " ".join(current_chunk)
-
-    def _truncate_output(self, output: str) -> str:
-        """Truncate tool output if too long."""
-        truncated = output[:MAX_TOOL_RESULT_CHARS]
-        msg = (
-            f"\n\n[TRUNCATED: Result was {len(output):,} chars, showing first {MAX_TOOL_RESULT_CHARS:,}. "
-            f"Use pagination parameters (per_page, page) or more specific filters to get smaller results.]"
-        )
-        return truncated + msg
 
     def _add_images_to_messages(
         self,
