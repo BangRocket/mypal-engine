@@ -43,12 +43,11 @@ class ToolExecutor:
         self._circuit_breaker = CircuitBreaker()
         self._tool_handlers: dict[str, Callable[..., Any]] = {}
 
-        # Subagent orchestration
+        # Subagent orchestration (runner created lazily in initialize())
         from mypalclara.core.subagent.registry import SubagentRegistry
-        from mypalclara.core.subagent.runner import SubagentRunner
 
         self._subagent_registry = SubagentRegistry()
-        self._subagent_runner = SubagentRunner(self._subagent_registry)
+        self._subagent_runner: Any = None
 
     async def initialize(self) -> None:
         """Initialize tool systems.
@@ -73,6 +72,14 @@ class ToolExecutor:
 
         # Initialize MCP
         await self._init_mcp()
+
+        # Initialize subagent runner (needs orchestrator factory)
+        from mypalclara.core.subagent.runner import SubagentRunner
+
+        self._subagent_runner = SubagentRunner(
+            registry=self._subagent_registry,
+            orchestrator_factory=lambda: None,  # Placeholder — subagents not yet fully integrated
+        )
 
         self._register_handlers()
         self._initialized = True
