@@ -6,16 +6,30 @@ from MemoryManager into a standalone PromptBuilder class.
 
 from __future__ import annotations
 
+import platform
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from enum import Enum
 
-from mypalclara.config.bot import PERSONALITY
+from mypalclara.config.bot import PERSONALITY, PERSONALITY_BRIEF
 from mypalclara.config.logging import get_logger
 from mypalclara.core.llm.messages import AssistantMessage, Message, SystemMessage, UserMessage
 from mypalclara.core.memory_manager import _format_message_timestamp
 from mypalclara.core.token_counter import count_message_tokens, get_context_window
 
 logger = get_logger("prompt_builder")
+
+
+class PromptMode(Enum):
+    """Controls how much context is included in the prompt."""
+
+    FULL = "full"
+    MINIMAL = "minimal"
+    NONE = "none"
+
+
+SECTION_MAX_CHARS = 10_000
+TOTAL_SYSTEM_MAX_CHARS = 200_000
 
 
 class PromptBuilder:
@@ -137,6 +151,7 @@ class PromptBuilder:
         tools: list[dict] | None = None,
         channel_context: list["Message"] | None = None,
         model_name: str = "claude",
+        mode: "PromptMode" = PromptMode.FULL,
     ) -> list[Message]:
         """Build the full prompt for the LLM.
 
@@ -152,13 +167,53 @@ class PromptBuilder:
             tools: Optional list of tool schema dicts for WORM capability inventory
             channel_context: Optional list of recent messages from the channel (all users)
             model_name: Model name for token budget calculation
+            mode: PromptMode controlling how much context to include (FULL, MINIMAL, NONE)
 
         Returns:
             List of typed Messages ready for LLM
         """
+        # --- NONE mode: bare minimum ---
+        if mode is PromptMode.NONE:
+            return [
+                SystemMessage(content=PERSONALITY_BRIEF),
+                UserMessage(content=user_message),
+            ]
+
         from mypalclara.core.security.worm_persona import build_worm_persona
 
         system_base = build_worm_persona(PERSONALITY, tools)
+
+        # --- MINIMAL mode: identity + runtime only, skip memories/emotions/topics/graph ---
+        if mode is PromptMode.MINIMAL:
+            runtime_sections = []
+            runtime_sections.extend(self._build_datetime())
+            runtime_sections.extend(self._build_runtime())
+            context_block = "\n".join(runtime_sections)
+
+            messages: list[Message] = [
+                SystemMessage(content=system_base),
+                SystemMessage(content=context_block),
+            ]
+
+            # Add recent messages (same formatting as FULL mode)
+            for m in recent_msgs:
+                if m.role == "user":
+                    timestamp = _format_message_timestamp(getattr(m, "created_at", None))
+                    if timestamp:
+                        content = f"[{timestamp}] {m.content}"
+                    else:
+                        content = m.content
+                    messages.append(UserMessage(content=content))
+                else:
+                    messages.append(AssistantMessage(content=m.content))
+
+            messages.append(UserMessage(content=user_message))
+
+            # Enforce token budget
+            messages = self._trim_to_budget(messages, model_name)
+            return messages
+
+        # --- FULL mode: preserve all existing behavior exactly ---
 
         # Build context sections
         context_parts = []
@@ -556,3 +611,38 @@ class PromptBuilder:
             lines.append(f"- {source} \u2192 {readable_rel} \u2192 {destination}")
 
         return "\n".join(lines) if lines else ""
+
+    # ---------- section builders ----------
+
+    def _build_datetime(self) -> list[str]:
+        """Returns current datetime section lines."""
+        now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+        return ["## Current Date & Time", f"Current: {now}"]
+
+    def _build_runtime(self) -> list[str]:
+        """Returns runtime metadata section lines."""
+        return [
+            "## Runtime",
+            f"Agent: {self.agent_id}, OS: {platform.system()}, Python: {platform.python_version()}",
+        ]
+
+    @staticmethod
+    def _apply_section_budget(text: str, max_chars: int) -> str:
+        """Apply 70/20 truncation if text exceeds budget.
+
+        Keeps the first 70% and last 20% of the budget, inserting a
+        truncation marker in between.
+
+        Args:
+            text: The text to potentially truncate
+            max_chars: Maximum allowed characters
+
+        Returns:
+            Original text if within budget, otherwise truncated with marker
+        """
+        if len(text) <= max_chars:
+            return text
+        head = int(max_chars * 0.70)
+        tail = int(max_chars * 0.20)
+        marker = f"\n...[section truncated: kept {head}+{tail} of {len(text)} chars]...\n"
+        return text[:head] + marker + text[-tail:]
