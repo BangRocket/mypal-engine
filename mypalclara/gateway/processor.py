@@ -613,22 +613,6 @@ class MessageProcessor:
         gateway_context = self._build_gateway_context(request, is_dm, participants, last_message_at)
         messages.insert(1, SystemMessage(content=gateway_context))
 
-        # Load workspace files and inject into prompt
-        try:
-            from mypalclara.core.workspace_loader import WorkspaceLoader
-
-            workspace_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "workspace")
-            if os.path.isdir(workspace_dir):
-                loader = WorkspaceLoader()
-                workspace_files = loader.load(workspace_dir)
-                if workspace_files:
-                    ws_parts = []
-                    for wf in workspace_files:
-                        ws_parts.append(f"## {wf.filename}\n{wf.content}")
-                    messages.insert(2, SystemMessage(content="\n\n".join(ws_parts)))
-        except Exception as e:
-            logger.debug(f"Could not load workspace files: {e}")
-
         # Add tool summaries to system prompt
         if tools:
             try:

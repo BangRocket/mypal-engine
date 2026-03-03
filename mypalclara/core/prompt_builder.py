@@ -11,7 +11,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 
-from mypalclara.config.bot import PERSONALITY, PERSONALITY_BRIEF
+from mypalclara.config.bot import PERSONALITY_BRIEF
 from mypalclara.config.logging import get_logger
 from mypalclara.core.llm.messages import AssistantMessage, Message, SystemMessage, UserMessage
 from mypalclara.core.memory_manager import _format_message_timestamp
@@ -181,7 +181,8 @@ class PromptBuilder:
 
         from mypalclara.core.security.worm_persona import build_worm_persona
 
-        system_base = build_worm_persona(PERSONALITY, tools)
+        personality = self._load_workspace_persona()
+        system_base = build_worm_persona(personality, tools)
 
         # --- MINIMAL mode: identity + runtime only, skip memories/emotions/topics/graph ---
         if mode is PromptMode.MINIMAL:
@@ -611,6 +612,59 @@ class PromptBuilder:
             lines.append(f"- {source} \u2192 {readable_rel} \u2192 {destination}")
 
         return "\n".join(lines) if lines else ""
+
+    # ---------- workspace persona ----------
+
+    def _load_workspace_persona(self) -> str:
+        """Load persona from workspace files, replacing the old personality constant.
+
+        Loads from mypalclara/workspace/ directory:
+        - SOUL.md: Core behavioral instructions (always loaded)
+        - IDENTITY.md: Identity fields, BUT replaced by BOT_PERSONALITY_FILE if set
+        - USER.md, AGENTS.md: Supplementary context
+
+        Returns combined persona text.
+        """
+        import os
+        from pathlib import Path
+
+        from mypalclara.core.workspace_loader import WorkspaceLoader
+
+        workspace_dir = Path(__file__).parent.parent / "workspace"
+        if not workspace_dir.is_dir():
+            # Fall back to old personality if workspace dir missing
+            from mypalclara.config.bot import PERSONALITY
+
+            return PERSONALITY
+
+        loader = WorkspaceLoader()
+        files = loader.load(workspace_dir, mode="full")
+
+        if not files:
+            from mypalclara.config.bot import PERSONALITY
+
+            return PERSONALITY
+
+        parts = []
+        for wf in files:
+            # Replace IDENTITY.md with personality file if configured
+            if wf.filename == "IDENTITY.md":
+                personality_file = os.getenv("BOT_PERSONALITY_FILE")
+                if personality_file:
+                    pf_path = Path(personality_file)
+                    if pf_path.exists():
+                        content = pf_path.read_text(encoding="utf-8").strip()
+                        if content:
+                            parts.append(f"## Identity\n{content}")
+                            continue
+                    else:
+                        logger.warning("BOT_PERSONALITY_FILE not found: %s", personality_file)
+                # No override — use IDENTITY.md as-is
+                parts.append(f"## {wf.filename}\n{wf.content}")
+            else:
+                parts.append(f"## {wf.filename}\n{wf.content}")
+
+        return "\n\n".join(parts)
 
     # ---------- section builders ----------
 
