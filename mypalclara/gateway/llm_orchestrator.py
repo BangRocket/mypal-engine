@@ -18,7 +18,6 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from mypalclara.config.logging import get_logger
-from mypalclara.core.tool_guard import LoopAction, ToolLoopGuard
 from mypalclara.core.llm.messages import (
     AssistantMessage,
     ContentPart,
@@ -28,6 +27,7 @@ from mypalclara.core.llm.messages import (
     UserMessage,
 )
 from mypalclara.core.llm.tools.formats import messages_to_openai
+from mypalclara.core.tool_guard import LoopAction, ToolLoopGuard
 from mypalclara.gateway.protocol import AttachmentInfo, ResponseChunk, ToolResult, ToolStart
 
 if TYPE_CHECKING:
