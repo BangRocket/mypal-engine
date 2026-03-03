@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from mypalclara.config.logging import get_logger
+from mypalclara.core.tool_guard import LoopAction, ToolLoopGuard
 from mypalclara.core.llm.messages import (
     AssistantMessage,
     ContentPart,
@@ -88,6 +89,7 @@ class LLMOrchestrator:
         """Initialize the orchestrator."""
         self._tool_executor: Any = None  # Will be set during initialization
         self._initialized = False
+        self._loop_guard = ToolLoopGuard()
 
     async def initialize(self, tool_executor: Any) -> None:
         """Initialize with a tool executor.
@@ -266,6 +268,26 @@ class LLMOrchestrator:
                     "arguments": tc.arguments,
                 }
 
+                # Loop guard check
+                loop_check = self._loop_guard.check(tc.name, tc.arguments)
+                if loop_check.action == LoopAction.STOP:
+                    logger.warning(
+                        f"[{request_id}] Loop guard STOP: {loop_check.reason}"
+                    )
+                    output = f"[Tool loop detected: {loop_check.reason}]"
+                    working_messages.append(tc.to_result_message(output))
+                    yield {
+                        "type": "tool_result",
+                        "tool_name": tc.name,
+                        "success": False,
+                        "output_preview": output,
+                    }
+                    break
+                if loop_check.action == LoopAction.WARN:
+                    logger.warning(
+                        f"[{request_id}] Loop guard WARN: {loop_check.reason}"
+                    )
+
                 # Execute tool
                 output = await self._tool_executor.execute(
                     tool_name=tc.name,
@@ -282,6 +304,9 @@ class LLMOrchestrator:
                 from mypalclara.core.security.sandboxing import wrap_untrusted
 
                 output = wrap_untrusted(output, f"tool_{tc.name}")
+
+                # Record result for loop detection
+                self._loop_guard.record_result(tc.name, tc.arguments, output)
 
                 # Add tool result to messages
                 working_messages.append(tc.to_result_message(output))
