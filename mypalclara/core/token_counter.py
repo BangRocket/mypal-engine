@@ -10,6 +10,8 @@ _encoder = tiktoken.get_encoding("cl100k_base")
 
 def count_tokens(text: str) -> int:
     """Count tokens in a text string."""
+    if not text:
+        return 0
     return len(_encoder.encode(text))
 
 
@@ -17,10 +19,12 @@ def count_message_tokens(messages: list) -> int:
     """Count tokens across a list of LLM messages.
 
     Each message costs its content tokens plus ~4 tokens for role overhead.
+    Handles messages with None content (e.g. tool call assistant messages).
     """
     total = 0
     for msg in messages:
-        total += count_tokens(msg.content) + 4
+        content = getattr(msg, "content", None) or ""
+        total += count_tokens(content) + 4
     return total
 
 
