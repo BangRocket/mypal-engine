@@ -513,9 +513,8 @@ async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] 
     if os.getenv("HEARTBEAT_ENABLED", "false").lower() == "true":
         from mypalclara.core.heartbeat import heartbeat_loop
         from mypalclara.core.llm.compat import make_llm
-        from mypalclara.core.llm.config import ModelTier
 
-        heartbeat_llm = make_llm(tier=ModelTier.LOW)
+        heartbeat_llm = make_llm(tier="low")
 
         async def _heartbeat_llm_async(messages):
             """Wrap sync LLM callable for heartbeat."""
