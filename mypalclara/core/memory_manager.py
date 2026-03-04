@@ -266,14 +266,26 @@ class MemoryManager:
         user_message: str,
         participants: list[dict] | None = None,
         is_dm: bool = False,
+        privacy_scope: str = "full",
     ) -> tuple[list[str], list[str], list[dict]]:
-        """Fetch relevant memories from mem0 using parallel fetches."""
+        """Fetch relevant memories from mem0 using parallel fetches.
+
+        Args:
+            user_id: The user making the request
+            project_id: Project context
+            user_message: The message to search for relevant memories
+            participants: List of participant dicts for conversation members
+            is_dm: Whether this is a DM conversation
+            privacy_scope: 'full' for DMs (all memories), 'public_only' for
+                group channels (only memories with visibility='public')
+        """
         return self._memory_retriever.fetch_mem0_context(
             user_id,
             project_id,
             user_message,
-            participants,
-            is_dm,
+            participants=participants,
+            is_dm=is_dm,
+            privacy_scope=privacy_scope,
         )
 
     # ---------- Memory writing (delegates to MemoryWriter) ----------

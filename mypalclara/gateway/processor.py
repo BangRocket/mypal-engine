@@ -557,6 +557,9 @@ class MessageProcessor:
         # Extract participants from reply chain
         participants = self._extract_participants(request)
 
+        # Determine privacy scope based on channel type
+        privacy_scope = _determine_privacy_scope(request.channel.type)
+
         # Fetch memories from mem0
         user_mems, proj_mems, graph_relations = await loop.run_in_executor(
             BLOCKING_EXECUTOR,
@@ -566,6 +569,7 @@ class MessageProcessor:
                 user_content,
                 participants=participants,
                 is_dm=is_dm,
+                privacy_scope=privacy_scope,
             ),
         )
 
