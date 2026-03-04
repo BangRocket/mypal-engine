@@ -5,6 +5,9 @@ Gives Clara runtime read/write access to her workspace files
 
 SOUL.md and IDENTITY.md are read-only (owner-controlled).
 Clara can read, write, and create other .md files in the workspace.
+
+When a user has a per-user VM, workspace tools route through the
+VM manager (incus exec) instead of direct host filesystem access.
 """
 
 from __future__ import annotations
@@ -15,42 +18,43 @@ from typing import Any
 from mypalclara.tools._base import ToolContext, ToolDef
 
 MODULE_NAME = "workspace"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.1.0"
 
 WORKSPACE_DIR = Path(__file__).parent.parent.parent / "workspace"
 READONLY_FILES = frozenset({"SOUL.md", "IDENTITY.md"})
 
-# Maps user_id -> Path for users with VM workspaces.
-# Populated by VMManager (Task 11) at VM creation time.
-_user_workspace_dirs: dict[str, Path] = {}
+# Per-user VM state — set by processor when USER_VM_ENABLED
+_vm_manager: Any = None  # VMManager instance (or None)
+_vm_users: set[str] = set()  # user_ids with active VMs
 
 
-def register_user_workspace(user_id: str, workspace_path: Path) -> None:
-    """Register a per-user VM workspace directory.
+def set_vm_manager(vm_manager: Any) -> None:
+    """Set the VM manager for VM-backed workspace access."""
+    global _vm_manager
+    _vm_manager = vm_manager
 
-    Called by VMManager when a user VM is provisioned.
-    After registration, workspace tools for this user will
-    read/write from their VM workspace instead of the shared one.
+
+def register_user_workspace(user_id: str, workspace_path: Any = None) -> None:
+    """Register a user as having a VM workspace.
+
+    After registration, workspace tools for this user route through
+    the VM manager instead of direct filesystem access.
+
+    Args:
+        user_id: The user to register.
+        workspace_path: Ignored (kept for backward compatibility).
     """
-    _user_workspace_dirs[user_id] = workspace_path
+    _vm_users.add(user_id)
 
 
 def unregister_user_workspace(user_id: str) -> None:
     """Remove a per-user VM workspace registration."""
-    _user_workspace_dirs.pop(user_id, None)
+    _vm_users.discard(user_id)
 
 
-def _resolve_workspace_dir(ctx: ToolContext) -> Path:
-    """Resolve the workspace directory for a given user context.
-
-    If the user has a registered VM workspace, returns that path.
-    Otherwise returns the shared WORKSPACE_DIR.
-
-    Note: Global files (SOUL.md, IDENTITY.md) are handled at the
-    handler level — they always read from WORKSPACE_DIR regardless
-    of what this function returns.
-    """
-    return _user_workspace_dirs.get(ctx.user_id, WORKSPACE_DIR)
+def _user_has_vm(ctx: ToolContext) -> bool:
+    """Check if this user's workspace is backed by a VM."""
+    return _vm_manager is not None and ctx.user_id in _vm_users
 
 
 SYSTEM_PROMPT = """
@@ -92,9 +96,85 @@ def _sanitize_filename(filename: str) -> str | None:
     return name
 
 
+# ---------------------------------------------------------------------------
+# VM-backed file operations
+# ---------------------------------------------------------------------------
+
+async def _vm_list_files(user_id: str) -> list[tuple[str, int]]:
+    """List .md files in a user's VM workspace. Returns [(name, size), ...]."""
+    from mypalclara.core.vm_manager import VM_WORKSPACE_DIR
+
+    try:
+        output = await _vm_manager.exec_in_vm(
+            user_id,
+            ["sh", "-c", f"cd '{VM_WORKSPACE_DIR}' && stat -c '%n %s' *.md 2>/dev/null || true"],
+        )
+    except Exception:
+        return []
+
+    files = []
+    for line in output.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.rsplit(" ", 1)
+        if len(parts) == 2:
+            name = parts[0]
+            try:
+                size = int(parts[1])
+            except ValueError:
+                size = 0
+            files.append((name, size))
+    return sorted(files)
+
+
+async def _vm_read_file(user_id: str, filename: str) -> str:
+    """Read a file from the user's VM workspace."""
+    from mypalclara.core.vm_manager import VM_WORKSPACE_DIR
+
+    path = f"{VM_WORKSPACE_DIR}/{filename}"
+    return await _vm_manager.read_file(user_id, path)
+
+
+async def _vm_write_file(user_id: str, filename: str, content: str) -> None:
+    """Write a file in the user's VM workspace."""
+    from mypalclara.core.vm_manager import VM_WORKSPACE_DIR
+
+    path = f"{VM_WORKSPACE_DIR}/{filename}"
+    await _vm_manager.write_file(user_id, path, content)
+
+
+async def _vm_file_exists(user_id: str, filename: str) -> bool:
+    """Check if a file exists in the user's VM workspace."""
+    from mypalclara.core.vm_manager import VM_WORKSPACE_DIR
+
+    try:
+        await _vm_manager.exec_in_vm(
+            user_id,
+            ["test", "-f", f"{VM_WORKSPACE_DIR}/{filename}"],
+        )
+        return True
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Tool handlers
+# ---------------------------------------------------------------------------
+
 async def _handle_workspace_list(args: dict[str, Any], ctx: ToolContext) -> str:
     """List all workspace files."""
-    ws_dir = _resolve_workspace_dir(ctx)
+    if _user_has_vm(ctx):
+        files = await _vm_list_files(ctx.user_id)
+        if not files:
+            return "No workspace files found in your VM."
+        lines = []
+        for name, size in files:
+            readonly = " (read-only)" if name in READONLY_FILES else ""
+            lines.append(f"- **{name}** ({size:,} bytes){readonly}")
+        return "**Workspace files (VM):**\n" + "\n".join(lines)
+
+    ws_dir = WORKSPACE_DIR
     if not ws_dir.is_dir():
         return "Workspace directory not found."
 
@@ -119,8 +199,21 @@ async def _handle_workspace_read(args: dict[str, Any], ctx: ToolContext) -> str:
         return f"Error: Invalid filename '{filename}'."
 
     # Global files (SOUL.md, IDENTITY.md) always come from the shared workspace
-    ws_dir = WORKSPACE_DIR if safe_name in READONLY_FILES else _resolve_workspace_dir(ctx)
-    filepath = ws_dir / safe_name
+    if safe_name in READONLY_FILES:
+        filepath = WORKSPACE_DIR / safe_name
+        if not filepath.exists():
+            return f"Error: '{safe_name}' not found."
+        content = filepath.read_text(encoding="utf-8")
+        return f"**{safe_name}:**\n\n{content}"
+
+    if _user_has_vm(ctx):
+        try:
+            content = await _vm_read_file(ctx.user_id, safe_name)
+            return f"**{safe_name}:**\n\n{content}"
+        except Exception:
+            return f"Error: '{safe_name}' not found in your VM workspace. Use workspace_list to see available files."
+
+    filepath = WORKSPACE_DIR / safe_name
     if not filepath.exists():
         return f"Error: '{safe_name}' not found. Use workspace_list to see available files."
 
@@ -138,13 +231,24 @@ async def _handle_workspace_write(args: dict[str, Any], ctx: ToolContext) -> str
     if safe_name in READONLY_FILES:
         return f"Error: '{safe_name}' is read-only (owner-controlled). You cannot edit this file."
 
-    ws_dir = _resolve_workspace_dir(ctx)
+    content = args.get("content", "")
+    mode = args.get("mode", "overwrite")
+
+    if _user_has_vm(ctx):
+        if not await _vm_file_exists(ctx.user_id, safe_name):
+            return f"Error: '{safe_name}' not found. Use workspace_create to make a new file."
+
+        if mode == "append":
+            existing = await _vm_read_file(ctx.user_id, safe_name)
+            content = existing + "\n" + content
+
+        await _vm_write_file(ctx.user_id, safe_name, content)
+        return f"{'Appended to' if mode == 'append' else 'Updated'} '{safe_name}' in VM workspace."
+
+    ws_dir = WORKSPACE_DIR
     filepath = ws_dir / safe_name
     if not filepath.exists():
         return f"Error: '{safe_name}' not found. Use workspace_create to make a new file."
-
-    content = args.get("content", "")
-    mode = args.get("mode", "overwrite")
 
     if mode == "append":
         existing = filepath.read_text(encoding="utf-8")
@@ -169,13 +273,20 @@ async def _handle_workspace_create(args: dict[str, Any], ctx: ToolContext) -> st
     if safe_name in READONLY_FILES:
         return f"Error: '{safe_name}' is a reserved name."
 
-    ws_dir = _resolve_workspace_dir(ctx)
+    content = args.get("content", "")
+
+    if _user_has_vm(ctx):
+        if await _vm_file_exists(ctx.user_id, safe_name):
+            return f"Error: '{safe_name}' already exists. Use workspace_write to update it."
+        await _vm_write_file(ctx.user_id, safe_name, content)
+        return f"Created '{safe_name}' in VM workspace ({len(content):,} bytes)."
+
+    ws_dir = WORKSPACE_DIR
     filepath = ws_dir / safe_name
     if filepath.exists():
         return f"Error: '{safe_name}' already exists. Use workspace_write to update it."
 
     ws_dir.mkdir(parents=True, exist_ok=True)
-    content = args.get("content", "")
     filepath.write_text(content, encoding="utf-8")
     return f"Created '{safe_name}' ({len(content):,} bytes)."
 

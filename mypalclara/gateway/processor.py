@@ -131,6 +131,10 @@ class MessageProcessor:
     def set_vm_manager(self, vm_manager: Any) -> None:
         """Set the VM manager for per-user VM access."""
         self._vm_manager = vm_manager
+        # Also set on workspace tool so it can route file ops through the VM
+        from mypalclara.core.core_tools.workspace_tool import set_vm_manager as ws_set_vm
+
+        ws_set_vm(vm_manager)
 
     async def initialize(self) -> None:
         """Initialize the processor with required resources.
@@ -576,13 +580,10 @@ class MessageProcessor:
             try:
                 await self._vm_manager.ensure_vm(user_id)
 
-                # Register VM workspace so workspace tools route to user's VM
-                from pathlib import Path
-
+                # Register user so workspace tools route through VM manager
                 from mypalclara.core.core_tools.workspace_tool import register_user_workspace
-                from mypalclara.core.vm_manager import VM_WORKSPACE_DIR
 
-                register_user_workspace(user_id, Path(VM_WORKSPACE_DIR))
+                register_user_workspace(user_id, None)
 
                 # Load workspace files into prompt builder cache
                 await self._memory_manager.load_user_workspace(
