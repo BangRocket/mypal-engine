@@ -354,6 +354,14 @@ USER_VM_INSTANCE_TYPE=container   # 'container' or 'vm'
 USER_VM_IMAGE=images:debian/12/cloud  # Incus image for user VMs
 ```
 
+### Qdrant Resilience
+```bash
+QDRANT_TIMEOUT=15                 # Request timeout in seconds for QdrantClient
+QDRANT_CB_THRESHOLD=3             # Consecutive failures before circuit breaker opens
+QDRANT_CB_COOLDOWN=30             # Seconds to skip Qdrant calls after circuit opens
+MEMORY_FETCH_TIMEOUT=10           # Seconds before memory fetch times out (returns empty)
+```
+
 Each user can get a persistent Incus VM with personal workspace files and filesystem access. VMs are provisioned on demand, suspended on idle, and resumed when the user returns.
 
 **Privacy model:** Memories default to `private`. Users can mark memories as `public` for group channel visibility. Clara respects the boundary automatically based on channel type (DM = full access, group = public only).
