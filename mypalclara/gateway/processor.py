@@ -47,6 +47,9 @@ BLOCKING_EXECUTOR = ThreadPoolExecutor(
     thread_name_prefix="gateway-io-",
 )
 
+# Memory fetch timeout (graceful degradation on Qdrant slowness)
+MEMORY_FETCH_TIMEOUT = float(os.getenv("MEMORY_FETCH_TIMEOUT", "10"))
+
 # Auto-tier configuration
 AUTO_TIER_ENABLED = os.getenv("AUTO_TIER_SELECTION", "false").lower() == "true"
 
@@ -565,18 +568,28 @@ class MessageProcessor:
         # Determine privacy scope based on channel type
         privacy_scope = _determine_privacy_scope(request.channel.type)
 
-        # Fetch memories from mem0
-        user_mems, proj_mems, graph_relations = await loop.run_in_executor(
-            BLOCKING_EXECUTOR,
-            lambda: self._memory_manager.fetch_mem0_context(
-                user_id,
-                None,  # No project for now
-                user_content,
-                participants=participants,
-                is_dm=is_dm,
-                privacy_scope=privacy_scope,
-            ),
-        )
+        # Fetch memories from mem0 (with timeout for resilience)
+        try:
+            user_mems, proj_mems, graph_relations = await asyncio.wait_for(
+                loop.run_in_executor(
+                    BLOCKING_EXECUTOR,
+                    lambda: self._memory_manager.fetch_mem0_context(
+                        user_id,
+                        None,
+                        user_content,
+                        participants=participants,
+                        is_dm=is_dm,
+                        privacy_scope=privacy_scope,
+                    ),
+                ),
+                timeout=MEMORY_FETCH_TIMEOUT,
+            )
+        except (TimeoutError, asyncio.TimeoutError):
+            logger.warning(
+                f"Memory fetch timed out after {MEMORY_FETCH_TIMEOUT}s for user {user_id}, "
+                "proceeding without memories"
+            )
+            user_mems, proj_mems, graph_relations = [], [], []
 
         # Fetch emotional context (last 3 sessions)
         emotional_context = None
