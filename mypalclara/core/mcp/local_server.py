@@ -16,7 +16,6 @@ import asyncio
 import logging
 import os
 import signal
-from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
@@ -92,7 +91,8 @@ class LocalServerProcess:
         self.config = config
         self.state = LocalServerState()
         self._session: ClientSession | None = None
-        self._exit_stack: AsyncExitStack | None = None
+        self._server_task: asyncio.Task | None = None
+        self._shutdown_event: asyncio.Event | None = None
         self._lock = asyncio.Lock()
         self._on_tools_changed = on_tools_changed
         self._watcher_task: asyncio.Task | None = None
@@ -129,7 +129,13 @@ class LocalServerProcess:
                 return False
 
     async def _connect(self) -> bool:
-        """Establish connection to the MCP server."""
+        """Establish connection to the MCP server.
+
+        Runs stdio_client in a dedicated background task so that anyio cancel
+        scopes are entered and exited in the same task. This avoids the
+        "Attempted to exit cancel scope in a different task" RuntimeError
+        that occurs when stop() is called from a different task than start().
+        """
         if not self.config.command:
             self.state.last_error = "No command specified"
             return False
@@ -148,51 +154,66 @@ class LocalServerProcess:
 
         logger.info(f"[MCP:{self.name}] Starting: {params.command} {' '.join(params.args or [])}")
 
-        try:
-            self._exit_stack = AsyncExitStack()
-            await self._exit_stack.__aenter__()
+        ready_event = asyncio.Event()
+        connect_error_holder: list[Exception | None] = [None]
+        self._shutdown_event = asyncio.Event()
 
-            # Route server stderr through logging system
+        async def _run_server() -> None:
+            """Background task that owns the stdio_client lifecycle."""
             server_errlog = LoggerPipe(logger, logging.DEBUG, prefix=f"[{self.name}] ")
+            try:
+                async with stdio_client(params, errlog=server_errlog) as (read_stream, write_stream):
+                    async with ClientSession(read_stream, write_stream) as session:
+                        await session.initialize()
+                        self._session = session
+                        ready_event.set()
+                        # Block until shutdown is requested
+                        await self._shutdown_event.wait()
+            except Exception as e:
+                if not ready_event.is_set():
+                    connect_error_holder[0] = e
+                    ready_event.set()
+                else:
+                    self.state.last_error = str(e)
+                    logger.error(f"[MCP:{self.name}] Server error: {e}")
+            finally:
+                self.state.connected = False
+                self._session = None
 
-            # Enter stdio client context with logged stderr
-            read_stream, write_stream = await self._exit_stack.enter_async_context(
-                stdio_client(params, errlog=server_errlog)
-            )
+        self._server_task = asyncio.create_task(_run_server())
 
-            # Enter session context
-            self._session = await self._exit_stack.enter_async_context(ClientSession(read_stream, write_stream))
+        try:
+            await ready_event.wait()
+        except asyncio.CancelledError:
+            # If we're cancelled while waiting, clean up the background task
+            self._shutdown_event.set()
+            self._server_task.cancel()
+            try:
+                await self._server_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._server_task = None
+            self._shutdown_event = None
+            raise
 
-            # Initialize the connection
-            await self._session.initialize()
+        if connect_error_holder[0]:
+            self._server_task = None
+            self._shutdown_event = None
+            raise connect_error_holder[0]
 
-            # Discover tools
-            await self._discover_tools()
+        # Discover tools
+        await self._discover_tools()
 
-            self.state.connected = True
-            self.state.reconnect_attempts = 0
-            self._update_config_status("running")
+        self.state.connected = True
+        self.state.reconnect_attempts = 0
+        self._update_config_status("running")
 
-            # Start hot reload watcher if enabled
-            if self.config.hot_reload:
-                await self._start_file_watcher()
+        # Start hot reload watcher if enabled
+        if self.config.hot_reload:
+            await self._start_file_watcher()
 
-            logger.info(f"[MCP:{self.name}] Connected, discovered {len(self.state.tools)} tools")
-            return True
-
-        except Exception as e:
-            self.state.last_error = str(e)
-            self.state.connected = False
-
-            if self._exit_stack:
-                try:
-                    await self._exit_stack.__aexit__(None, None, None)
-                except Exception:
-                    pass
-                self._exit_stack = None
-
-            logger.error(f"[MCP:{self.name}] Connection failed: {e}")
-            return False
+        logger.info(f"[MCP:{self.name}] Connected, discovered {len(self.state.tools)} tools")
+        return True
 
     async def _discover_tools(self) -> None:
         """Discover available tools from the server."""
@@ -225,7 +246,12 @@ class LocalServerProcess:
             self.state.tools = []
 
     async def stop(self) -> None:
-        """Stop the local MCP server."""
+        """Stop the local MCP server.
+
+        Signals the background server task to exit cleanly, which ensures
+        stdio_client's cancel scopes are exited in the same task that
+        entered them.
+        """
         async with self._lock:
             # Stop file watcher first
             await self._stop_file_watcher()
@@ -234,17 +260,27 @@ class LocalServerProcess:
             self.state.connected = False
             self._session = None
 
-            if self._exit_stack:
-                exit_stack = self._exit_stack
-                self._exit_stack = None
+            # Signal the background task to exit cleanly
+            if self._shutdown_event:
+                self._shutdown_event.set()
+                self._shutdown_event = None
+
+            if self._server_task and not self._server_task.done():
                 try:
-                    await exit_stack.__aexit__(None, None, None)
-                except Exception as e:
-                    error_msg = str(e)
-                    if "cancel scope" in error_msg.lower() or "different task" in error_msg.lower():
-                        logger.debug(f"[MCP:{self.name}] Cross-task stop (expected): {e}")
-                    else:
-                        logger.warning(f"[MCP:{self.name}] Error during stop: {e}")
+                    # Wait for clean shutdown. stdio_client has its own 2s
+                    # process termination timeout, so we allow generous time.
+                    async with asyncio.timeout(10.0):
+                        await self._server_task
+                except (TimeoutError, asyncio.CancelledError, Exception) as e:
+                    logger.debug(f"[MCP:{self.name}] Shutdown cleanup: {type(e).__name__}: {e}")
+                    if self._server_task and not self._server_task.done():
+                        self._server_task.cancel()
+                        try:
+                            await self._server_task
+                        except (asyncio.CancelledError, Exception):
+                            pass
+
+            self._server_task = None
 
             if was_connected:
                 self._update_config_status("stopped")

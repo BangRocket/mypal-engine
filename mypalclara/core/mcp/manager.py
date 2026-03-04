@@ -393,61 +393,27 @@ class MCPServerManager:
             total = len(self._local) + len(self._remote)
             logger.info(f"[MCP] Shutting down {total} servers...")
 
-            # Suppress noisy asyncio errors during async generator cleanup.
-            # These occur when stdio_client generators are closed from a different task.
-            # We intentionally do NOT restore the original handler because the async
-            # generators from stdio_client may not be cleaned up until the event loop
-            # fully terminates (after this method returns). Keeping this handler active
-            # ensures those late cleanup errors are also suppressed.
+            # Safety net: suppress any residual asyncio errors from async
+            # generator cleanup. The root cause (cross-task cancel scope exit)
+            # is fixed in LocalServerProcess by running stdio_client in a
+            # dedicated background task, but we keep this filter in case of
+            # edge cases during abrupt shutdown.
             loop = asyncio.get_running_loop()
             original_handler = loop.get_exception_handler()
 
             def _shutdown_exception_handler(loop, context):
                 msg = context.get("message", "")
                 exc = context.get("exception")
-                # Suppress known harmless shutdown errors
                 if "closing of asynchronous generator" in msg:
                     return
                 if exc and ("cancel scope" in str(exc).lower() or "GeneratorExit" in str(exc)):
                     return
-                # Fall through to original handler for other errors
                 if original_handler:
                     original_handler(loop, context)
                 else:
                     loop.default_exception_handler(context)
 
             loop.set_exception_handler(_shutdown_exception_handler)
-
-            # Also suppress the asyncio logger which logs these errors directly
-            # before the exception handler can intercept them
-            class _AsyncgenShutdownFilter(logging.Filter):
-                def filter(self, record):
-                    msg = record.getMessage()
-                    # Check the message text
-                    if "closing of asynchronous generator" in msg:
-                        return False
-                    if "cancel scope" in msg.lower() and "different task" in msg.lower():
-                        return False
-                    if "stdio_client" in msg:
-                        return False
-                    # Also check exception info if present
-                    if record.exc_info:
-                        exc_text = str(record.exc_info[1]) if record.exc_info[1] else ""
-                        if "cancel scope" in exc_text.lower():
-                            return False
-                        if "GeneratorExit" in exc_text:
-                            return False
-                        # Check exception type
-                        exc_type = record.exc_info[0]
-                        if exc_type and exc_type.__name__ in ("RuntimeError", "GeneratorExit", "BaseExceptionGroup"):
-                            exc_str = str(record.exc_info[1])
-                            if "cancel scope" in exc_str.lower() or "stdio_client" in exc_str:
-                                return False
-                    return True
-
-            asyncio_logger = logging.getLogger("asyncio")
-            shutdown_filter = _AsyncgenShutdownFilter()
-            asyncio_logger.addFilter(shutdown_filter)
 
             await self._local.shutdown()
             await self._remote.shutdown()
