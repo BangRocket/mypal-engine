@@ -9,6 +9,10 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta
 
+from mypalclara.config.logging import get_logger
+
+logger = get_logger("heartbeat")
+
 ACK_TOKEN = "HEARTBEAT_OK"
 DEFAULT_INTERVAL_MINUTES = 30
 DEFAULT_ACK_MAX_CHARS = 300
@@ -83,3 +87,72 @@ def gather_heartbeat_context() -> dict:
         "current_time": now.isoformat(),
         "active_users": active_users,
     }
+
+
+HEARTBEAT_PROMPT = """You are Clara's heartbeat monitor. You run periodically to check if anything needs attention.
+
+## Your Instructions
+{heartbeat_md}
+
+## Current State
+- Current time: {current_time}
+- Active users (last 24h):
+{user_summaries}
+
+## Rules
+- If nothing needs attention, reply exactly: HEARTBEAT_OK
+- If something does need attention, reply with a short, natural message to send to the user
+- Do not infer tasks from prior conversations unless your instructions tell you to
+- Keep messages brief and warm
+"""
+
+
+async def run_heartbeat_check(
+    llm_callable,
+    heartbeat_md: str,
+    context: dict,
+) -> tuple[bool, str]:
+    """Run a single heartbeat check.
+
+    Args:
+        llm_callable: async function(messages) -> str
+        heartbeat_md: Contents of HEARTBEAT.md
+        context: Dict from gather_heartbeat_context()
+
+    Returns:
+        (should_send, message) — if should_send is False, message is empty
+    """
+    user_lines = []
+    for u in context.get("active_users", []):
+        user_lines.append(f"  - {u['user_id']} (idle {u['idle_minutes']}m, channel: {u['channel']})")
+
+    if not user_lines:
+        user_lines = ["  - No active users"]
+
+    prompt = HEARTBEAT_PROMPT.format(
+        heartbeat_md=heartbeat_md,
+        current_time=context.get("current_time", "unknown"),
+        user_summaries="\n".join(user_lines),
+    )
+
+    try:
+        from mypalclara.core.llm.messages import SystemMessage, UserMessage
+
+        messages = [
+            SystemMessage(content=prompt),
+            UserMessage(content="Run heartbeat check now."),
+        ]
+        response = await llm_callable(messages)
+        response_text = str(response).strip()
+    except Exception as e:
+        logger.error(f"Heartbeat LLM call failed: {e}")
+        return False, ""
+
+    ack_max = int(os.getenv("HEARTBEAT_ACK_MAX_CHARS", str(DEFAULT_ACK_MAX_CHARS)))
+
+    if is_ack(response_text, max_chars=ack_max):
+        logger.debug("Heartbeat: HEARTBEAT_OK — nothing to report")
+        return False, ""
+
+    logger.info(f"Heartbeat wants to send: {response_text[:100]}")
+    return True, response_text
