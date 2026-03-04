@@ -136,6 +136,18 @@ class VMManager:
 
         shared_ws = Path(__file__).parent.parent / "workspace"
 
+        # Ensure directories exist — cloud-init may not have finished yet
+        await self.exec_in_vm(
+            user_id,
+            ["mkdir", "-p", VM_WORKSPACE_DIR, VM_PRIVATE_DIR, VM_PUBLIC_DIR],
+            as_root=True,
+        )
+        await self.exec_in_vm(
+            user_id,
+            ["chown", "-R", "clara:clara", "/home/clara"],
+            as_root=True,
+        )
+
         for filename in ("SOUL.md", "IDENTITY.md"):
             src = shared_ws / filename
             if not src.exists():
