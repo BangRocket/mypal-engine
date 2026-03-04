@@ -1,0 +1,160 @@
+"""Persistent per-user VM lifecycle management.
+
+Each user can get a persistent Incus VM (or container) that survives
+across sessions. VMs are provisioned on demand, suspended on idle,
+and resumed when the user returns.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import re
+
+logger = logging.getLogger(__name__)
+
+# Default Incus image for user VMs
+DEFAULT_IMAGE = "images:debian/12/cloud"
+DEFAULT_INSTANCE_TYPE = "container"
+VM_WORKSPACE_DIR = "/home/clara/workspace"
+VM_PRIVATE_DIR = "/home/clara/private"
+VM_PUBLIC_DIR = "/home/clara/public"
+
+# Cloud-init for user VMs
+USER_VM_CLOUD_INIT = """\
+#cloud-config
+packages:
+  - python3
+  - python3-pip
+  - git
+  - curl
+runcmd:
+  - mkdir -p /home/clara/workspace /home/clara/private /home/clara/public
+  - chown -R 1000:1000 /home/clara
+"""
+
+
+def _sanitize_user_id(user_id: str) -> str:
+    """Convert user_id to a safe Incus instance name component."""
+    return re.sub(r"[^a-zA-Z0-9-]", "-", user_id).strip("-").lower()
+
+
+class VMManager:
+    """Manages persistent per-user Incus VMs."""
+
+    def __init__(self) -> None:
+        self._instances: dict[str, str] = {}  # user_id -> instance_name
+        self._statuses: dict[str, str] = {}  # user_id -> status
+        self._lock = asyncio.Lock()
+
+    async def _run_incus(self, *args: str) -> str:
+        """Run an incus CLI command and return stdout."""
+        cmd = ["incus", *args]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            error = stderr.decode().strip()
+            raise RuntimeError(f"incus {args[0]} failed: {error}")
+        return stdout.decode().strip()
+
+    def _instance_name(self, user_id: str) -> str:
+        """Generate instance name for a user."""
+        safe_id = _sanitize_user_id(user_id)
+        return f"clara-user-{safe_id}"
+
+    async def provision(self, user_id: str) -> bool:
+        """Provision a new persistent VM for a user."""
+        async with self._lock:
+            instance_name = self._instance_name(user_id)
+
+            if user_id in self._instances:
+                return True
+
+            try:
+                output = await self._run_incus("info", instance_name)
+                if output:
+                    self._instances[user_id] = instance_name
+                    self._statuses[user_id] = "running"
+                    return True
+            except RuntimeError:
+                pass
+
+            await self._run_incus(
+                "launch",
+                DEFAULT_IMAGE,
+                instance_name,
+                "--config",
+                f"user.user-data={USER_VM_CLOUD_INIT}",
+            )
+
+            self._instances[user_id] = instance_name
+            self._statuses[user_id] = "running"
+            logger.info(f"[VM] Provisioned {instance_name} for {user_id}")
+            return True
+
+    async def suspend(self, user_id: str) -> None:
+        """Suspend (pause) a user's VM."""
+        if user_id not in self._instances:
+            raise ValueError(f"No VM found for user {user_id}")
+
+        instance_name = self._instances[user_id]
+        await self._run_incus("pause", instance_name)
+        self._statuses[user_id] = "suspended"
+        logger.info(f"[VM] Suspended {instance_name}")
+
+    async def resume(self, user_id: str) -> None:
+        """Resume a suspended user VM."""
+        if user_id not in self._instances:
+            raise ValueError(f"No VM found for user {user_id}")
+
+        instance_name = self._instances[user_id]
+        await self._run_incus("start", instance_name)
+        self._statuses[user_id] = "running"
+        logger.info(f"[VM] Resumed {instance_name}")
+
+    async def ensure_vm(self, user_id: str) -> str:
+        """Ensure a user's VM is running, provisioning or resuming as needed."""
+        status = self._statuses.get(user_id)
+
+        if status == "running":
+            return self._instances[user_id]
+
+        if status == "suspended":
+            await self.resume(user_id)
+            return self._instances[user_id]
+
+        await self.provision(user_id)
+        return self._instances.get(user_id, self._instance_name(user_id))
+
+    async def exec_in_vm(self, user_id: str, command: list[str]) -> str:
+        """Execute a command inside a user's VM."""
+        await self.ensure_vm(user_id)
+        instance_name = self._instances[user_id]
+        return await self._run_incus("exec", instance_name, "--", *command)
+
+    async def read_file(self, user_id: str, path: str) -> str:
+        """Read a file from a user's VM."""
+        return await self.exec_in_vm(user_id, ["cat", path])
+
+    async def write_file(self, user_id: str, path: str, content: str) -> None:
+        """Write content to a file in a user's VM."""
+        await self.exec_in_vm(
+            user_id,
+            ["sh", "-c", f"cat > {path} << 'CLARA_EOF'\n{content}\nCLARA_EOF"],
+        )
+
+    async def get_status(self, user_id: str) -> dict[str, str | None]:
+        """Get the status of a user's VM."""
+        return {
+            "user_id": user_id,
+            "instance_name": self._instances.get(user_id),
+            "status": self._statuses.get(user_id),
+        }
+
+    async def list_vms(self) -> list[dict[str, str | None]]:
+        """List all tracked user VMs."""
+        return [await self.get_status(uid) for uid in self._instances]
