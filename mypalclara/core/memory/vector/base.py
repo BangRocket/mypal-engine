@@ -32,6 +32,19 @@ class VectorStoreBase(ABC):
         pass
 
     @abstractmethod
+    def update_payload(self, vector_id, payload):
+        """Update only the payload (metadata) of a vector without changing the vector itself.
+
+        Unlike update(), this merges the given payload keys into the existing payload
+        rather than replacing it entirely.
+
+        Args:
+            vector_id: ID of the vector to update
+            payload: Dictionary of payload keys to merge
+        """
+        pass
+
+    @abstractmethod
     def get(self, vector_id):
         """Retrieve a vector by ID."""
         pass
