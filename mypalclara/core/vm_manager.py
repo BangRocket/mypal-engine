@@ -75,9 +75,7 @@ class VMManager:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=timeout
-            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except asyncio.TimeoutError:
             proc.kill()
             raise RuntimeError(f"incus {args[0]} timed out after {timeout}s")
@@ -168,9 +166,7 @@ class VMManager:
             # sessionmaker sessions can be re-used after close in SQLite.
             pass
 
-    def _save_to_db(
-        self, user_id: str, instance_name: str, instance_type: str
-    ) -> None:
+    def _save_to_db(self, user_id: str, instance_name: str, instance_type: str) -> None:
         """Create or update a UserVM record after provisioning."""
         if self._session_factory is None:
             return
@@ -215,9 +211,7 @@ class VMManager:
                 session.commit()
         except Exception:
             session.rollback()
-            logger.exception(
-                f"[VM] Failed to update DB status for {user_id}"
-            )
+            logger.exception(f"[VM] Failed to update DB status for {user_id}")
 
     async def ensure_vm(self, user_id: str) -> str:
         """Ensure a user's VM is running, provisioning or resuming as needed."""
@@ -256,6 +250,34 @@ class VMManager:
                 f"cat > '{escaped_path}' << 'CLARA_EOF'\n{content}\nCLARA_EOF",
             ],
         )
+
+    async def read_workspace_files(self, user_id: str) -> dict[str, str]:
+        """Read all .md files from a user's VM workspace.
+
+        Returns:
+            Dict mapping filename to content, e.g. {"USER.md": "...", "MEMORY.md": "..."}
+        """
+        try:
+            # List .md files in workspace
+            file_list = await self.exec_in_vm(
+                user_id, ["find", VM_WORKSPACE_DIR, "-maxdepth", "1", "-name", "*.md", "-type", "f"]
+            )
+        except RuntimeError:
+            logger.warning(f"[VM] Could not list workspace files for {user_id}")
+            return {}
+
+        files: dict[str, str] = {}
+        for filepath in file_list.strip().splitlines():
+            filepath = filepath.strip()
+            if not filepath:
+                continue
+            filename = filepath.rsplit("/", 1)[-1]
+            try:
+                content = await self.read_file(user_id, filepath)
+                files[filename] = content
+            except RuntimeError:
+                logger.warning(f"[VM] Could not read {filepath} for {user_id}")
+        return files
 
     async def get_status(self, user_id: str) -> dict[str, str | None]:
         """Get the status of a user's VM."""

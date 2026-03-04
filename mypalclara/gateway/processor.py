@@ -50,6 +50,9 @@ BLOCKING_EXECUTOR = ThreadPoolExecutor(
 # Memory fetch timeout (graceful degradation on Qdrant slowness)
 MEMORY_FETCH_TIMEOUT = float(os.getenv("MEMORY_FETCH_TIMEOUT", "10"))
 
+# Per-user VM feature flag
+USER_VM_ENABLED = os.getenv("USER_VM_ENABLED", "false").lower() == "true"
+
 # Auto-tier configuration
 AUTO_TIER_ENABLED = os.getenv("AUTO_TIER_SELECTION", "false").lower() == "true"
 
@@ -567,6 +570,26 @@ class MessageProcessor:
 
         # Determine privacy scope based on channel type
         privacy_scope = _determine_privacy_scope(request.channel.type)
+
+        # Ensure user VM is running and register workspace (DMs only)
+        if USER_VM_ENABLED and self._vm_manager and is_dm:
+            try:
+                await self._vm_manager.ensure_vm(user_id)
+
+                # Register VM workspace so workspace tools route to user's VM
+                from pathlib import Path
+
+                from mypalclara.core.core_tools.workspace_tool import register_user_workspace
+                from mypalclara.core.vm_manager import VM_WORKSPACE_DIR
+
+                register_user_workspace(user_id, Path(VM_WORKSPACE_DIR))
+
+                # Load workspace files into prompt builder cache
+                await self._memory_manager.load_user_workspace(
+                    user_id, self._vm_manager
+                )
+            except Exception as e:
+                logger.warning(f"Could not set up user VM for {user_id}: {e}")
 
         # Fetch memories from mem0 (with timeout for resilience)
         try:

@@ -365,6 +365,10 @@ class MemoryManager:
             user_id=user_id,
         )
 
+    async def load_user_workspace(self, user_id: str, vm_manager: object) -> None:
+        """Load per-user workspace files from a VM into the prompt builder cache."""
+        await self._prompt_builder.load_user_workspace(user_id, vm_manager)
+
     def fetch_topic_recurrence(
         self,
         user_id: str,
