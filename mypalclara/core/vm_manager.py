@@ -36,7 +36,12 @@ runcmd:
 
 def _sanitize_user_id(user_id: str) -> str:
     """Convert user_id to a safe Incus instance name component."""
-    return re.sub(r"[^a-zA-Z0-9-]", "-", user_id).strip("-").lower()
+    if not user_id:
+        raise ValueError("user_id cannot be empty")
+    safe_id = re.sub(r"[^a-zA-Z0-9-]", "-", user_id).strip("-").lower()
+    if not safe_id:
+        raise ValueError(f"user_id '{user_id}' contains no valid characters")
+    return safe_id
 
 
 class VMManager:
@@ -47,7 +52,7 @@ class VMManager:
         self._statuses: dict[str, str] = {}  # user_id -> status
         self._lock = asyncio.Lock()
 
-    async def _run_incus(self, *args: str) -> str:
+    async def _run_incus(self, *args: str, timeout: float = 60.0) -> str:
         """Run an incus CLI command and return stdout."""
         cmd = ["incus", *args]
         proc = await asyncio.create_subprocess_exec(
@@ -55,7 +60,13 @@ class VMManager:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await proc.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            raise RuntimeError(f"incus {args[0]} timed out after {timeout}s")
         if proc.returncode != 0:
             error = stderr.decode().strip()
             raise RuntimeError(f"incus {args[0]} failed: {error}")
@@ -142,9 +153,16 @@ class VMManager:
 
     async def write_file(self, user_id: str, path: str, content: str) -> None:
         """Write content to a file in a user's VM."""
+        if "CLARA_EOF" in content:
+            raise ValueError("Content contains reserved delimiter 'CLARA_EOF'")
+        escaped_path = path.replace("'", "'\\''")
         await self.exec_in_vm(
             user_id,
-            ["sh", "-c", f"cat > {path} << 'CLARA_EOF'\n{content}\nCLARA_EOF"],
+            [
+                "sh",
+                "-c",
+                f"cat > '{escaped_path}' << 'CLARA_EOF'\n{content}\nCLARA_EOF",
+            ],
         )
 
     async def get_status(self, user_id: str) -> dict[str, str | None]:
