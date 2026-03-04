@@ -119,7 +119,12 @@ class MessageProcessor:
         self._tool_executor: ToolExecutor | None = None
         self._llm_orchestrator: LLMOrchestrator | None = None
         self._summary_manager: ChannelSummaryManager | None = None
+        self._vm_manager: Any = None
         self._background_tasks: set[asyncio.Task] = set()
+
+    def set_vm_manager(self, vm_manager: Any) -> None:
+        """Set the VM manager for per-user VM access."""
+        self._vm_manager = vm_manager
 
     async def initialize(self) -> None:
         """Initialize the processor with required resources.
@@ -624,6 +629,8 @@ class MessageProcessor:
             recurring_topics=recurring_topics,
             tools=tools,
             channel_context=channel_context_msgs if channel_context_msgs else None,
+            privacy_scope=privacy_scope,
+            user_id=user_id,
         )
 
         # Add gateway context

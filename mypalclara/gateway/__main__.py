@@ -476,6 +476,17 @@ async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] 
     # Initialize processor
     await processor.initialize()
 
+    # Initialize VM manager
+    from mypalclara.core.vm_manager import VMManager
+    from mypalclara.db import SessionLocal
+
+    vm_manager = VMManager(session_factory=SessionLocal)
+    await vm_manager.load_from_db()
+    logger.info(f"VM manager ready ({len(vm_manager._instances)} user VMs loaded)")
+
+    # Pass to processor
+    processor.set_vm_manager(vm_manager)
+
     # Start scheduler
     await scheduler.start()
 

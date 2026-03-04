@@ -345,6 +345,8 @@ class MemoryManager:
         tools: list[dict] | None = None,
         channel_context: list | None = None,
         model_name: str = "claude",
+        privacy_scope: str = "full",
+        user_id: str | None = None,
     ) -> list[Message]:
         """Build the full prompt for the LLM."""
         return self._prompt_builder.build_prompt(
@@ -359,6 +361,8 @@ class MemoryManager:
             tools=tools,
             channel_context=channel_context,
             model_name=model_name,
+            privacy_scope=privacy_scope,
+            user_id=user_id,
         )
 
     def fetch_topic_recurrence(
