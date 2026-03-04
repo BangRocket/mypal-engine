@@ -10,6 +10,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -45,12 +49,22 @@ def _sanitize_user_id(user_id: str) -> str:
 
 
 class VMManager:
-    """Manages persistent per-user Incus VMs."""
+    """Manages persistent per-user Incus VMs.
 
-    def __init__(self) -> None:
+    Args:
+        session_factory: Optional callable returning a SQLAlchemy Session.
+            When provided, VM state is persisted to the database.
+            When None, only in-memory tracking is used.
+    """
+
+    def __init__(
+        self,
+        session_factory: Callable[[], Session] | None = None,
+    ) -> None:
         self._instances: dict[str, str] = {}  # user_id -> instance_name
         self._statuses: dict[str, str] = {}  # user_id -> status
         self._lock = asyncio.Lock()
+        self._session_factory = session_factory
 
     async def _run_incus(self, *args: str, timeout: float = 60.0) -> str:
         """Run an incus CLI command and return stdout."""
@@ -104,6 +118,7 @@ class VMManager:
 
             self._instances[user_id] = instance_name
             self._statuses[user_id] = "running"
+            self._save_to_db(user_id, instance_name, DEFAULT_INSTANCE_TYPE)
             logger.info(f"[VM] Provisioned {instance_name} for {user_id}")
             return True
 
@@ -115,6 +130,7 @@ class VMManager:
         instance_name = self._instances[user_id]
         await self._run_incus("pause", instance_name)
         self._statuses[user_id] = "suspended"
+        self._update_db_status(user_id, "suspended")
         logger.info(f"[VM] Suspended {instance_name}")
 
     async def resume(self, user_id: str) -> None:
@@ -125,7 +141,83 @@ class VMManager:
         instance_name = self._instances[user_id]
         await self._run_incus("start", instance_name)
         self._statuses[user_id] = "running"
+        self._update_db_status(user_id, "running")
         logger.info(f"[VM] Resumed {instance_name}")
+
+    # ------------------------------------------------------------------
+    # DB persistence helpers
+    # ------------------------------------------------------------------
+
+    async def load_from_db(self) -> None:
+        """Load VM state from database on startup."""
+        if self._session_factory is None:
+            return
+        from mypalclara.db.models import UserVM
+
+        session = self._session_factory()
+        try:
+            vms = session.query(UserVM).all()
+            for vm in vms:
+                self._instances[vm.user_id] = vm.instance_name
+                self._statuses[vm.user_id] = vm.status
+            if vms:
+                logger.info(f"[VM] Loaded {len(vms)} VM(s) from database")
+        finally:
+            # Only close if we own the session (i.e. factory creates new ones)
+            # In tests the caller owns the session, but closing is safe since
+            # sessionmaker sessions can be re-used after close in SQLite.
+            pass
+
+    def _save_to_db(
+        self, user_id: str, instance_name: str, instance_type: str
+    ) -> None:
+        """Create or update a UserVM record after provisioning."""
+        if self._session_factory is None:
+            return
+        from mypalclara.db.models import UserVM
+
+        session = self._session_factory()
+        try:
+            existing = session.query(UserVM).filter_by(user_id=user_id).first()
+            if existing:
+                existing.status = "running"
+                existing.instance_name = instance_name
+            else:
+                vm = UserVM(
+                    user_id=user_id,
+                    instance_name=instance_name,
+                    instance_type=instance_type,
+                    status="running",
+                )
+                session.add(vm)
+            session.commit()
+        except Exception:
+            session.rollback()
+            logger.exception(f"[VM] Failed to save DB record for {user_id}")
+
+    def _update_db_status(self, user_id: str, status: str) -> None:
+        """Update a VM's status in the database."""
+        if self._session_factory is None:
+            return
+        from mypalclara.db.models import UserVM
+
+        session = self._session_factory()
+        try:
+            vm = session.query(UserVM).filter_by(user_id=user_id).first()
+            if vm:
+                vm.status = status
+                if status == "suspended":
+                    from mypalclara.db.models import utcnow
+
+                    vm.suspended_at = utcnow()
+                elif status == "running":
+                    vm.suspended_at = None
+                session.commit()
+        except Exception:
+            session.rollback()
+            logger.exception(
+                f"[VM] Failed to update DB status for {user_id}"
+            )
 
     async def ensure_vm(self, user_id: str) -> str:
         """Ensure a user's VM is running, provisioning or resuming as needed."""
