@@ -117,8 +117,29 @@ class VMManager:
             self._instances[user_id] = instance_name
             self._statuses[user_id] = "running"
             self._save_to_db(user_id, instance_name, DEFAULT_INSTANCE_TYPE)
+
+            # Seed workspace with shared SOUL.md and IDENTITY.md
+            await self._seed_workspace(user_id)
+
             logger.info(f"[VM] Provisioned {instance_name} for {user_id}")
             return True
+
+    async def _seed_workspace(self, user_id: str) -> None:
+        """Copy SOUL.md and IDENTITY.md from the shared workspace into a new VM."""
+        from pathlib import Path
+
+        shared_ws = Path(__file__).parent.parent / "workspace"
+
+        for filename in ("SOUL.md", "IDENTITY.md"):
+            src = shared_ws / filename
+            if not src.exists():
+                continue
+            try:
+                content = src.read_text(encoding="utf-8")
+                await self.write_file(user_id, f"{VM_WORKSPACE_DIR}/{filename}", content)
+                logger.info(f"[VM] Seeded {filename} into {self._instances[user_id]}")
+            except Exception as e:
+                logger.warning(f"[VM] Could not seed {filename}: {e}")
 
     async def suspend(self, user_id: str) -> None:
         """Suspend (pause) a user's VM."""
