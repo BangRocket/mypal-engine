@@ -27,6 +27,12 @@ VM_PUBLIC_DIR = "/home/clara/public"
 # Cloud-init for user VMs
 USER_VM_CLOUD_INIT = """\
 #cloud-config
+users:
+  - name: clara
+    uid: 1000
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    home: /home/clara
 packages:
   - python3
   - python3-pip
@@ -34,7 +40,7 @@ packages:
   - curl
 runcmd:
   - mkdir -p /home/clara/workspace /home/clara/private /home/clara/public
-  - chown -R 1000:1000 /home/clara
+  - chown -R clara:clara /home/clara
 """
 
 
@@ -248,11 +254,21 @@ class VMManager:
         await self.provision(user_id)
         return self._instances.get(user_id, self._instance_name(user_id))
 
-    async def exec_in_vm(self, user_id: str, command: list[str]) -> str:
-        """Execute a command inside a user's VM."""
+    async def exec_in_vm(self, user_id: str, command: list[str], as_root: bool = False) -> str:
+        """Execute a command inside a user's VM.
+
+        Args:
+            user_id: The user whose VM to execute in.
+            command: Command and arguments to run.
+            as_root: If True, run as root. Otherwise runs as the 'clara' user.
+        """
         await self.ensure_vm(user_id)
         instance_name = self._instances[user_id]
-        return await self._run_incus("exec", instance_name, "--", *command)
+        if as_root:
+            return await self._run_incus("exec", instance_name, "--", *command)
+        return await self._run_incus(
+            "exec", instance_name, "--user", "1000", "--group", "1000", "--", *command
+        )
 
     async def read_file(self, user_id: str, path: str) -> str:
         """Read a file from a user's VM."""
