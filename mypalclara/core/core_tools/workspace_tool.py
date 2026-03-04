@@ -20,6 +20,39 @@ MODULE_VERSION = "1.0.0"
 WORKSPACE_DIR = Path(__file__).parent.parent.parent / "workspace"
 READONLY_FILES = frozenset({"SOUL.md", "IDENTITY.md"})
 
+# Maps user_id -> Path for users with VM workspaces.
+# Populated by VMManager (Task 11) at VM creation time.
+_user_workspace_dirs: dict[str, Path] = {}
+
+
+def register_user_workspace(user_id: str, workspace_path: Path) -> None:
+    """Register a per-user VM workspace directory.
+
+    Called by VMManager when a user VM is provisioned.
+    After registration, workspace tools for this user will
+    read/write from their VM workspace instead of the shared one.
+    """
+    _user_workspace_dirs[user_id] = workspace_path
+
+
+def unregister_user_workspace(user_id: str) -> None:
+    """Remove a per-user VM workspace registration."""
+    _user_workspace_dirs.pop(user_id, None)
+
+
+def _resolve_workspace_dir(ctx: ToolContext) -> Path:
+    """Resolve the workspace directory for a given user context.
+
+    If the user has a registered VM workspace, returns that path.
+    Otherwise returns the shared WORKSPACE_DIR.
+
+    Note: Global files (SOUL.md, IDENTITY.md) are handled at the
+    handler level — they always read from WORKSPACE_DIR regardless
+    of what this function returns.
+    """
+    return _user_workspace_dirs.get(ctx.user_id, WORKSPACE_DIR)
+
+
 SYSTEM_PROMPT = """
 ## Workspace Files
 You have access to workspace files that shape your behavior and memory.
@@ -61,10 +94,11 @@ def _sanitize_filename(filename: str) -> str | None:
 
 async def _handle_workspace_list(args: dict[str, Any], ctx: ToolContext) -> str:
     """List all workspace files."""
-    if not WORKSPACE_DIR.is_dir():
+    ws_dir = _resolve_workspace_dir(ctx)
+    if not ws_dir.is_dir():
         return "Workspace directory not found."
 
-    files = sorted(WORKSPACE_DIR.glob("*.md"))
+    files = sorted(ws_dir.glob("*.md"))
     if not files:
         return "No workspace files found."
 
@@ -84,7 +118,9 @@ async def _handle_workspace_read(args: dict[str, Any], ctx: ToolContext) -> str:
     if not safe_name:
         return f"Error: Invalid filename '{filename}'."
 
-    filepath = WORKSPACE_DIR / safe_name
+    # Global files (SOUL.md, IDENTITY.md) always come from the shared workspace
+    ws_dir = WORKSPACE_DIR if safe_name in READONLY_FILES else _resolve_workspace_dir(ctx)
+    filepath = ws_dir / safe_name
     if not filepath.exists():
         return f"Error: '{safe_name}' not found. Use workspace_list to see available files."
 
@@ -102,7 +138,8 @@ async def _handle_workspace_write(args: dict[str, Any], ctx: ToolContext) -> str
     if safe_name in READONLY_FILES:
         return f"Error: '{safe_name}' is read-only (owner-controlled). You cannot edit this file."
 
-    filepath = WORKSPACE_DIR / safe_name
+    ws_dir = _resolve_workspace_dir(ctx)
+    filepath = ws_dir / safe_name
     if not filepath.exists():
         return f"Error: '{safe_name}' not found. Use workspace_create to make a new file."
 
@@ -132,11 +169,12 @@ async def _handle_workspace_create(args: dict[str, Any], ctx: ToolContext) -> st
     if safe_name in READONLY_FILES:
         return f"Error: '{safe_name}' is a reserved name."
 
-    filepath = WORKSPACE_DIR / safe_name
+    ws_dir = _resolve_workspace_dir(ctx)
+    filepath = ws_dir / safe_name
     if filepath.exists():
         return f"Error: '{safe_name}' already exists. Use workspace_write to update it."
 
-    WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
+    ws_dir.mkdir(parents=True, exist_ok=True)
     content = args.get("content", "")
     filepath.write_text(content, encoding="utf-8")
     return f"Created '{safe_name}' ({len(content):,} bytes)."
