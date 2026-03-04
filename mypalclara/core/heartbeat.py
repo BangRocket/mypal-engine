@@ -6,8 +6,11 @@ workspace-driven HEARTBEAT.md instructions.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Callable
 
 from mypalclara.config.logging import get_logger
 
@@ -156,3 +159,51 @@ async def run_heartbeat_check(
 
     logger.info(f"Heartbeat wants to send: {response_text[:100]}")
     return True, response_text
+
+
+def _load_heartbeat_md() -> str:
+    """Load HEARTBEAT.md from the workspace directory.
+
+    Returns the file contents, or a default instruction if not found.
+    """
+    workspace_dir = Path(__file__).parent.parent / "workspace"
+    heartbeat_path = workspace_dir / "HEARTBEAT.md"
+
+    if heartbeat_path.exists():
+        return heartbeat_path.read_text(encoding="utf-8").strip()
+
+    return "No HEARTBEAT.md found. Reply HEARTBEAT_OK."
+
+
+async def heartbeat_loop(
+    llm_callable: Callable,
+    send_fn: Callable,
+    interval_minutes: float = DEFAULT_INTERVAL_MINUTES,
+) -> None:
+    """Run the heartbeat loop forever.
+
+    Args:
+        llm_callable: async function(messages) -> str
+        send_fn: async function(message_text) -> None, delivers to adapters
+        interval_minutes: Minutes between heartbeat checks
+    """
+    interval = float(os.getenv("HEARTBEAT_INTERVAL_MINUTES", str(interval_minutes)))
+    logger.info(f"Heartbeat loop started (interval: {interval}m)")
+
+    while True:
+        try:
+            heartbeat_md = _load_heartbeat_md()
+            context = gather_heartbeat_context()
+
+            should_send, message = await run_heartbeat_check(llm_callable, heartbeat_md, context)
+
+            if should_send and message:
+                await send_fn(message)
+                logger.info("Heartbeat message delivered")
+
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"Heartbeat cycle error: {e}")
+
+        await asyncio.sleep(interval * 60)
