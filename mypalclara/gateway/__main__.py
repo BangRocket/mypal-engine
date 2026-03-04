@@ -506,6 +506,43 @@ async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] 
         adapter_manager = get_adapter_manager(config_path)
         await adapter_manager.start(adapter_names)
 
+    # Start heartbeat loop if enabled
+    heartbeat_task = None
+    if os.getenv("HEARTBEAT_ENABLED", "false").lower() == "true":
+        from mypalclara.core.heartbeat import heartbeat_loop
+        from mypalclara.core.llm.compat import make_llm
+        from mypalclara.core.llm.config import ModelTier
+
+        heartbeat_llm = make_llm(tier=ModelTier.LOW)
+
+        async def _heartbeat_llm_async(messages):
+            """Wrap sync LLM callable for heartbeat."""
+            return await asyncio.get_event_loop().run_in_executor(None, heartbeat_llm, messages)
+
+        async def _heartbeat_send(message_text: str):
+            """Broadcast heartbeat message to all connected adapters."""
+            from mypalclara.gateway.protocol import (
+                ChannelInfo,
+                ProactiveMessage,
+                UserInfo,
+            )
+
+            nodes = await server.node_registry.get_all_nodes()
+            for node in nodes:
+                try:
+                    msg = ProactiveMessage(
+                        user=UserInfo(id="heartbeat", name="Heartbeat"),
+                        channel=ChannelInfo(id="heartbeat", name="heartbeat"),
+                        content=message_text,
+                        priority="low",
+                    )
+                    await node.websocket.send(msg.model_dump_json())
+                except Exception as e:
+                    logger.warning(f"Failed to send heartbeat to {node.node_id}: {e}")
+
+        heartbeat_task = asyncio.create_task(heartbeat_loop(_heartbeat_llm_async, _heartbeat_send))
+        logger.info("Heartbeat loop started")
+
     # Emit startup event
     await emit(
         Event(
@@ -555,6 +592,14 @@ async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] 
     api_server.should_exit = True
     await api_task
     logger.info("HTTP API server stopped")
+
+    if heartbeat_task and not heartbeat_task.done():
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("Heartbeat loop stopped")
 
     if adapter_manager:
         await adapter_manager.stop()
