@@ -21,6 +21,10 @@ from mypalclara.core.memory.vector.base import VectorStoreBase
 
 logger = logging.getLogger("clara.memory.vector.qdrant")
 
+# Circuit breaker defaults
+_CB_THRESHOLD = int(os.getenv("QDRANT_CB_THRESHOLD", "3"))
+_CB_COOLDOWN = float(os.getenv("QDRANT_CB_COOLDOWN", "30"))
+
 
 class Qdrant(VectorStoreBase):
     """Qdrant vector store implementation."""
@@ -79,6 +83,10 @@ class Qdrant(VectorStoreBase):
         self.embedding_model_dims = embedding_model_dims
         self.on_disk = on_disk
         self.create_col(embedding_model_dims, on_disk)
+
+        # Circuit breaker state
+        self._cb_failures = 0
+        self._cb_open_until = 0.0
 
     def create_col(self, vector_size: int, on_disk: bool = False, distance: Distance = Distance.COSINE):
         """Create a new collection."""
@@ -141,16 +149,52 @@ class Qdrant(VectorStoreBase):
                 conditions.append(FieldCondition(key=key, match=MatchValue(value=value)))
         return Filter(must=conditions) if conditions else None
 
+    def _cb_is_open(self) -> bool:
+        """Check if circuit breaker is open (should skip calls)."""
+        if self._cb_failures < _CB_THRESHOLD:
+            return False
+        if time.monotonic() >= self._cb_open_until:
+            # Cooldown expired — allow a probe attempt
+            logger.info("[Qdrant] Circuit breaker half-open, allowing probe")
+            return False
+        return True
+
+    def _cb_record_success(self) -> None:
+        """Record a successful call, resetting the breaker."""
+        if self._cb_failures > 0:
+            logger.info("[Qdrant] Circuit breaker reset after success")
+        self._cb_failures = 0
+        self._cb_open_until = 0.0
+
+    def _cb_record_failure(self) -> None:
+        """Record a failed call, potentially opening the breaker."""
+        self._cb_failures += 1
+        if self._cb_failures >= _CB_THRESHOLD:
+            self._cb_open_until = time.monotonic() + _CB_COOLDOWN
+            logger.warning(
+                f"[Qdrant] Circuit breaker OPEN after {self._cb_failures} failures, "
+                f"cooling down for {_CB_COOLDOWN}s"
+            )
+
     def search(self, query: str, vectors: list, limit: int = 5, filters: dict = None) -> list:
         """Search for similar vectors."""
-        query_filter = self._create_filter(filters) if filters else None
-        hits = self.client.query_points(
-            collection_name=self.collection_name,
-            query=vectors,
-            query_filter=query_filter,
-            limit=limit,
-        )
-        return hits.points
+        if self._cb_is_open():
+            logger.warning("[Qdrant] Circuit breaker open, returning empty results")
+            return []
+        try:
+            query_filter = self._create_filter(filters) if filters else None
+            hits = self.client.query_points(
+                collection_name=self.collection_name,
+                query=vectors,
+                query_filter=query_filter,
+                limit=limit,
+            )
+            self._cb_record_success()
+            return hits.points
+        except Exception as e:
+            self._cb_record_failure()
+            logger.error(f"[Qdrant] Search failed: {e}")
+            return []
 
     def delete(self, vector_id: int):
         """Delete a vector by ID."""
@@ -193,15 +237,24 @@ class Qdrant(VectorStoreBase):
 
     def list(self, filters: dict = None, limit: int = 100) -> list:
         """List all vectors in a collection."""
-        query_filter = self._create_filter(filters) if filters else None
-        result = self.client.scroll(
-            collection_name=self.collection_name,
-            scroll_filter=query_filter,
-            limit=limit,
-            with_payload=True,
-            with_vectors=False,
-        )
-        return result
+        if self._cb_is_open():
+            logger.warning("[Qdrant] Circuit breaker open, returning empty results for list")
+            return ([], None)
+        try:
+            query_filter = self._create_filter(filters) if filters else None
+            result = self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=query_filter,
+                limit=limit,
+                with_payload=True,
+                with_vectors=False,
+            )
+            self._cb_record_success()
+            return result
+        except Exception as e:
+            self._cb_record_failure()
+            logger.error(f"[Qdrant] List/scroll failed: {e}")
+            return ([], None)
 
     def reset(self):
         """Reset the index by deleting and recreating it."""
