@@ -346,6 +346,18 @@ EMAIL_MONITORING_ENABLED=false    # Email alerts
 TAVILY_API_KEY=...                # Web search in sandbox
 ```
 
+### Per-User VMs
+```bash
+USER_VM_ENABLED=false             # Enable persistent per-user VMs
+USER_VM_IDLE_TIMEOUT=1800         # Seconds before suspend (default: 1800 = 30 min)
+USER_VM_INSTANCE_TYPE=container   # 'container' or 'vm'
+USER_VM_IMAGE=images:debian/12/cloud  # Incus image for user VMs
+```
+
+Each user can get a persistent Incus VM with personal workspace files and filesystem access. VMs are provisioned on demand, suspended on idle, and resumed when the user returns.
+
+**Privacy model:** Memories default to `private`. Users can mark memories as `public` for group channel visibility. Clara respects the boundary automatically based on channel type (DM = full access, group = public only).
+
 ## Key Patterns
 
 - Discord bot uses global `MemoryManager` instance initialized at startup with LLM callable
