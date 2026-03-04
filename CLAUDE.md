@@ -329,6 +329,15 @@ CLARA_GATEWAY_API_PORT=18790          # Gateway HTTP API port (default: 18790)
 CLARA_GATEWAY_API_URL=http://127.0.0.1:18790  # Gateway HTTP API URL (for Rails proxy)
 ```
 
+### Heartbeat (OpenClaw-inspired)
+```bash
+HEARTBEAT_ENABLED=false           # Enable periodic heartbeat checks
+HEARTBEAT_INTERVAL_MINUTES=30     # Minutes between checks (default: 30)
+HEARTBEAT_ACK_MAX_CHARS=300       # Max chars to suppress with HEARTBEAT_OK
+```
+
+Edit `mypalclara/workspace/HEARTBEAT.md` to customize what Clara checks each cycle.
+
 ### Optional Features
 ```bash
 ENABLE_GRAPH_MEMORY=false         # FalkorDB relationship tracking
