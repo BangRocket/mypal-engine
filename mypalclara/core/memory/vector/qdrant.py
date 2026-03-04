@@ -3,6 +3,7 @@
 import logging
 import os
 import shutil
+import time
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -71,7 +72,8 @@ class Qdrant(VectorStoreBase):
             else:
                 self.is_local = False
 
-            self.client = QdrantClient(**params)
+            timeout = int(os.getenv("QDRANT_TIMEOUT", "15"))
+            self.client = QdrantClient(**params, timeout=timeout)
 
         self.collection_name = collection_name
         self.embedding_model_dims = embedding_model_dims
