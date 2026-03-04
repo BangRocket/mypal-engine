@@ -159,6 +159,32 @@ class VMManager:
             except Exception as e:
                 logger.warning(f"[VM] Could not seed {filename}: {e}")
 
+    async def _ensure_seeded(self, user_id: str) -> None:
+        """Check if SOUL.md/IDENTITY.md exist in the VM; seed any that are missing."""
+        from pathlib import Path
+
+        shared_ws = Path(__file__).parent.parent / "workspace"
+
+        for filename in ("SOUL.md", "IDENTITY.md"):
+            src = shared_ws / filename
+            if not src.exists():
+                continue
+            try:
+                await self.exec_in_vm(user_id, ["test", "-f", f"{VM_WORKSPACE_DIR}/{filename}"])
+            except RuntimeError:
+                # File doesn't exist in VM — seed it
+                try:
+                    await self.exec_in_vm(
+                        user_id,
+                        ["mkdir", "-p", VM_WORKSPACE_DIR],
+                        as_root=True,
+                    )
+                    content = src.read_text(encoding="utf-8")
+                    await self.write_file(user_id, f"{VM_WORKSPACE_DIR}/{filename}", content)
+                    logger.info(f"[VM] Seeded missing {filename} into {self._instances[user_id]}")
+                except Exception as e:
+                    logger.warning(f"[VM] Could not seed {filename}: {e}")
+
     async def suspend(self, user_id: str) -> None:
         """Suspend (pause) a user's VM."""
         if user_id not in self._instances:
@@ -280,10 +306,12 @@ class VMManager:
                 status = None
 
         if status == "running":
+            await self._ensure_seeded(user_id)
             return self._instances[user_id]
 
         if status == "suspended":
             await self.resume(user_id)
+            await self._ensure_seeded(user_id)
             return self._instances[user_id]
 
         await self.provision(user_id)
