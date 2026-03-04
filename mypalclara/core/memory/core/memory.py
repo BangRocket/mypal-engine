@@ -644,7 +644,7 @@ class ClaraMemory(MemoryBase):
         else:
             actual_memories = memories_result
 
-        promoted_keys = ["user_id", "agent_id", "run_id", "actor_id", "role"]
+        promoted_keys = ["user_id", "agent_id", "run_id", "actor_id", "role", "visibility"]
         core_keys = {"data", "hash", "created_at", "updated_at", "id", *promoted_keys}
 
         formatted = []
@@ -723,7 +723,7 @@ class ClaraMemory(MemoryBase):
         embeddings = self.embedding_model.embed(query, "search")
         memories = self.vector_store.search(query=query, vectors=embeddings, limit=limit, filters=filters)
 
-        promoted_keys = ["user_id", "agent_id", "run_id", "actor_id", "role"]
+        promoted_keys = ["user_id", "agent_id", "run_id", "actor_id", "role", "visibility"]
         core_keys = {"data", "hash", "created_at", "updated_at", "id", *promoted_keys}
 
         results = []
