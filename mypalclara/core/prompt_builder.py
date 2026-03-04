@@ -283,9 +283,7 @@ class PromptBuilder:
                 ws_parts = []
                 for filename, content in user_ws.items():
                     ws_parts.append(f"### {filename}\n{content}")
-                context_parts.append(
-                    f"USER WORKSPACE (private, {user_id}):\n" + "\n\n".join(ws_parts)
-                )
+                context_parts.append(f"USER WORKSPACE (private, {user_id}):\n" + "\n\n".join(ws_parts))
 
         messages: list[Message] = [
             SystemMessage(content=system_base),

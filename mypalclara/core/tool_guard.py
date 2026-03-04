@@ -96,9 +96,7 @@ class ToolLoopGuard:
 
         return LoopCheckResult(action=LoopAction.ALLOW)
 
-    def record_result(
-        self, tool_name: str, args: dict[str, Any], result: str
-    ) -> None:
+    def record_result(self, tool_name: str, args: dict[str, Any], result: str) -> None:
         """Record a tool result for progress tracking.
 
         Must be called AFTER tool execution.
@@ -139,10 +137,7 @@ class ToolLoopGuard:
         if len(set(recent)) == 1:
             return LoopCheckResult(
                 action=LoopAction.STOP,
-                reason=(
-                    f"Poll no progress: {POLL_NO_PROGRESS_THRESHOLD} consecutive "
-                    f"identical results"
-                ),
+                reason=(f"Poll no progress: {POLL_NO_PROGRESS_THRESHOLD} consecutive " f"identical results"),
                 pattern="poll_no_progress",
             )
         return None
