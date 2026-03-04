@@ -47,6 +47,20 @@ class PromptBuilder:
     def __init__(self, agent_id: str, llm_callable: Callable | None = None) -> None:
         self.agent_id = agent_id
         self.llm_callable = llm_callable
+        self._user_workspace_cache: dict[str, dict[str, str]] = {}
+
+    # ---------- per-user workspace ----------
+
+    async def load_user_workspace(self, user_id: str, vm_manager: object) -> None:
+        """Load per-user workspace files from a VM into the cache.
+
+        Args:
+            user_id: The user whose workspace to load.
+            vm_manager: An object with an async ``read_workspace_files(user_id)``
+                method that returns ``dict[str, str]`` mapping filenames to contents.
+        """
+        files = await vm_manager.read_workspace_files(user_id)  # type: ignore[attr-defined]
+        self._user_workspace_cache[user_id] = files
 
     # ---------- emotional context ----------
 
@@ -152,6 +166,8 @@ class PromptBuilder:
         channel_context: list["Message"] | None = None,
         model_name: str = "claude",
         mode: "PromptMode" = PromptMode.FULL,
+        privacy_scope: str = "full",
+        user_id: str | None = None,
     ) -> list[Message]:
         """Build the full prompt for the LLM.
 
@@ -168,6 +184,8 @@ class PromptBuilder:
             channel_context: Optional list of recent messages from the channel (all users)
             model_name: Model name for token budget calculation
             mode: PromptMode controlling how much context to include (FULL, MINIMAL, NONE)
+            privacy_scope: "full" (DMs) includes per-user workspace, "public_only" (group channels) excludes it
+            user_id: User identifier for per-user workspace lookup
 
         Returns:
             List of typed Messages ready for LLM
@@ -257,6 +275,17 @@ class PromptBuilder:
             channel_block = self._format_channel_context(channel_context)
             if channel_block:
                 context_parts.append(channel_block)
+
+        # Add per-user workspace content (only in DMs / full privacy scope)
+        if privacy_scope == "full" and user_id and user_id in self._user_workspace_cache:
+            user_ws = self._user_workspace_cache[user_id]
+            if user_ws:
+                ws_parts = []
+                for filename, content in user_ws.items():
+                    ws_parts.append(f"### {filename}\n{content}")
+                context_parts.append(
+                    f"USER WORKSPACE (private, {user_id}):\n" + "\n\n".join(ws_parts)
+                )
 
         messages: list[Message] = [
             SystemMessage(content=system_base),
