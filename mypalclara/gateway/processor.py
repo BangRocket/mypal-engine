@@ -88,6 +88,20 @@ Key signals:
 Respond with exactly one word: CLARA or OTHER"""
 
 
+def _determine_privacy_scope(channel_type: str) -> str:
+    """Determine privacy scope based on channel type.
+
+    Args:
+        channel_type: 'dm', 'server', or 'group'
+
+    Returns:
+        'full' for DMs (all memories), 'public_only' for group channels
+    """
+    if channel_type == "dm":
+        return "full"
+    return "public_only"
+
+
 class MessageProcessor:
     """Processes messages through the Clara pipeline.
 
