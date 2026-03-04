@@ -240,9 +240,32 @@ class VMManager:
             session.rollback()
             logger.exception(f"[VM] Failed to update DB status for {user_id}")
 
+    async def _vm_exists(self, instance_name: str) -> bool:
+        """Check if a VM actually exists in Incus."""
+        try:
+            await self._run_incus("info", instance_name)
+            return True
+        except RuntimeError:
+            return False
+
     async def ensure_vm(self, user_id: str) -> str:
-        """Ensure a user's VM is running, provisioning or resuming as needed."""
+        """Ensure a user's VM is running, provisioning or resuming as needed.
+
+        Verifies the VM actually exists in Incus — if it was deleted
+        externally, clears stale state and reprovisions.
+        """
         status = self._statuses.get(user_id)
+        instance_name = self._instances.get(user_id)
+
+        # If we think it's running or suspended, verify it actually exists
+        if status in ("running", "suspended") and instance_name:
+            if not await self._vm_exists(instance_name):
+                logger.warning(
+                    f"[VM] {instance_name} not found in Incus (was {status}), reprovisioning"
+                )
+                self._instances.pop(user_id, None)
+                self._statuses.pop(user_id, None)
+                status = None
 
         if status == "running":
             return self._instances[user_id]
