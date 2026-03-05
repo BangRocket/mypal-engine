@@ -544,7 +544,7 @@ async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] 
             for node in nodes:
                 try:
                     msg = ProactiveMessage(
-                        user=UserInfo(id="heartbeat", name="Heartbeat"),
+                        user=UserInfo(id="heartbeat", platform_id="heartbeat", name="Heartbeat"),
                         channel=ChannelInfo(id="heartbeat", name="heartbeat"),
                         content=message_text,
                         priority="low",
