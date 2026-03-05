@@ -2,6 +2,8 @@
 
 Periodically wakes Clara to check if anything needs attention using
 workspace-driven HEARTBEAT.md instructions.
+
+Runs per-user checks so the send callback always knows who to target.
 """
 
 from __future__ import annotations
@@ -92,19 +94,20 @@ def gather_heartbeat_context() -> dict:
     }
 
 
-HEARTBEAT_PROMPT = """You are Clara's heartbeat monitor. You run periodically to check if anything needs attention.
+HEARTBEAT_PROMPT = """You are Clara's heartbeat monitor. You run periodically to check on a specific user.
 
 ## Your Instructions
 {heartbeat_md}
 
 ## Current State
 - Current time: {current_time}
-- Active users (last 24h):
-{user_summaries}
+- User: {user_id}
+- Idle: {idle_minutes} minutes
+- Channel: {channel}
 
 ## Rules
-- If nothing needs attention, reply exactly: HEARTBEAT_OK
-- If something does need attention, reply with a short, natural message to send to the user
+- If this user doesn't need attention right now, reply exactly: HEARTBEAT_OK
+- If they do need attention, reply with a short, natural message to send to them
 - Do not infer tasks from prior conversations unless your instructions tell you to
 - Keep messages brief and warm
 """
@@ -113,29 +116,26 @@ HEARTBEAT_PROMPT = """You are Clara's heartbeat monitor. You run periodically to
 async def run_heartbeat_check(
     llm_callable,
     heartbeat_md: str,
-    context: dict,
+    user: dict,
+    current_time: str,
 ) -> tuple[bool, str]:
-    """Run a single heartbeat check.
+    """Run a single heartbeat check for one user.
 
     Args:
         llm_callable: async function(messages) -> str
         heartbeat_md: Contents of HEARTBEAT.md
-        context: Dict from gather_heartbeat_context()
+        user: Dict with user_id, idle_minutes, channel
+        current_time: ISO formatted current time
 
     Returns:
         (should_send, message) — if should_send is False, message is empty
     """
-    user_lines = []
-    for u in context.get("active_users", []):
-        user_lines.append(f"  - {u['user_id']} (idle {u['idle_minutes']}m, channel: {u['channel']})")
-
-    if not user_lines:
-        user_lines = ["  - No active users"]
-
     prompt = HEARTBEAT_PROMPT.format(
         heartbeat_md=heartbeat_md,
-        current_time=context.get("current_time", "unknown"),
-        user_summaries="\n".join(user_lines),
+        current_time=current_time,
+        user_id=user["user_id"],
+        idle_minutes=user["idle_minutes"],
+        channel=user["channel"],
     )
 
     try:
@@ -148,16 +148,16 @@ async def run_heartbeat_check(
         response = await llm_callable(messages)
         response_text = str(response).strip()
     except Exception as e:
-        logger.error(f"Heartbeat LLM call failed: {e}")
+        logger.error(f"Heartbeat LLM call failed for {user['user_id']}: {e}")
         return False, ""
 
     ack_max = int(os.getenv("HEARTBEAT_ACK_MAX_CHARS", str(DEFAULT_ACK_MAX_CHARS)))
 
     if is_ack(response_text, max_chars=ack_max):
-        logger.debug("Heartbeat: HEARTBEAT_OK — nothing to report")
+        logger.debug(f"Heartbeat: HEARTBEAT_OK for {user['user_id']}")
         return False, ""
 
-    logger.info(f"Heartbeat wants to send: {response_text[:100]}")
+    logger.info(f"Heartbeat wants to send to {user['user_id']}: {response_text[:100]}")
     return True, response_text
 
 
@@ -184,7 +184,7 @@ async def heartbeat_loop(
 
     Args:
         llm_callable: async function(messages) -> str
-        send_fn: async function(message_text) -> None, delivers to adapters
+        send_fn: async function(user_id, channel_id, message_text) -> None
         interval_minutes: Minutes between heartbeat checks
     """
     interval = float(os.getenv("HEARTBEAT_INTERVAL_MINUTES", str(interval_minutes)))
@@ -195,11 +195,14 @@ async def heartbeat_loop(
             heartbeat_md = _load_heartbeat_md()
             context = gather_heartbeat_context()
 
-            should_send, message = await run_heartbeat_check(llm_callable, heartbeat_md, context)
+            for user in context.get("active_users", []):
+                should_send, message = await run_heartbeat_check(
+                    llm_callable, heartbeat_md, user, context["current_time"]
+                )
 
-            if should_send and message:
-                await send_fn(message)
-                logger.info("Heartbeat message delivered")
+                if should_send and message:
+                    await send_fn(user["user_id"], user["channel"], message)
+                    logger.info(f"Heartbeat message delivered to {user['user_id']}")
 
         except asyncio.CancelledError:
             raise

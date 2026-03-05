@@ -532,20 +532,39 @@ async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] 
             """Wrap sync LLM callable for heartbeat."""
             return await asyncio.get_event_loop().run_in_executor(None, heartbeat_llm, messages)
 
-        async def _heartbeat_send(message_text: str):
-            """Broadcast heartbeat message to all connected adapters."""
+        async def _heartbeat_send(user_id: str, channel_id: str, message_text: str):
+            """Send heartbeat message to the adapter that owns the target user."""
             from mypalclara.gateway.protocol import (
                 ChannelInfo,
                 ProactiveMessage,
                 UserInfo,
             )
 
+            # Extract platform prefix from user_id (e.g., "discord-123" -> "discord")
+            platform = user_id.split("-", 1)[0] if "-" in user_id else "unknown"
+            # Extract platform-specific user ID (e.g., "discord-123" -> "123")
+            platform_user_id = user_id.split("-", 1)[1] if "-" in user_id else user_id
+
+            # Determine channel type from channel_id prefix
+            channel_type = "dm" if channel_id.startswith("dm-") else "server"
+            raw_channel_id = channel_id.split("-", 1)[1] if "-" in channel_id else channel_id
+
             nodes = await server.node_registry.get_all_nodes()
             for node in nodes:
+                # Only send to the adapter matching the user's platform
+                if node.platform and node.platform != platform:
+                    continue
                 try:
                     msg = ProactiveMessage(
-                        user=UserInfo(id="heartbeat", platform_id="heartbeat", name="Heartbeat"),
-                        channel=ChannelInfo(id="heartbeat", name="heartbeat"),
+                        user=UserInfo(
+                            id=user_id,
+                            platform_id=platform_user_id,
+                            name=None,
+                        ),
+                        channel=ChannelInfo(
+                            id=raw_channel_id,
+                            type=channel_type,
+                        ),
                         content=message_text,
                         priority="low",
                     )
