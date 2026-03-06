@@ -485,6 +485,7 @@ async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] 
         await vm_manager.load_from_db()
         logger.info(f"VM manager ready ({len(vm_manager._instances)} user VMs loaded)")
         processor.set_vm_manager(vm_manager)
+        asyncio.create_task(vm_manager.idle_check_loop())
     else:
         logger.info("Per-user VMs disabled (set USER_VM_ENABLED=true to enable)")
 
@@ -530,7 +531,7 @@ async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] 
 
         async def _heartbeat_llm_async(messages):
             """Wrap sync LLM callable for heartbeat."""
-            return await asyncio.get_event_loop().run_in_executor(None, heartbeat_llm, messages)
+            return await asyncio.get_running_loop().run_in_executor(None, heartbeat_llm, messages)
 
         async def _heartbeat_send(user_id: str, channel_id: str, message_text: str):
             """Send heartbeat message to the adapter that owns the target user."""
@@ -545,9 +546,16 @@ async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] 
             # Extract platform-specific user ID (e.g., "discord-123" -> "123")
             platform_user_id = user_id.split("-", 1)[1] if "-" in user_id else user_id
 
-            # Determine channel type from channel_id prefix
-            channel_type = "dm" if channel_id.startswith("dm-") else "server"
-            raw_channel_id = channel_id.split("-", 1)[1] if "-" in channel_id else channel_id
+            # Determine channel type from context_id prefix
+            # DM context_id format: "dm-discord-12345" (user_id, not a channel)
+            # Server context_id format: "channel-12345" (actual channel ID)
+            if channel_id.startswith("dm-"):
+                channel_type = "dm"
+                # For DMs, use the platform user ID — adapter will create a DM channel
+                raw_channel_id = platform_user_id
+            else:
+                channel_type = "server"
+                raw_channel_id = channel_id.split("-", 1)[1] if "-" in channel_id else channel_id
 
             nodes = await server.node_registry.get_all_nodes()
             for node in nodes:

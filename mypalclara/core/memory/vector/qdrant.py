@@ -3,6 +3,7 @@
 import logging
 import os
 import shutil
+import threading
 import time
 
 from qdrant_client import QdrantClient
@@ -84,7 +85,8 @@ class Qdrant(VectorStoreBase):
         self.on_disk = on_disk
         self.create_col(embedding_model_dims, on_disk)
 
-        # Circuit breaker state
+        # Circuit breaker state (accessed from ThreadPoolExecutor threads)
+        self._cb_lock = threading.Lock()
         self._cb_failures = 0
         self._cb_open_until = 0.0
 
@@ -151,30 +153,33 @@ class Qdrant(VectorStoreBase):
 
     def _cb_is_open(self) -> bool:
         """Check if circuit breaker is open (should skip calls)."""
-        if self._cb_failures < _CB_THRESHOLD:
-            return False
-        if time.monotonic() >= self._cb_open_until:
-            # Cooldown expired — allow a probe attempt
-            logger.info("[Qdrant] Circuit breaker half-open, allowing probe")
-            return False
-        return True
+        with self._cb_lock:
+            if self._cb_failures < _CB_THRESHOLD:
+                return False
+            if time.monotonic() >= self._cb_open_until:
+                # Cooldown expired — allow a probe attempt
+                logger.info("[Qdrant] Circuit breaker half-open, allowing probe")
+                return False
+            return True
 
     def _cb_record_success(self) -> None:
         """Record a successful call, resetting the breaker."""
-        if self._cb_failures > 0:
-            logger.info("[Qdrant] Circuit breaker reset after success")
-        self._cb_failures = 0
-        self._cb_open_until = 0.0
+        with self._cb_lock:
+            if self._cb_failures > 0:
+                logger.info("[Qdrant] Circuit breaker reset after success")
+            self._cb_failures = 0
+            self._cb_open_until = 0.0
 
     def _cb_record_failure(self) -> None:
         """Record a failed call, potentially opening the breaker."""
-        self._cb_failures += 1
-        if self._cb_failures >= _CB_THRESHOLD:
-            self._cb_open_until = time.monotonic() + _CB_COOLDOWN
-            logger.warning(
-                f"[Qdrant] Circuit breaker OPEN after {self._cb_failures} failures, "
-                f"cooling down for {_CB_COOLDOWN}s"
-            )
+        with self._cb_lock:
+            self._cb_failures += 1
+            if self._cb_failures >= _CB_THRESHOLD:
+                self._cb_open_until = time.monotonic() + _CB_COOLDOWN
+                logger.warning(
+                    f"[Qdrant] Circuit breaker OPEN after {self._cb_failures} failures, "
+                    f"cooling down for {_CB_COOLDOWN}s"
+                )
 
     def search(self, query: str, vectors: list, limit: int = 5, filters: dict = None) -> list:
         """Search for similar vectors."""

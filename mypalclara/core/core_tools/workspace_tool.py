@@ -29,9 +29,17 @@ _vm_users: set[str] = set()  # user_ids with active VMs
 
 
 def set_vm_manager(vm_manager: Any) -> None:
-    """Set the VM manager for VM-backed workspace access."""
+    """Set the VM manager for VM-backed workspace access.
+
+    Also pre-populates _vm_users from the manager's known instances
+    so that workspace tools route correctly immediately after restart.
+    """
     global _vm_manager
     _vm_manager = vm_manager
+    # Pre-populate _vm_users from VMManager's loaded state (from DB)
+    if vm_manager is not None and hasattr(vm_manager, "_instances"):
+        for user_id in vm_manager._instances:
+            _vm_users.add(user_id)
 
 
 def register_user_workspace(user_id: str, workspace_path: Any = None) -> None:
@@ -102,6 +110,7 @@ def _sanitize_filename(filename: str) -> str | None:
 # VM-backed file operations
 # ---------------------------------------------------------------------------
 
+
 async def _vm_list_files(user_id: str) -> list[tuple[str, int]]:
     """List .md files in a user's VM workspace. Returns [(name, size), ...]."""
     from mypalclara.core.vm_manager import VM_WORKSPACE_DIR
@@ -163,6 +172,7 @@ async def _vm_file_exists(user_id: str, filename: str) -> bool:
 # ---------------------------------------------------------------------------
 # Tool handlers
 # ---------------------------------------------------------------------------
+
 
 async def _handle_workspace_list(args: dict[str, Any], ctx: ToolContext) -> str:
     """List all workspace files."""

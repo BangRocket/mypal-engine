@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
+import time
 from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
@@ -69,8 +71,10 @@ class VMManager:
     ) -> None:
         self._instances: dict[str, str] = {}  # user_id -> instance_name
         self._statuses: dict[str, str] = {}  # user_id -> status
+        self._last_access: dict[str, float] = {}  # user_id -> monotonic timestamp
         self._lock = asyncio.Lock()
         self._session_factory = session_factory
+        self._idle_timeout = int(os.getenv("USER_VM_IDLE_TIMEOUT", "1800"))
 
     async def _run_incus(self, *args: str, timeout: float = 60.0) -> str:
         """Run an incus CLI command and return stdout."""
@@ -123,12 +127,31 @@ class VMManager:
             self._instances[user_id] = instance_name
             self._statuses[user_id] = "running"
             self._save_to_db(user_id, instance_name, DEFAULT_INSTANCE_TYPE)
-
-            # Seed workspace with shared SOUL.md and IDENTITY.md
-            await self._seed_workspace(user_id)
-
             logger.info(f"[VM] Provisioned {instance_name} for {user_id}")
-            return True
+
+        # Seed outside the lock — exec_in_vm calls ensure_vm which acquires it
+        await self._seed_workspace(user_id)
+        return True
+
+    async def _exec_direct(self, user_id: str, command: list[str], as_root: bool = False) -> str:
+        """Execute in a VM without calling ensure_vm (avoids recursion).
+
+        Only use from methods already called by ensure_vm/provision.
+        """
+        instance_name = self._instances[user_id]
+        if as_root:
+            return await self._run_incus("exec", instance_name, "--", *command)
+        return await self._run_incus("exec", instance_name, "--user", "1000", "--group", "1000", "--", *command)
+
+    async def _write_direct(self, user_id: str, path: str, content: str) -> None:
+        """Write a file to a VM without calling ensure_vm (avoids recursion)."""
+        if "CLARA_EOF" in content:
+            raise ValueError("Content contains reserved delimiter 'CLARA_EOF'")
+        escaped_path = path.replace("'", "'\\''")
+        await self._exec_direct(
+            user_id,
+            ["sh", "-c", f"cat > '{escaped_path}' << 'CLARA_EOF'\n{content}\nCLARA_EOF"],
+        )
 
     async def _seed_workspace(self, user_id: str) -> None:
         """Copy SOUL.md and IDENTITY.md from the shared workspace into a new VM."""
@@ -137,12 +160,12 @@ class VMManager:
         shared_ws = Path(__file__).parent.parent / "workspace"
 
         # Ensure directories exist — cloud-init may not have finished yet
-        await self.exec_in_vm(
+        await self._exec_direct(
             user_id,
             ["mkdir", "-p", VM_WORKSPACE_DIR, VM_PRIVATE_DIR, VM_PUBLIC_DIR],
             as_root=True,
         )
-        await self.exec_in_vm(
+        await self._exec_direct(
             user_id,
             ["chown", "-R", "clara:clara", "/home/clara"],
             as_root=True,
@@ -154,7 +177,7 @@ class VMManager:
                 continue
             try:
                 content = src.read_text(encoding="utf-8")
-                await self.write_file(user_id, f"{VM_WORKSPACE_DIR}/{filename}", content)
+                await self._write_direct(user_id, f"{VM_WORKSPACE_DIR}/{filename}", content)
                 logger.info(f"[VM] Seeded {filename} into {self._instances[user_id]}")
             except Exception as e:
                 logger.warning(f"[VM] Could not seed {filename}: {e}")
@@ -170,17 +193,17 @@ class VMManager:
             if not src.exists():
                 continue
             try:
-                await self.exec_in_vm(user_id, ["test", "-f", f"{VM_WORKSPACE_DIR}/{filename}"])
+                await self._exec_direct(user_id, ["test", "-f", f"{VM_WORKSPACE_DIR}/{filename}"])
             except RuntimeError:
                 # File doesn't exist in VM — seed it
                 try:
-                    await self.exec_in_vm(
+                    await self._exec_direct(
                         user_id,
                         ["mkdir", "-p", VM_WORKSPACE_DIR],
                         as_root=True,
                     )
                     content = src.read_text(encoding="utf-8")
-                    await self.write_file(user_id, f"{VM_WORKSPACE_DIR}/{filename}", content)
+                    await self._write_direct(user_id, f"{VM_WORKSPACE_DIR}/{filename}", content)
                     logger.info(f"[VM] Seeded missing {filename} into {self._instances[user_id]}")
                 except Exception as e:
                     logger.warning(f"[VM] Could not seed {filename}: {e}")
@@ -226,10 +249,7 @@ class VMManager:
             if vms:
                 logger.info(f"[VM] Loaded {len(vms)} VM(s) from database")
         finally:
-            # Only close if we own the session (i.e. factory creates new ones)
-            # In tests the caller owns the session, but closing is safe since
-            # sessionmaker sessions can be re-used after close in SQLite.
-            pass
+            session.close()
 
     def _save_to_db(self, user_id: str, instance_name: str, instance_type: str) -> None:
         """Create or update a UserVM record after provisioning."""
@@ -255,6 +275,8 @@ class VMManager:
         except Exception:
             session.rollback()
             logger.exception(f"[VM] Failed to save DB record for {user_id}")
+        finally:
+            session.close()
 
     def _update_db_status(self, user_id: str, status: str) -> None:
         """Update a VM's status in the database."""
@@ -277,6 +299,8 @@ class VMManager:
         except Exception:
             session.rollback()
             logger.exception(f"[VM] Failed to update DB status for {user_id}")
+        finally:
+            session.close()
 
     async def _vm_exists(self, instance_name: str) -> bool:
         """Check if a VM actually exists in Incus."""
@@ -298,23 +322,24 @@ class VMManager:
         # If we think it's running or suspended, verify it actually exists
         if status in ("running", "suspended") and instance_name:
             if not await self._vm_exists(instance_name):
-                logger.warning(
-                    f"[VM] {instance_name} not found in Incus (was {status}), reprovisioning"
-                )
+                logger.warning(f"[VM] {instance_name} not found in Incus (was {status}), reprovisioning")
                 self._instances.pop(user_id, None)
                 self._statuses.pop(user_id, None)
                 status = None
 
         if status == "running":
+            self._last_access[user_id] = time.monotonic()
             await self._ensure_seeded(user_id)
             return self._instances[user_id]
 
         if status == "suspended":
             await self.resume(user_id)
+            self._last_access[user_id] = time.monotonic()
             await self._ensure_seeded(user_id)
             return self._instances[user_id]
 
         await self.provision(user_id)
+        self._last_access[user_id] = time.monotonic()
         return self._instances.get(user_id, self._instance_name(user_id))
 
     async def exec_in_vm(self, user_id: str, command: list[str], as_root: bool = False) -> str:
@@ -329,9 +354,7 @@ class VMManager:
         instance_name = self._instances[user_id]
         if as_root:
             return await self._run_incus("exec", instance_name, "--", *command)
-        return await self._run_incus(
-            "exec", instance_name, "--user", "1000", "--group", "1000", "--", *command
-        )
+        return await self._run_incus("exec", instance_name, "--user", "1000", "--group", "1000", "--", *command)
 
     async def read_file(self, user_id: str, path: str) -> str:
         """Read a file from a user's VM."""
@@ -390,3 +413,40 @@ class VMManager:
     async def list_vms(self) -> list[dict[str, str | None]]:
         """List all tracked user VMs."""
         return [await self.get_status(uid) for uid in self._instances]
+
+    async def _check_idle_vms(self) -> None:
+        """Suspend VMs that have been idle longer than the timeout."""
+        now = time.monotonic()
+        to_suspend = []
+
+        for user_id, status in list(self._statuses.items()):
+            if status != "running":
+                continue
+            last = self._last_access.get(user_id)
+            if last is None:
+                continue
+            if (now - last) >= self._idle_timeout:
+                to_suspend.append(user_id)
+
+        for user_id in to_suspend:
+            try:
+                await self.suspend(user_id)
+                logger.info(f"[VM] Suspended {self._instances.get(user_id)} " f"after {self._idle_timeout}s idle")
+            except Exception as e:
+                logger.warning(f"[VM] Failed to idle-suspend VM for {user_id}: {e}")
+
+    async def idle_check_loop(self) -> None:
+        """Run idle VM checks forever. Start as an asyncio task."""
+        check_interval = min(self._idle_timeout // 2, 300)  # At least every 5 min
+        check_interval = max(check_interval, 60)  # At least every 60s
+        logger.info(
+            f"[VM] Idle check loop started (timeout={self._idle_timeout}s, " f"check_interval={check_interval}s)"
+        )
+        while True:
+            try:
+                await self._check_idle_vms()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error(f"[VM] Idle check error: {e}")
+            await asyncio.sleep(check_interval)

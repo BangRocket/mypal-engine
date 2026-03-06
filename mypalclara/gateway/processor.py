@@ -587,9 +587,7 @@ class MessageProcessor:
 
                 # Load workspace files into prompt builder cache (DMs only — privacy)
                 if is_dm:
-                    await self._memory_manager.load_user_workspace(
-                        user_id, self._vm_manager
-                    )
+                    await self._memory_manager.load_user_workspace(user_id, self._vm_manager)
             except Exception as e:
                 logger.warning(f"Could not set up user VM for {user_id}: {e}")
 
