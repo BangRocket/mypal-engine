@@ -1,10 +1,21 @@
 """
 Logging configuration with console and PostgreSQL database handlers.
 
+IMPORTANT - MCP COMPATIBILITY:
+    In MCP (Model Context Protocol) stdio transport, stdout is reserved for
+    JSON-RPC messages. Any output to stdout (including print() or logging)
+    will corrupt the protocol. All handlers in this module use stderr to
+    ensure MCP server processes work correctly.
+
 Usage:
     from logging_config import get_logger
     logger = get_logger("api")
     logger.info("Server started", extra={"user_id": "123"})
+
+For MCP server processes:
+    from logging_config import get_mcp_logger, MCP_SAFE_LOGGING
+    logger = get_mcp_logger("mcp.my_server")
+    # Guaranteed to output only to stderr
 """
 
 from __future__ import annotations
@@ -21,6 +32,11 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session as DBSession
+
+# MCP SAFETY FLAG
+# When True, all logging handlers use stderr, never stdout.
+# This is critical for MCP stdio transport where stdout carries JSON-RPC.
+MCP_SAFE_LOGGING = True
 
 # ANSI color codes for console output
 COLORS = {
@@ -471,8 +487,9 @@ def init_logging(session_factory=None, console_level: int | None = None):
     if root_logger.handlers:
         root_logger.handlers.clear()
 
-    # Console handler
-    console_handler = logging.StreamHandler(sys.stdout)
+    # Console handler - uses stderr for MCP compatibility
+    # (stdout is reserved for JSON-RPC in MCP stdio transport)
+    console_handler = logging.StreamHandler(sys.stderr)
     console_handler.setLevel(console_level)
     console_handler.setFormatter(ColoredConsoleFormatter())
 
@@ -547,6 +564,39 @@ def get_logger(name: str) -> logging.Logger:
     if not _initialized:
         init_logging()
     return logging.getLogger(name)
+
+
+def get_mcp_logger(name: str) -> logging.Logger:
+    """Get a logger safe for MCP server processes.
+
+    WARNING: In MCP stdio transport, stdout is reserved for JSON-RPC.
+    Any output to stdout will corrupt the protocol. This logger
+    guarantees all output goes to stderr.
+
+    This function:
+    1. Ensures the logging system is initialized with stderr handlers
+    2. Audits all handlers on the logger to verify stderr usage
+    3. Returns a logger that is safe for MCP subprocess use
+
+    Args:
+        name: Logger name, typically "mcp.{server_name}" or similar
+
+    Returns:
+        A logging.Logger configured for MCP-safe stderr output
+    """
+    if not _initialized:
+        init_logging()
+
+    logger = logging.getLogger(name)
+
+    # Audit all handlers to ensure none write to stdout
+    for handler in logger.handlers + logging.getLogger().handlers:
+        if isinstance(handler, logging.StreamHandler):
+            # Force stderr for any stream handlers
+            if handler.stream is sys.stdout:
+                handler.stream = sys.stderr
+
+    return logger
 
 
 def shutdown_logging():

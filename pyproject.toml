@@ -62,6 +62,9 @@ boto3 = "^1.35.0"
 # Tool system
 watchdog = "^4.0.0"  # File watching for hot-reload
 
+# MCP (Model Context Protocol) - tool system migration
+mcp = {extras = ["cli"], version = ">=1.25,<2"}
+
 # Browser automation
 playwright = "^1.49.0"
 
