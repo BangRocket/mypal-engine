@@ -432,6 +432,403 @@ def export_graph(
 
 
 # ---------------------------------------------------------------------------
+# Relational import
+# ---------------------------------------------------------------------------
+
+
+def import_relational(
+    tmp_dir: Path,
+    tables_filter: list[str] | None,
+    dry_run: bool,
+) -> dict[str, int]:
+    """Import relational data from JSONL files under tmp_dir/relational/.
+
+    Uses ``db.merge()`` for idempotent upserts. DateTime columns are
+    converted from ISO strings back to ``datetime`` objects.
+
+    Returns a dict mapping filename to record count.
+    """
+    from sqlalchemy import DateTime as SADateTime
+
+    import mypalclara.db.models as models
+
+    rel_dir = tmp_dir / "relational"
+    if not rel_dir.is_dir():
+        log.info("No relational/ directory found; skipping relational import")
+        return {}
+
+    counts: dict[str, int] = {}
+
+    if dry_run:
+        # Dry run: count records without touching the DB
+        for filename, model_name in RELATIONAL_TABLES:
+            filepath = rel_dir / f"{filename}.jsonl"
+            if not filepath.exists():
+                continue
+            if tables_filter and filename not in tables_filter:
+                continue
+            count = sum(1 for _ in open(filepath, encoding="utf-8"))
+            if count:
+                counts[filename] = count
+                log.info("  %s: %d records (dry run)", filename, count)
+        return counts
+
+    from mypalclara.db.connection import SessionLocal
+
+    with SessionLocal() as session:
+        for filename, model_name in RELATIONAL_TABLES:
+            filepath = rel_dir / f"{filename}.jsonl"
+            if not filepath.exists():
+                continue
+            if tables_filter and filename not in tables_filter:
+                continue
+
+            model_cls = getattr(models, model_name, None)
+            if model_cls is None:
+                log.warning("model %s not found, skipping %s", model_name, filename)
+                continue
+
+            # Identify DateTime columns for ISO string conversion
+            dt_columns: set[str] = set()
+            for col in model_cls.__table__.columns:
+                if isinstance(col.type, SADateTime):
+                    dt_columns.add(col.name)
+
+            count = 0
+            with open(filepath, encoding="utf-8") as f:
+                for line in f:
+                    row_data = json.loads(line)
+
+                    # Convert ISO strings back to datetime for DateTime columns
+                    for col_name in dt_columns:
+                        value = row_data.get(col_name)
+                        if value is not None:
+                            row_data[col_name] = datetime.fromisoformat(value)
+
+                    obj = model_cls(**row_data)
+                    session.merge(obj)
+                    count += 1
+
+                    if count % 500 == 0:
+                        session.flush()
+                        log.info("  %s: %d records merged...", filename, count)
+
+            session.commit()
+            if count:
+                counts[filename] = count
+            log.info("  %s: %d records", filename, count)
+
+    return counts
+
+
+# ---------------------------------------------------------------------------
+# Vector import
+# ---------------------------------------------------------------------------
+
+
+def _import_qdrant(
+    filepath: Path,
+    collection_name: str,
+    need_re_embed: bool,
+    dry_run: bool,
+    embedder=None,
+) -> dict[str, int]:
+    """Import vectors into Qdrant from a JSONL file. Returns record counts."""
+    from qdrant_client import QdrantClient
+    from qdrant_client.models import Distance, PointStruct, VectorParams
+
+    from mypalclara.core.memory.config import QDRANT_API_KEY, QDRANT_DATA_DIR, QDRANT_URL
+
+    if QDRANT_URL:
+        kwargs = {"url": QDRANT_URL}
+        if QDRANT_API_KEY:
+            kwargs["api_key"] = QDRANT_API_KEY
+    else:
+        kwargs = {"path": str(QDRANT_DATA_DIR)}
+
+    count = 0
+
+    if dry_run:
+        with open(filepath, encoding="utf-8") as f:
+            count = sum(1 for _ in f)
+        return {"memories": count} if count else {}
+
+    client = QdrantClient(**kwargs)
+
+    # Ensure collection exists
+    try:
+        client.get_collection(collection_name)
+    except Exception:
+        client.create_collection(
+            collection_name=collection_name,
+            vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
+        )
+
+    batch: list = []
+
+    with open(filepath, encoding="utf-8") as f:
+        for line in f:
+            record = json.loads(line)
+            payload = record.get("payload", {})
+            vector = record.get("vector", [])
+
+            if need_re_embed and embedder is not None:
+                text = payload.get("memory", payload.get("data", ""))
+                if text:
+                    vector = embedder.embed(text, memory_action="add")
+
+            batch.append(
+                PointStruct(
+                    id=record["id"],
+                    vector=vector,
+                    payload=payload,
+                )
+            )
+            count += 1
+
+            if len(batch) >= 100:
+                client.upsert(collection_name=collection_name, points=batch)
+                batch = []
+                log.info("  vectors (qdrant): %d records upserted...", count)
+
+    if batch:
+        client.upsert(collection_name=collection_name, points=batch)
+
+    log.info("  vectors (qdrant): %d records total", count)
+    return {"memories": count} if count else {}
+
+
+def _import_pgvector(
+    filepath: Path,
+    collection_name: str,
+    database_url: str,
+    need_re_embed: bool,
+    dry_run: bool,
+    embedder=None,
+) -> dict[str, int]:
+    """Import vectors into pgvector from a JSONL file. Returns record counts."""
+    from sqlalchemy import create_engine, text
+
+    count = 0
+
+    if dry_run:
+        with open(filepath, encoding="utf-8") as f:
+            count = sum(1 for _ in f)
+        return {"memories": count} if count else {}
+
+    engine = create_engine(database_url)
+
+    with engine.connect() as conn:
+        # Get or create collection UUID
+        row = conn.execute(
+            text("SELECT uuid FROM langchain_pg_collection WHERE name = :name"),
+            {"name": collection_name},
+        ).fetchone()
+
+        if row is None:
+            import uuid
+
+            collection_uuid = str(uuid.uuid4())
+            conn.execute(
+                text("INSERT INTO langchain_pg_collection (uuid, name) VALUES (:uuid, :name)"),
+                {"uuid": collection_uuid, "name": collection_name},
+            )
+        else:
+            collection_uuid = str(row[0])
+
+        with open(filepath, encoding="utf-8") as f:
+            for line in f:
+                record = json.loads(line)
+                payload = record.get("payload", {})
+                vector = record.get("vector", [])
+
+                if need_re_embed and embedder is not None:
+                    text_content = payload.get("memory", payload.get("data", ""))
+                    if text_content:
+                        vector = embedder.embed(text_content, memory_action="add")
+
+                conn.execute(
+                    text(
+                        "INSERT INTO langchain_pg_embedding (id, collection_id, embedding, metadata) "
+                        "VALUES (:id, :collection_id, :embedding, :metadata) "
+                        "ON CONFLICT (id) DO UPDATE SET "
+                        "embedding = EXCLUDED.embedding, metadata = EXCLUDED.metadata"
+                    ),
+                    {
+                        "id": record["id"],
+                        "collection_id": collection_uuid,
+                        "embedding": json.dumps(vector),
+                        "metadata": json.dumps(payload),
+                    },
+                )
+                count += 1
+
+        conn.commit()
+
+    log.info("  vectors (pgvector): %d records total", count)
+    return {"memories": count} if count else {}
+
+
+def import_vectors(
+    tmp_dir: Path,
+    manifest: dict,
+    re_embed: bool,
+    dry_run: bool,
+) -> dict[str, int]:
+    """Import vector data from JSONL. Returns record counts."""
+    from mypalclara.core.memory.config import ROOK_COLLECTION_NAME, ROOK_DATABASE_URL
+
+    filepath = tmp_dir / "vectors" / "memories.jsonl"
+    if not filepath.exists():
+        log.info("No vectors/memories.jsonl found; skipping vector import")
+        return {}
+
+    need_re_embed = re_embed or manifest.get("embedding_model") != "text-embedding-3-small"
+
+    embedder = None
+    if need_re_embed and not dry_run:
+        from mypalclara.core.memory.embeddings.base import BaseEmbedderConfig
+        from mypalclara.core.memory.embeddings.openai import OpenAIEmbedding
+
+        embedder = OpenAIEmbedding(
+            BaseEmbedderConfig(
+                model="text-embedding-3-small",
+                api_key=os.getenv("OPENAI_API_KEY"),
+            )
+        )
+        log.info("Re-embedding enabled — vectors will be recomputed")
+
+    if not ROOK_DATABASE_URL:
+        return _import_qdrant(filepath, ROOK_COLLECTION_NAME, need_re_embed, dry_run, embedder)
+    else:
+        return _import_pgvector(filepath, ROOK_COLLECTION_NAME, ROOK_DATABASE_URL, need_re_embed, dry_run, embedder)
+
+
+# ---------------------------------------------------------------------------
+# Graph import
+# ---------------------------------------------------------------------------
+
+
+def import_graph(
+    tmp_dir: Path,
+    dry_run: bool,
+) -> dict[str, int]:
+    """Import graph data into FalkorDB from JSONL files. Returns record counts."""
+    from mypalclara.core.memory.config import (
+        ENABLE_GRAPH_MEMORY,
+        FALKORDB_GRAPH_NAME,
+        FALKORDB_HOST,
+        FALKORDB_PASSWORD,
+        FALKORDB_PORT,
+    )
+
+    nodes_path = tmp_dir / "graph" / "nodes.jsonl"
+    edges_path = tmp_dir / "graph" / "edges.jsonl"
+
+    if not nodes_path.exists() and not edges_path.exists():
+        log.info("No graph data found; skipping graph import")
+        return {}
+
+    if not ENABLE_GRAPH_MEMORY:
+        log.warning("Graph memory disabled (ENABLE_GRAPH_MEMORY=false), skipping graph import")
+        return {}
+
+    try:
+        import falkordb
+    except ImportError:
+        log.warning("falkordb package not installed, skipping graph import")
+        return {}
+
+    counts: dict[str, int] = {}
+
+    if dry_run:
+        if nodes_path.exists():
+            node_count = sum(1 for _ in open(nodes_path, encoding="utf-8"))
+            if node_count:
+                counts["nodes"] = node_count
+                log.info("  graph nodes: %d (dry run)", node_count)
+        if edges_path.exists():
+            edge_count = sum(1 for _ in open(edges_path, encoding="utf-8"))
+            if edge_count:
+                counts["edges"] = edge_count
+                log.info("  graph edges: %d (dry run)", edge_count)
+        return counts
+
+    try:
+        client = falkordb.FalkorDB(
+            host=FALKORDB_HOST,
+            port=FALKORDB_PORT,
+            password=FALKORDB_PASSWORD,
+        )
+        graph = client.select_graph(FALKORDB_GRAPH_NAME)
+    except Exception as e:
+        log.error("Failed to connect to FalkorDB: %s", e)
+        return {}
+
+    # Import nodes
+    if nodes_path.exists():
+        node_count = 0
+        with open(nodes_path, encoding="utf-8") as f:
+            for line in f:
+                record = json.loads(line)
+                props = record.get("properties", {})
+                name = props.get("name", "")
+                # Build SET clause for all properties
+                set_parts = []
+                params = {"name": name}
+                for key, value in props.items():
+                    if key == "name":
+                        continue
+                    param_key = f"p_{key}"
+                    set_parts.append(f"n.{key} = ${param_key}")
+                    params[param_key] = value
+
+                query = "MERGE (n:__Entity__ {name: $name})"
+                if set_parts:
+                    query += " SET " + ", ".join(set_parts)
+                graph.query(query, params)
+                node_count += 1
+
+        if node_count:
+            counts["nodes"] = node_count
+        log.info("  graph nodes: %d", node_count)
+
+    # Import edges
+    if edges_path.exists():
+        edge_count = 0
+        with open(edges_path, encoding="utf-8") as f:
+            for line in f:
+                record = json.loads(line)
+                source = record["source"]
+                target = record["target"]
+                relation = record.get("relation", "RELATION")
+                props = record.get("properties", {})
+
+                set_parts = []
+                params = {"source": source, "target": target}
+                for key, value in props.items():
+                    param_key = f"p_{key}"
+                    set_parts.append(f"r.{key} = ${param_key}")
+                    params[param_key] = value
+
+                query = (
+                    "MERGE (a:__Entity__ {name: $source}) "
+                    "MERGE (b:__Entity__ {name: $target}) "
+                    f"MERGE (a)-[r:{relation}]->(b)"
+                )
+                if set_parts:
+                    query += " SET " + ", ".join(set_parts)
+                graph.query(query, params)
+                edge_count += 1
+
+        if edge_count:
+            counts["edges"] = edge_count
+        log.info("  graph edges: %d", edge_count)
+
+    return counts
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -532,7 +929,78 @@ def cmd_import(args: argparse.Namespace) -> None:
         args.tables,
         args.strict,
     )
-    raise NotImplementedError("import is not yet implemented")
+
+    archive_path = Path(args.archive)
+    if not archive_path.exists():
+        log.error("Archive not found: %s", archive_path)
+        sys.exit(1)
+
+    tables_filter: list[str] | None = None
+    if args.tables:
+        tables_filter = [t.strip() for t in args.tables.split(",")]
+
+    with tempfile.TemporaryDirectory(prefix="clara-import-") as tmpdir:
+        tmp_dir = Path(tmpdir)
+
+        # Extract archive
+        log.info("Extracting %s ...", archive_path)
+        with tarfile.open(archive_path, "r:gz") as tar:
+            if sys.version_info >= (3, 12):
+                tar.extractall(tmp_dir, filter="data")
+            else:
+                tar.extractall(tmp_dir)  # noqa: S202
+
+        # Read and validate manifest
+        manifest_path = tmp_dir / "manifest.json"
+        if not manifest_path.exists():
+            log.error("Archive missing manifest.json")
+            sys.exit(1)
+
+        with open(manifest_path, encoding="utf-8") as f:
+            manifest = json.load(f)
+
+        if manifest.get("version") != MANIFEST_VERSION:
+            log.error(
+                "Unsupported manifest version: %s (expected %s)",
+                manifest.get("version"),
+                MANIFEST_VERSION,
+            )
+            sys.exit(1)
+
+        log.info("Manifest OK  version=%s  created=%s", manifest["version"], manifest.get("created_at"))
+
+        # Initialize DB schema (no migrations — just ensure tables exist)
+        if not args.dry_run:
+            from mypalclara.db.connection import init_db
+
+            init_db(run_migrations=False)
+
+        record_counts: dict[str, int] = {}
+
+        # 1. Relational import
+        log.info("=== Relational import ===")
+        rel_counts = import_relational(tmp_dir, tables_filter, args.dry_run)
+        record_counts.update(rel_counts)
+
+        # 2. Vector import (only if "memories" in filter, or no filter)
+        if tables_filter is None or "memories" in tables_filter:
+            log.info("=== Vector import ===")
+            vec_counts = import_vectors(tmp_dir, manifest, args.re_embed, args.dry_run)
+            record_counts.update(vec_counts)
+
+        # 3. Graph import (only if "nodes"/"edges" in filter, or no filter)
+        if tables_filter is None or "nodes" in tables_filter or "edges" in tables_filter:
+            log.info("=== Graph import ===")
+            graph_counts = import_graph(tmp_dir, args.dry_run)
+            record_counts.update(graph_counts)
+
+        # Summary
+        total_records = sum(record_counts.values())
+        label = "dry run" if args.dry_run else "imported"
+        log.info("=== Import complete (%s) ===", label)
+        log.info("Total records: %d", total_records)
+        for name, count in sorted(record_counts.items()):
+            log.info("  %s: %d", name, count)
 
 
 # ---------------------------------------------------------------------------
