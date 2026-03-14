@@ -22,8 +22,10 @@ from typing import Optional
 # Import Clara's existing OAuth infrastructure
 from tools.google_oauth import (
     get_valid_token,
-    is_configured as is_google_oauth_configured,
     is_user_connected,
+)
+from tools.google_oauth import (
+    is_configured as is_google_oauth_configured,
 )
 
 

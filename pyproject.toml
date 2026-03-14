@@ -77,7 +77,6 @@ sounddevice = "^0.5.0"  # Audio I/O for CLI voice
 audioop-lts = {version = "^0.2.1", python = ">=3.13"}  # audioop compat for Python 3.13+
 
 # MCP (Model Context Protocol) plugin system
-mcp = "^1.0.0"  # Official MCP Python SDK
 gitpython = "^3.1.0"  # For cloning GitHub repos
 alembic = "^1.18.1"
 
