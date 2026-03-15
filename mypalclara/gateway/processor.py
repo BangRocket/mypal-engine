@@ -47,6 +47,12 @@ BLOCKING_EXECUTOR = ThreadPoolExecutor(
     thread_name_prefix="gateway-io-",
 )
 
+# Memory fetch timeout (graceful degradation on Qdrant slowness)
+MEMORY_FETCH_TIMEOUT = float(os.getenv("MEMORY_FETCH_TIMEOUT", "10"))
+
+# Per-user VM feature flag
+USER_VM_ENABLED = os.getenv("USER_VM_ENABLED", "false").lower() == "true"
+
 # Auto-tier configuration
 AUTO_TIER_ENABLED = os.getenv("AUTO_TIER_SELECTION", "false").lower() == "true"
 
@@ -88,6 +94,20 @@ Key signals:
 Respond with exactly one word: CLARA or OTHER"""
 
 
+def _determine_privacy_scope(channel_type: str) -> str:
+    """Determine privacy scope based on channel type.
+
+    Args:
+        channel_type: 'dm', 'server', or 'group'
+
+    Returns:
+        'full' for DMs (all memories), 'public_only' for group channels
+    """
+    if channel_type == "dm":
+        return "full"
+    return "public_only"
+
+
 class MessageProcessor:
     """Processes messages through the Clara pipeline.
 
@@ -105,7 +125,16 @@ class MessageProcessor:
         self._tool_executor: ToolExecutor | None = None
         self._llm_orchestrator: LLMOrchestrator | None = None
         self._summary_manager: ChannelSummaryManager | None = None
+        self._vm_manager: Any = None
         self._background_tasks: set[asyncio.Task] = set()
+
+    def set_vm_manager(self, vm_manager: Any) -> None:
+        """Set the VM manager for per-user VM access."""
+        self._vm_manager = vm_manager
+        # Also set on workspace tool so it can route file ops through the VM
+        from mypalclara.core.core_tools.workspace_tool import set_vm_manager as ws_set_vm
+
+        ws_set_vm(vm_manager)
 
     async def initialize(self) -> None:
         """Initialize the processor with required resources.
@@ -543,17 +572,47 @@ class MessageProcessor:
         # Extract participants from reply chain
         participants = self._extract_participants(request)
 
-        # Fetch memories from mem0
-        user_mems, proj_mems, graph_relations = await loop.run_in_executor(
-            BLOCKING_EXECUTOR,
-            lambda: self._memory_manager.fetch_mem0_context(
-                user_id,
-                None,  # No project for now
-                user_content,
-                participants=participants,
-                is_dm=is_dm,
-            ),
-        )
+        # Determine privacy scope based on channel type
+        privacy_scope = _determine_privacy_scope(request.channel.type)
+
+        # Ensure user VM is running and register workspace
+        if USER_VM_ENABLED and self._vm_manager:
+            # Always register user so workspace tools route through VM manager
+            from mypalclara.core.core_tools.workspace_tool import register_user_workspace
+
+            register_user_workspace(user_id, None)
+
+            try:
+                await self._vm_manager.ensure_vm(user_id)
+
+                # Load workspace files into prompt builder cache (DMs only — privacy)
+                if is_dm:
+                    await self._memory_manager.load_user_workspace(user_id, self._vm_manager)
+            except Exception as e:
+                logger.warning(f"Could not set up user VM for {user_id}: {e}")
+
+        # Fetch memories from mem0 (with timeout for resilience)
+        try:
+            user_mems, proj_mems, graph_relations = await asyncio.wait_for(
+                loop.run_in_executor(
+                    BLOCKING_EXECUTOR,
+                    lambda: self._memory_manager.fetch_mem0_context(
+                        user_id,
+                        None,
+                        user_content,
+                        participants=participants,
+                        is_dm=is_dm,
+                        privacy_scope=privacy_scope,
+                    ),
+                ),
+                timeout=MEMORY_FETCH_TIMEOUT,
+            )
+        except (TimeoutError, asyncio.TimeoutError):
+            logger.warning(
+                f"Memory fetch timed out after {MEMORY_FETCH_TIMEOUT}s for user {user_id}, "
+                "proceeding without memories"
+            )
+            user_mems, proj_mems, graph_relations = [], [], []
 
         # Fetch emotional context (last 3 sessions)
         emotional_context = None
@@ -606,12 +665,25 @@ class MessageProcessor:
             recurring_topics=recurring_topics,
             tools=tools,
             channel_context=channel_context_msgs if channel_context_msgs else None,
+            privacy_scope=privacy_scope,
+            user_id=user_id,
         )
 
         # Add gateway context
         last_message_at = recent_msgs[-1].created_at if recent_msgs else None
         gateway_context = self._build_gateway_context(request, is_dm, participants, last_message_at)
         messages.insert(1, SystemMessage(content=gateway_context))
+
+        # Add tool summaries to system prompt
+        if tools:
+            try:
+                from mypalclara.core.tool_summaries import build_tool_summary_section
+
+                summary_lines = build_tool_summary_section(tools)
+                if summary_lines:
+                    messages.insert(2, SystemMessage(content="\n".join(summary_lines)))
+            except Exception as e:
+                logger.debug(f"Could not build tool summaries: {e}")
 
         # Add fired intentions as reminders
         if fired_intentions:

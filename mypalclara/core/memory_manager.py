@@ -266,14 +266,26 @@ class MemoryManager:
         user_message: str,
         participants: list[dict] | None = None,
         is_dm: bool = False,
+        privacy_scope: str = "full",
     ) -> tuple[list[str], list[str], list[dict]]:
-        """Fetch relevant memories from mem0 using parallel fetches."""
+        """Fetch relevant memories from mem0 using parallel fetches.
+
+        Args:
+            user_id: The user making the request
+            project_id: Project context
+            user_message: The message to search for relevant memories
+            participants: List of participant dicts for conversation members
+            is_dm: Whether this is a DM conversation
+            privacy_scope: 'full' for DMs (all memories), 'public_only' for
+                group channels (only memories with visibility='public')
+        """
         return self._memory_retriever.fetch_mem0_context(
             user_id,
             project_id,
             user_message,
-            participants,
-            is_dm,
+            participants=participants,
+            is_dm=is_dm,
+            privacy_scope=privacy_scope,
         )
 
     # ---------- Memory writing (delegates to MemoryWriter) ----------
@@ -333,6 +345,8 @@ class MemoryManager:
         tools: list[dict] | None = None,
         channel_context: list | None = None,
         model_name: str = "claude",
+        privacy_scope: str = "full",
+        user_id: str | None = None,
     ) -> list[Message]:
         """Build the full prompt for the LLM."""
         return self._prompt_builder.build_prompt(
@@ -347,7 +361,13 @@ class MemoryManager:
             tools=tools,
             channel_context=channel_context,
             model_name=model_name,
+            privacy_scope=privacy_scope,
+            user_id=user_id,
         )
+
+    async def load_user_workspace(self, user_id: str, vm_manager: object) -> None:
+        """Load per-user workspace files from a VM into the prompt builder cache."""
+        await self._prompt_builder.load_user_workspace(user_id, vm_manager)
 
     def fetch_topic_recurrence(
         self,

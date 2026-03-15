@@ -141,6 +141,11 @@ def _build_filters_and_metadata(
     if resolved_actor_id:
         effective_filters["actor_id"] = resolved_actor_id
 
+    # Default visibility to "private" for new memories (metadata).
+    # Visibility in filters is pass-through only — callers opt in explicitly.
+    if "visibility" not in base_metadata:
+        base_metadata["visibility"] = "private"
+
     return base_metadata, effective_filters
 
 
@@ -639,7 +644,7 @@ class ClaraMemory(MemoryBase):
         else:
             actual_memories = memories_result
 
-        promoted_keys = ["user_id", "agent_id", "run_id", "actor_id", "role"]
+        promoted_keys = ["user_id", "agent_id", "run_id", "actor_id", "role", "visibility"]
         core_keys = {"data", "hash", "created_at", "updated_at", "id", *promoted_keys}
 
         formatted = []
@@ -718,7 +723,7 @@ class ClaraMemory(MemoryBase):
         embeddings = self.embedding_model.embed(query, "search")
         memories = self.vector_store.search(query=query, vectors=embeddings, limit=limit, filters=filters)
 
-        promoted_keys = ["user_id", "agent_id", "run_id", "actor_id", "role"]
+        promoted_keys = ["user_id", "agent_id", "run_id", "actor_id", "role", "visibility"]
         core_keys = {"data", "hash", "created_at", "updated_at", "id", *promoted_keys}
 
         results = []
@@ -808,6 +813,20 @@ class ClaraMemory(MemoryBase):
         if not self.db:
             return []
         return self.db.get_history(memory_id)
+
+    def update_memory_visibility(self, memory_id: str, visibility: str) -> None:
+        """Update the visibility of a memory.
+
+        Args:
+            memory_id: ID of the memory to update
+            visibility: 'public' or 'private'
+        """
+        if visibility not in ("public", "private"):
+            raise ValueError(f"Invalid visibility: {visibility}. Must be 'public' or 'private'.")
+        self.vector_store.update_payload(
+            vector_id=memory_id,
+            payload={"visibility": visibility},
+        )
 
     def _create_memory(self, data, existing_embeddings, metadata=None, timestamp=None):
         """Create a new memory entry."""

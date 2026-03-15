@@ -6,16 +6,30 @@ from MemoryManager into a standalone PromptBuilder class.
 
 from __future__ import annotations
 
+import platform
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from enum import Enum
 
-from mypalclara.config.bot import PERSONALITY
+from mypalclara.config.bot import PERSONALITY_BRIEF
 from mypalclara.config.logging import get_logger
 from mypalclara.core.llm.messages import AssistantMessage, Message, SystemMessage, UserMessage
 from mypalclara.core.memory_manager import _format_message_timestamp
 from mypalclara.core.token_counter import count_message_tokens, get_context_window
 
 logger = get_logger("prompt_builder")
+
+
+class PromptMode(Enum):
+    """Controls how much context is included in the prompt."""
+
+    FULL = "full"
+    MINIMAL = "minimal"
+    NONE = "none"
+
+
+SECTION_MAX_CHARS = 10_000
+TOTAL_SYSTEM_MAX_CHARS = 200_000
 
 
 class PromptBuilder:
@@ -33,6 +47,20 @@ class PromptBuilder:
     def __init__(self, agent_id: str, llm_callable: Callable | None = None) -> None:
         self.agent_id = agent_id
         self.llm_callable = llm_callable
+        self._user_workspace_cache: dict[str, dict[str, str]] = {}
+
+    # ---------- per-user workspace ----------
+
+    async def load_user_workspace(self, user_id: str, vm_manager: object) -> None:
+        """Load per-user workspace files from a VM into the cache.
+
+        Args:
+            user_id: The user whose workspace to load.
+            vm_manager: An object with an async ``read_workspace_files(user_id)``
+                method that returns ``dict[str, str]`` mapping filenames to contents.
+        """
+        files = await vm_manager.read_workspace_files(user_id)  # type: ignore[attr-defined]
+        self._user_workspace_cache[user_id] = files
 
     # ---------- emotional context ----------
 
@@ -137,6 +165,9 @@ class PromptBuilder:
         tools: list[dict] | None = None,
         channel_context: list["Message"] | None = None,
         model_name: str = "claude",
+        mode: "PromptMode" = PromptMode.FULL,
+        privacy_scope: str = "full",
+        user_id: str | None = None,
     ) -> list[Message]:
         """Build the full prompt for the LLM.
 
@@ -152,13 +183,56 @@ class PromptBuilder:
             tools: Optional list of tool schema dicts for WORM capability inventory
             channel_context: Optional list of recent messages from the channel (all users)
             model_name: Model name for token budget calculation
+            mode: PromptMode controlling how much context to include (FULL, MINIMAL, NONE)
+            privacy_scope: "full" (DMs) includes per-user workspace, "public_only" (group channels) excludes it
+            user_id: User identifier for per-user workspace lookup
 
         Returns:
             List of typed Messages ready for LLM
         """
+        # --- NONE mode: bare minimum ---
+        if mode is PromptMode.NONE:
+            return [
+                SystemMessage(content=PERSONALITY_BRIEF),
+                UserMessage(content=user_message),
+            ]
+
         from mypalclara.core.security.worm_persona import build_worm_persona
 
-        system_base = build_worm_persona(PERSONALITY, tools)
+        personality = self._load_workspace_persona()
+        system_base = build_worm_persona(personality, tools)
+
+        # --- MINIMAL mode: identity + runtime only, skip memories/emotions/topics/graph ---
+        if mode is PromptMode.MINIMAL:
+            runtime_sections = []
+            runtime_sections.extend(self._build_datetime())
+            runtime_sections.extend(self._build_runtime())
+            context_block = "\n".join(runtime_sections)
+
+            messages: list[Message] = [
+                SystemMessage(content=system_base),
+                SystemMessage(content=context_block),
+            ]
+
+            # Add recent messages (same formatting as FULL mode)
+            for m in recent_msgs:
+                if m.role == "user":
+                    timestamp = _format_message_timestamp(getattr(m, "created_at", None))
+                    if timestamp:
+                        content = f"[{timestamp}] {m.content}"
+                    else:
+                        content = m.content
+                    messages.append(UserMessage(content=content))
+                else:
+                    messages.append(AssistantMessage(content=m.content))
+
+            messages.append(UserMessage(content=user_message))
+
+            # Enforce token budget
+            messages = self._trim_to_budget(messages, model_name)
+            return messages
+
+        # --- FULL mode: preserve all existing behavior exactly ---
 
         # Build context sections
         context_parts = []
@@ -201,6 +275,15 @@ class PromptBuilder:
             channel_block = self._format_channel_context(channel_context)
             if channel_block:
                 context_parts.append(channel_block)
+
+        # Add per-user workspace content (only in DMs / full privacy scope)
+        if privacy_scope == "full" and user_id and user_id in self._user_workspace_cache:
+            user_ws = self._user_workspace_cache[user_id]
+            if user_ws:
+                ws_parts = []
+                for filename, content in user_ws.items():
+                    ws_parts.append(f"### {filename}\n{content}")
+                context_parts.append(f"USER WORKSPACE (private, {user_id}):\n" + "\n\n".join(ws_parts))
 
         messages: list[Message] = [
             SystemMessage(content=system_base),
@@ -556,3 +639,91 @@ class PromptBuilder:
             lines.append(f"- {source} \u2192 {readable_rel} \u2192 {destination}")
 
         return "\n".join(lines) if lines else ""
+
+    # ---------- workspace persona ----------
+
+    def _load_workspace_persona(self) -> str:
+        """Load persona from workspace files, replacing the old personality constant.
+
+        Loads from mypalclara/workspace/ directory:
+        - SOUL.md: Core behavioral instructions (always loaded)
+        - IDENTITY.md: Identity fields, BUT replaced by BOT_PERSONALITY_FILE if set
+        - USER.md, AGENTS.md: Supplementary context
+
+        Returns combined persona text.
+        """
+        import os
+        from pathlib import Path
+
+        from mypalclara.core.workspace_loader import WorkspaceLoader
+
+        workspace_dir = Path(__file__).parent.parent / "workspace"
+        if not workspace_dir.is_dir():
+            # Fall back to old personality if workspace dir missing
+            from mypalclara.config.bot import PERSONALITY
+
+            return PERSONALITY
+
+        loader = WorkspaceLoader()
+        files = loader.load(workspace_dir, mode="full")
+
+        if not files:
+            from mypalclara.config.bot import PERSONALITY
+
+            return PERSONALITY
+
+        parts = []
+        for wf in files:
+            # Replace IDENTITY.md with personality file if configured
+            if wf.filename == "IDENTITY.md":
+                personality_file = os.getenv("BOT_PERSONALITY_FILE")
+                if personality_file:
+                    pf_path = Path(personality_file)
+                    if pf_path.exists():
+                        content = pf_path.read_text(encoding="utf-8").strip()
+                        if content:
+                            parts.append(f"## Identity\n{content}")
+                            continue
+                    else:
+                        logger.warning("BOT_PERSONALITY_FILE not found: %s", personality_file)
+                # No override — use IDENTITY.md as-is
+                parts.append(f"## {wf.filename}\n{wf.content}")
+            else:
+                parts.append(f"## {wf.filename}\n{wf.content}")
+
+        return "\n\n".join(parts)
+
+    # ---------- section builders ----------
+
+    def _build_datetime(self) -> list[str]:
+        """Returns current datetime section lines."""
+        now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+        return ["## Current Date & Time", f"Current: {now}"]
+
+    def _build_runtime(self) -> list[str]:
+        """Returns runtime metadata section lines."""
+        return [
+            "## Runtime",
+            f"Agent: {self.agent_id}, OS: {platform.system()}, Python: {platform.python_version()}",
+        ]
+
+    @staticmethod
+    def _apply_section_budget(text: str, max_chars: int) -> str:
+        """Apply 70/20 truncation if text exceeds budget.
+
+        Keeps the first 70% and last 20% of the budget, inserting a
+        truncation marker in between.
+
+        Args:
+            text: The text to potentially truncate
+            max_chars: Maximum allowed characters
+
+        Returns:
+            Original text if within budget, otherwise truncated with marker
+        """
+        if len(text) <= max_chars:
+            return text
+        head = int(max_chars * 0.70)
+        tail = int(max_chars * 0.20)
+        marker = f"\n...[section truncated: kept {head}+{tail} of {len(text)} chars]...\n"
+        return text[:head] + marker + text[-tail:]

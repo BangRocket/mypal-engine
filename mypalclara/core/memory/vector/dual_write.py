@@ -128,6 +128,21 @@ class DualWriteVectorStore:
 
         return result
 
+    def update_payload(self, vector_id, payload: dict = None):
+        """Merge payload keys into an existing point in store(s)."""
+        result = None
+
+        if self._should_write_to_primary():
+            result = self.primary.update_payload(vector_id, payload)
+
+        if self._should_write_to_secondary():
+            try:
+                self.secondary.update_payload(vector_id, payload)
+            except Exception as e:
+                logger.error(f"Secondary update_payload failed: {e}")
+
+        return result
+
     def delete(self, vector_id):
         """Delete a vector from store(s)."""
         result = None

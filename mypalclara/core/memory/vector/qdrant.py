@@ -3,6 +3,8 @@
 import logging
 import os
 import shutil
+import threading
+import time
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -19,6 +21,10 @@ from qdrant_client.models import (
 from mypalclara.core.memory.vector.base import VectorStoreBase
 
 logger = logging.getLogger("clara.memory.vector.qdrant")
+
+# Circuit breaker defaults
+_CB_THRESHOLD = int(os.getenv("QDRANT_CB_THRESHOLD", "3"))
+_CB_COOLDOWN = float(os.getenv("QDRANT_CB_COOLDOWN", "30"))
 
 
 class Qdrant(VectorStoreBase):
@@ -71,12 +77,18 @@ class Qdrant(VectorStoreBase):
             else:
                 self.is_local = False
 
-            self.client = QdrantClient(**params)
+            timeout = int(os.getenv("QDRANT_TIMEOUT", "15"))
+            self.client = QdrantClient(**params, timeout=timeout)
 
         self.collection_name = collection_name
         self.embedding_model_dims = embedding_model_dims
         self.on_disk = on_disk
         self.create_col(embedding_model_dims, on_disk)
+
+        # Circuit breaker state (accessed from ThreadPoolExecutor threads)
+        self._cb_lock = threading.Lock()
+        self._cb_failures = 0
+        self._cb_open_until = 0.0
 
     def create_col(self, vector_size: int, on_disk: bool = False, distance: Distance = Distance.COSINE):
         """Create a new collection."""
@@ -99,7 +111,7 @@ class Qdrant(VectorStoreBase):
             logger.debug("Skipping payload index creation for local Qdrant (not supported)")
             return
 
-        common_fields = ["user_id", "agent_id", "run_id", "actor_id"]
+        common_fields = ["user_id", "agent_id", "run_id", "actor_id", "visibility"]
 
         for field in common_fields:
             try:
@@ -139,16 +151,55 @@ class Qdrant(VectorStoreBase):
                 conditions.append(FieldCondition(key=key, match=MatchValue(value=value)))
         return Filter(must=conditions) if conditions else None
 
+    def _cb_is_open(self) -> bool:
+        """Check if circuit breaker is open (should skip calls)."""
+        with self._cb_lock:
+            if self._cb_failures < _CB_THRESHOLD:
+                return False
+            if time.monotonic() >= self._cb_open_until:
+                # Cooldown expired — allow a probe attempt
+                logger.info("[Qdrant] Circuit breaker half-open, allowing probe")
+                return False
+            return True
+
+    def _cb_record_success(self) -> None:
+        """Record a successful call, resetting the breaker."""
+        with self._cb_lock:
+            if self._cb_failures > 0:
+                logger.info("[Qdrant] Circuit breaker reset after success")
+            self._cb_failures = 0
+            self._cb_open_until = 0.0
+
+    def _cb_record_failure(self) -> None:
+        """Record a failed call, potentially opening the breaker."""
+        with self._cb_lock:
+            self._cb_failures += 1
+            if self._cb_failures >= _CB_THRESHOLD:
+                self._cb_open_until = time.monotonic() + _CB_COOLDOWN
+                logger.warning(
+                    f"[Qdrant] Circuit breaker OPEN after {self._cb_failures} failures, "
+                    f"cooling down for {_CB_COOLDOWN}s"
+                )
+
     def search(self, query: str, vectors: list, limit: int = 5, filters: dict = None) -> list:
         """Search for similar vectors."""
-        query_filter = self._create_filter(filters) if filters else None
-        hits = self.client.query_points(
-            collection_name=self.collection_name,
-            query=vectors,
-            query_filter=query_filter,
-            limit=limit,
-        )
-        return hits.points
+        if self._cb_is_open():
+            logger.warning("[Qdrant] Circuit breaker open, returning empty results")
+            return []
+        try:
+            query_filter = self._create_filter(filters) if filters else None
+            hits = self.client.query_points(
+                collection_name=self.collection_name,
+                query=vectors,
+                query_filter=query_filter,
+                limit=limit,
+            )
+            self._cb_record_success()
+            return hits.points
+        except Exception as e:
+            self._cb_record_failure()
+            logger.error(f"[Qdrant] Search failed: {e}")
+            return []
 
     def delete(self, vector_id: int):
         """Delete a vector by ID."""
@@ -163,6 +214,14 @@ class Qdrant(VectorStoreBase):
         """Update a vector and its payload."""
         point = PointStruct(id=vector_id, vector=vector, payload=payload)
         self.client.upsert(collection_name=self.collection_name, points=[point])
+
+    def update_payload(self, vector_id: int, payload: dict = None):
+        """Merge payload keys into an existing point without changing its vector."""
+        self.client.set_payload(
+            collection_name=self.collection_name,
+            payload=payload,
+            points=[vector_id],
+        )
 
     def get(self, vector_id: int) -> dict:
         """Retrieve a vector by ID."""
@@ -183,15 +242,24 @@ class Qdrant(VectorStoreBase):
 
     def list(self, filters: dict = None, limit: int = 100) -> list:
         """List all vectors in a collection."""
-        query_filter = self._create_filter(filters) if filters else None
-        result = self.client.scroll(
-            collection_name=self.collection_name,
-            scroll_filter=query_filter,
-            limit=limit,
-            with_payload=True,
-            with_vectors=False,
-        )
-        return result
+        if self._cb_is_open():
+            logger.warning("[Qdrant] Circuit breaker open, returning empty results for list")
+            return ([], None)
+        try:
+            query_filter = self._create_filter(filters) if filters else None
+            result = self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=query_filter,
+                limit=limit,
+                with_payload=True,
+                with_vectors=False,
+            )
+            self._cb_record_success()
+            return result
+        except Exception as e:
+            self._cb_record_failure()
+            logger.error(f"[Qdrant] List/scroll failed: {e}")
+            return ([], None)
 
     def reset(self):
         """Reset the index by deleting and recreating it."""

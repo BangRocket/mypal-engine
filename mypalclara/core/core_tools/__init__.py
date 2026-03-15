@@ -107,6 +107,7 @@ async def register_core_tools(registry: "ToolRegistry") -> int:
         chat_history,
         files_tool,
         mcp_management,
+        memory_visibility_tool,
         process_tool,
         system_logs,
         terminal_tool,
@@ -185,6 +186,18 @@ async def register_core_tools(registry: "ToolRegistry") -> int:
         logger.info(f"[core_tools] Registered {len(files_tool.TOOLS)} files tools")
     except Exception as e:
         logger.warning(f"[core_tools] Failed to register files_tool: {e}")
+
+    # Initialize and register memory_visibility_tool
+    try:
+        await memory_visibility_tool.initialize()
+        for tool_def in memory_visibility_tool.TOOLS:
+            registry.register(tool_def)
+            count += 1
+        if memory_visibility_tool.SYSTEM_PROMPT:
+            registry.register_system_prompt("memory_visibility", memory_visibility_tool.SYSTEM_PROMPT)
+        logger.info(f"[core_tools] Registered {len(memory_visibility_tool.TOOLS)} memory_visibility tools")
+    except Exception as e:
+        logger.warning(f"[core_tools] Failed to register memory_visibility_tool: {e}")
 
     # Initialize and register terminal_tool
     try:

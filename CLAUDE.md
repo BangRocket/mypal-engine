@@ -329,6 +329,15 @@ CLARA_GATEWAY_API_PORT=18790          # Gateway HTTP API port (default: 18790)
 CLARA_GATEWAY_API_URL=http://127.0.0.1:18790  # Gateway HTTP API URL (for Rails proxy)
 ```
 
+### Heartbeat (OpenClaw-inspired)
+```bash
+HEARTBEAT_ENABLED=false           # Enable periodic heartbeat checks
+HEARTBEAT_INTERVAL_MINUTES=30     # Minutes between checks (default: 30)
+HEARTBEAT_ACK_MAX_CHARS=300       # Max chars to suppress with HEARTBEAT_OK
+```
+
+Edit `mypalclara/workspace/HEARTBEAT.md` to customize what Clara checks each cycle.
+
 ### Optional Features
 ```bash
 ENABLE_GRAPH_MEMORY=false         # FalkorDB relationship tracking
@@ -336,6 +345,26 @@ GITHUB_TOKEN=...                  # GitHub integration
 EMAIL_MONITORING_ENABLED=false    # Email alerts
 TAVILY_API_KEY=...                # Web search in sandbox
 ```
+
+### Per-User VMs
+```bash
+USER_VM_ENABLED=false             # Enable persistent per-user VMs
+USER_VM_IDLE_TIMEOUT=1800         # Seconds before suspend (default: 1800 = 30 min)
+USER_VM_INSTANCE_TYPE=container   # 'container' or 'vm'
+USER_VM_IMAGE=images:debian/12/cloud  # Incus image for user VMs
+```
+
+### Qdrant Resilience
+```bash
+QDRANT_TIMEOUT=15                 # Request timeout in seconds for QdrantClient
+QDRANT_CB_THRESHOLD=3             # Consecutive failures before circuit breaker opens
+QDRANT_CB_COOLDOWN=30             # Seconds to skip Qdrant calls after circuit opens
+MEMORY_FETCH_TIMEOUT=10           # Seconds before memory fetch times out (returns empty)
+```
+
+Each user can get a persistent Incus VM with personal workspace files and filesystem access. VMs are provisioned on demand, suspended on idle, and resumed when the user returns.
+
+**Privacy model:** Memories default to `private`. Users can mark memories as `public` for group channel visibility. Clara respects the boundary automatically based on channel type (DM = full access, group = public only).
 
 ## Key Patterns
 

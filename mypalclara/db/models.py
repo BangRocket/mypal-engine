@@ -371,6 +371,29 @@ class GuildConfig(Base):
 
 
 # =============================================================================
+# Per-User VM Models
+# =============================================================================
+
+
+class UserVM(Base):
+    """Tracks persistent per-user VM instances."""
+
+    __tablename__ = "user_vms"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    user_id = Column(String, nullable=False, unique=True, index=True)
+    instance_name = Column(String, nullable=False)
+    instance_type = Column(String, nullable=False, default="container")
+    status = Column(String, nullable=False, default="provisioning")
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    last_accessed_at = Column(DateTime, default=utcnow, nullable=False)
+    suspended_at = Column(DateTime, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<UserVM user={self.user_id} status={self.status}>"
+
+
+# =============================================================================
 # Memory Dynamics Models (FSRS-6 + Intentions)
 # =============================================================================
 
@@ -791,6 +814,8 @@ __all__ = [
     "EmailAlert",
     # Guild config
     "GuildConfig",
+    # Per-user VMs
+    "UserVM",
     # Memory dynamics (FSRS-6 + Intentions)
     "MemoryDynamics",
     "MemoryAccessLog",

@@ -73,6 +73,7 @@ class MemoryRetriever:
         user_message: str,
         participants: list[dict] | None = None,
         is_dm: bool = False,
+        privacy_scope: str = "full",
     ) -> tuple[list[str], list[str], list[dict]]:
         """Fetch relevant memories from mem0 using parallel fetches.
 
@@ -94,6 +95,8 @@ class MemoryRetriever:
             user_message: The message to search for relevant memories
             participants: List of {"id": str, "name": str} for conversation members
             is_dm: Whether this is a DM conversation (changes retrieval priority)
+            privacy_scope: 'full' for DMs (all memories), 'public_only' for group
+                channels (only memories with visibility='public')
 
         Returns:
             Tuple of (user_memories, project_memories, graph_relations)
@@ -103,6 +106,13 @@ class MemoryRetriever:
 
         if ROOK is None:
             return [], [], []
+
+        # Build visibility filter for privacy scoping
+        # In group channels (public_only), only return memories marked as public
+        visibility_filter: dict[str, str] = {}
+        if privacy_scope == "public_only":
+            visibility_filter = {"visibility": "public"}
+            logger.debug("Applying visibility=public filter for group channel")
 
         # Truncate search query if too long
         search_query = user_message
@@ -123,10 +133,11 @@ class MemoryRetriever:
                     logger.debug("Key memories cache hit")
                     return {"results": cached, "_cached": True}
 
+            key_filters = {"is_key": "true", **visibility_filter}
             result = ROOK.get_all(
                 user_id=user_id,
                 agent_id=self.agent_id,
-                filters={"is_key": "true"},
+                filters=key_filters,
                 limit=MAX_KEY_MEMORIES,
             )
 
@@ -145,10 +156,12 @@ class MemoryRetriever:
                     logger.debug("User search cache hit")
                     return {"results": cached, "_cached": True}
 
+            user_filters = {**visibility_filter} if visibility_filter else None
             result = ROOK.search(
                 search_query,
                 user_id=user_id,
                 agent_id=self.agent_id,
+                filters=user_filters,
             )
 
             # Cache the results
@@ -159,7 +172,7 @@ class MemoryRetriever:
 
         def fetch_project_memories():
             """Fetch project memories via semantic search (with caching)."""
-            filters = {"project_id": project_id}
+            filters = {"project_id": project_id, **visibility_filter}
 
             # Try cache first
             if cache and cache.available:
