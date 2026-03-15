@@ -117,10 +117,12 @@ def export_relational(
 
             query = session.query(model_cls)
 
-            # Apply user filter
+            # Apply user filter (models use user_id, owner_id, or canonical_user_id)
             if user_id:
                 if hasattr(model_cls, "user_id"):
                     query = query.filter(model_cls.user_id == user_id)
+                elif hasattr(model_cls, "owner_id"):
+                    query = query.filter(model_cls.owner_id == user_id)
                 elif hasattr(model_cls, "canonical_user_id"):
                     query = query.filter(model_cls.canonical_user_id == user_id)
 
@@ -212,13 +214,14 @@ def _export_qdrant(
                 f.write(json.dumps(record, default=str) + "\n")
                 count += 1
 
+            if count % 500 == 0 and count > 0:
+                log.info("  vectors (qdrant): %d records...", count)
+
             if next_offset is None:
                 break
             offset = next_offset
 
-    if count % 500 != 0:
-        log.info("  vectors (qdrant): %d records", count)
-
+    log.info("  vectors (qdrant): %d records exported", count)
     return count
 
 
@@ -232,6 +235,8 @@ def _export_pgvector(
     """Export vectors from pgvector to a JSONL file. Returns record count."""
     from sqlalchemy import create_engine, text
 
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
     engine = create_engine(database_url)
     count = 0
 
@@ -467,7 +472,8 @@ def import_relational(
                 continue
             if tables_filter and filename not in tables_filter:
                 continue
-            count = sum(1 for _ in open(filepath, encoding="utf-8"))
+            with open(filepath, encoding="utf-8") as f:
+                count = sum(1 for _ in f)
             if count:
                 counts[filename] = count
                 log.info("  %s: %d records (dry run)", filename, count)
@@ -495,6 +501,7 @@ def import_relational(
                     dt_columns.add(col.name)
 
             count = 0
+            skipped = 0
             with open(filepath, encoding="utf-8") as f:
                 for line in f:
                     row_data = json.loads(line)
@@ -503,20 +510,32 @@ def import_relational(
                     for col_name in dt_columns:
                         value = row_data.get(col_name)
                         if value is not None:
-                            row_data[col_name] = datetime.fromisoformat(value)
+                            try:
+                                row_data[col_name] = datetime.fromisoformat(value)
+                            except (ValueError, TypeError):
+                                row_data[col_name] = None
 
-                    obj = model_cls(**row_data)
-                    session.merge(obj)
-                    count += 1
+                    try:
+                        obj = model_cls(**row_data)
+                        session.merge(obj)
+                        count += 1
 
-                    if count % 500 == 0:
-                        session.flush()
-                        log.info("  %s: %d records merged...", filename, count)
+                        if count % 500 == 0:
+                            session.flush()
+                            log.info("  %s: %d records merged...", filename, count)
+                    except Exception as e:
+                        session.rollback()
+                        skipped += 1
+                        if skipped <= 5:
+                            log.warning("  %s: skipped record (pk=%s): %s", filename, row_data.get("id"), e)
 
             session.commit()
             if count:
                 counts[filename] = count
-            log.info("  %s: %d records", filename, count)
+            msg = f"  {filename}: {count} records"
+            if skipped:
+                msg += f" ({skipped} skipped)"
+            log.info(msg)
 
     return counts
 
@@ -616,6 +635,8 @@ def _import_pgvector(
             count = sum(1 for _ in f)
         return {"memories": count} if count else {}
 
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
     engine = create_engine(database_url)
 
     with engine.connect() as conn:
@@ -743,12 +764,14 @@ def import_graph(
 
     if dry_run:
         if nodes_path.exists():
-            node_count = sum(1 for _ in open(nodes_path, encoding="utf-8"))
+            with open(nodes_path, encoding="utf-8") as f:
+                node_count = sum(1 for _ in f)
             if node_count:
                 counts["nodes"] = node_count
                 log.info("  graph nodes: %d (dry run)", node_count)
         if edges_path.exists():
-            edge_count = sum(1 for _ in open(edges_path, encoding="utf-8"))
+            with open(edges_path, encoding="utf-8") as f:
+                edge_count = sum(1 for _ in f)
             if edge_count:
                 counts["edges"] = edge_count
                 log.info("  graph edges: %d (dry run)", edge_count)
@@ -986,12 +1009,19 @@ def cmd_import(args: argparse.Namespace) -> None:
         if tables_filter is None or "memories" in tables_filter:
             log.info("=== Vector import ===")
             vec_counts = import_vectors(tmp_dir, manifest, args.re_embed, args.dry_run)
+            if not vec_counts and (tmp_dir / "vectors" / "memories.jsonl").exists() and args.strict:
+                log.error("Vector import failed and --strict is set")
+                sys.exit(1)
             record_counts.update(vec_counts)
 
         # 3. Graph import (only if "nodes"/"edges" in filter, or no filter)
         if tables_filter is None or "nodes" in tables_filter or "edges" in tables_filter:
             log.info("=== Graph import ===")
             graph_counts = import_graph(tmp_dir, args.dry_run)
+            has_graph_data = (tmp_dir / "graph" / "nodes.jsonl").exists() or (tmp_dir / "graph" / "edges.jsonl").exists()
+            if not graph_counts and has_graph_data and args.strict:
+                log.error("Graph import failed and --strict is set")
+                sys.exit(1)
             record_counts.update(graph_counts)
 
         # Summary
