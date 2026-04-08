@@ -30,7 +30,11 @@ class HuggingFaceEmbedding(EmbeddingBase):
 
         from huggingface_hub import InferenceClient
 
-        self._client = InferenceClient(model=self.config.model, token=token)
+        self._client = InferenceClient(
+            model=self.config.model,
+            token=token,
+            api_url="https://router.huggingface.co",
+        )
         self._is_e5 = "e5" in (self.config.model or "").lower()
 
     def _prefix_text(self, text: str, memory_action: Optional[str]) -> str:
