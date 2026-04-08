@@ -15,6 +15,7 @@ try:
 except ImportError:
     falkordb = None
 
+from mypalclara.core.memory.config import EMBEDDING_MODEL_DIMS
 from mypalclara.core.memory.embeddings.base import BaseEmbedderConfig
 from mypalclara.core.memory.embeddings.openai import OpenAIEmbedding
 from mypalclara.core.memory.graph.tools import EXTRACT_TRIPLES_TOOL
@@ -25,8 +26,6 @@ if TYPE_CHECKING:
     from mypalclara.core.memory.cache.graph_cache import GraphCache
 
 logger = logging.getLogger(__name__)
-
-EMBEDDING_DIMS = 1536
 
 
 class MemoryGraph:
@@ -107,7 +106,7 @@ class MemoryGraph:
         for stmt in [
             "CREATE INDEX FOR (n:__Entity__) ON (n.user_id)",
             "CREATE INDEX FOR (n:__Entity__) ON (n.name)",
-            f"CREATE VECTOR INDEX FOR (n:__Entity__) ON (n.embedding) OPTIONS {{dim: {EMBEDDING_DIMS}, similarityFunction: 'cosine'}}",
+            f"CREATE VECTOR INDEX FOR (n:__Entity__) ON (n.embedding) OPTIONS {{dim: {EMBEDDING_MODEL_DIMS}, similarityFunction: 'cosine'}}",
         ]:
             try:
                 self.graph.query(stmt)
