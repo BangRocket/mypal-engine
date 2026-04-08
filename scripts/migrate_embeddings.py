@@ -114,9 +114,16 @@ def main():
         logger.info("No memories to migrate")
         return
 
-    # The vector store collection should already exist with correct dims
-    # (created during Rook init). If needed, recreate it.
+    # Recreate vector store collection with correct dimensions
     vs = ROOK.vector_store
+    logger.info(f"Recreating Qdrant collection with {EMBEDDING_MODEL_DIMS} dimensions...")
+    if hasattr(vs, "delete_col"):
+        vs.delete_col()
+    if hasattr(vs, "create_col"):
+        vs.create_col(vector_size=EMBEDDING_MODEL_DIMS, distance="cosine")
+        logger.info("Collection recreated")
+    else:
+        logger.warning("Vector store doesn't support create_col — may fail if dims mismatch")
 
     # Re-embed and insert all memories
     failed = 0
