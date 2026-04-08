@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from mypalclara.config.logging import get_logger
-from mypalclara.core.memory_manager import (
+from mypalclara.core.memory.config import (
     MAX_GRAPH_RELATIONS,
     MAX_KEY_MEMORIES,
     MAX_MEMORIES_PER_TYPE,

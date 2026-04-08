@@ -349,7 +349,7 @@ class SessionManager:
             session: The session being finalized
         """
         try:
-            from mypalclara.core.emotional_context import (
+            from mypalclara.core.memory.context.emotional import (
                 finalize_conversation_emotional_context,
                 get_conversation_sentiments,
                 has_pending_emotional_context,
@@ -399,8 +399,8 @@ class SessionManager:
             is_dm: Whether this is a DM
         """
         try:
-            from mypalclara.core.emotional_context import get_conversation_sentiments
-            from mypalclara.core.topic_recurrence import extract_and_store_topics
+            from mypalclara.core.memory.context.emotional import get_conversation_sentiments
+            from mypalclara.core.memory.context.topics import extract_and_store_topics
 
             # Fetch recent messages from database for this session
             conversation_text = await self._fetch_session_conversation(session)

@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from mypalclara.config.logging import get_logger
-from mypalclara.core.memory_manager import (
+from mypalclara.core.memory.config import (
     FSRS_DYNAMICS_WEIGHT,
     FSRS_SEMANTIC_WEIGHT,
     MEMORY_ACCESS_LOG_RETENTION_DAYS,

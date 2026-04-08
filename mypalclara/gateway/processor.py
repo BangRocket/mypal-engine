@@ -1013,7 +1013,7 @@ class MessageProcessor:
 
             # Personality evolution (probabilistic, low-cost gate)
             try:
-                from mypalclara.core.personality_evolution import maybe_evolve_personality
+                from mypalclara.core.memory.personality import maybe_evolve_personality
 
                 await loop.run_in_executor(
                     BLOCKING_EXECUTOR,
@@ -1043,7 +1043,7 @@ class MessageProcessor:
             context: The context dict
         """
         try:
-            from mypalclara.core.emotional_context import track_message_sentiment
+            from mypalclara.core.memory.context.emotional import track_message_sentiment
 
             track_message_sentiment(
                 user_id=context["user_id"],

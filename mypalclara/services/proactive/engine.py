@@ -1434,7 +1434,7 @@ async def extract_conversation_info(
 
 def update_interaction_from_extraction(user_id: str, extraction: dict):
     """Update UserInteractionPattern with extracted conversation info."""
-    from mypalclara.core.emotional_context import finalize_conversation_emotional_context
+    from mypalclara.core.memory.context.emotional import finalize_conversation_emotional_context
 
     with SessionLocal() as session:
         pattern = session.query(UserInteractionPattern).filter(UserInteractionPattern.user_id == user_id).first()

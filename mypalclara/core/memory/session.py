@@ -17,8 +17,8 @@ if TYPE_CHECKING:
 
     from mypalclara.db.models import Message, Session
 
-# Re-use constants from memory_manager
-from mypalclara.core.memory_manager import CONTEXT_MESSAGE_COUNT, SUMMARY_INTERVAL, THREAD_SUMMARY_MAX_MESSAGES
+# Re-use constants from memory config
+from mypalclara.core.memory.config import CONTEXT_MESSAGE_COUNT, SUMMARY_INTERVAL, THREAD_SUMMARY_MAX_MESSAGES
 
 thread_logger = get_logger("thread")
 
@@ -156,7 +156,7 @@ class SessionManager:
 
     def update_thread_summary(self, db: "OrmSession", thread: "Session") -> str:
         """Generate/update summary for a thread."""
-        from mypalclara.core.memory_manager import _format_message_timestamp
+        from mypalclara.core.memory.config import _format_message_timestamp
         from mypalclara.db.models import Message
 
         all_msgs = db.query(Message).filter_by(session_id=thread.id).order_by(Message.created_at.asc()).all()

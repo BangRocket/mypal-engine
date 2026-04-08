@@ -14,7 +14,7 @@ from enum import Enum
 from mypalclara.config.bot import PERSONALITY_BRIEF
 from mypalclara.config.logging import get_logger
 from mypalclara.core.llm.messages import AssistantMessage, Message, SystemMessage, UserMessage
-from mypalclara.core.memory_manager import _format_message_timestamp
+from mypalclara.core.memory.config import _format_message_timestamp
 from mypalclara.core.token_counter import count_message_tokens, get_context_window
 
 logger = get_logger("prompt_builder")
@@ -549,7 +549,7 @@ class PromptBuilder:
             - pattern_note: Natural language description
             - channels: List of channel names where mentioned
         """
-        from mypalclara.core.topic_recurrence import fetch_topic_recurrence
+        from mypalclara.core.memory.context.topics import fetch_topic_recurrence
 
         return fetch_topic_recurrence(
             user_id=user_id,

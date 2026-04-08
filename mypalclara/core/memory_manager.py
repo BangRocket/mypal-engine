@@ -14,74 +14,40 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from mypalclara.config.logging import get_logger
 from mypalclara.core.llm.messages import Message
+from mypalclara.core.memory.config import (
+    CHANNEL_CONTEXT_COUNT,
+    CONTEXT_MESSAGE_COUNT,
+    FSRS_DYNAMICS_WEIGHT,
+    FSRS_SEMANTIC_WEIGHT,
+    MAX_GRAPH_RELATIONS,
+    MAX_KEY_MEMORIES,
+    MAX_MEMORIES_PER_TYPE,
+    MAX_SEARCH_QUERY_CHARS,
+    MEMORY_ACCESS_LOG_RETENTION_DAYS,
+    MEMORY_CONTEXT_SLICE,
+    PRUNE_CHECK_FREQUENCY,
+    SMART_INGEST_SKIP_THRESHOLD,
+    SMART_INGEST_SUPERSEDE_THRESHOLD,
+    SMART_INGEST_UPDATE_THRESHOLD,
+    SUMMARY_INTERVAL,
+    THREAD_SUMMARY_MAX_MESSAGES,
+    _format_message_timestamp,
+)
 
 # Module loggers
 logger = get_logger("rook")
 thread_logger = get_logger("thread")
 memory_logger = get_logger("memory")
 
-# Timezone for message timestamps (defaults to America/New_York)
-DEFAULT_TIMEZONE = os.getenv("DEFAULT_TIMEZONE", "America/New_York")
-
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session as OrmSession
 
     from mypalclara.db.models import MemoryDynamics, Message, Session
-
-# Configuration constants
-CONTEXT_MESSAGE_COUNT = 30  # Direct conversation history
-CHANNEL_CONTEXT_COUNT = 50  # Channel-wide context (all users)
-SUMMARY_INTERVAL = 10
-MAX_SEARCH_QUERY_CHARS = 6000
-MAX_KEY_MEMORIES = 15  # Key memories always included in every request
-MAX_MEMORIES_PER_TYPE = 35  # Limit per type (50 total - 15 reserved for key memories)
-MAX_GRAPH_RELATIONS = 20  # Limit graph relations to avoid prompt bloat
-
-# FSRS scoring weights
-FSRS_SEMANTIC_WEIGHT = 0.6  # Semantic similarity is primary signal
-FSRS_DYNAMICS_WEIGHT = 0.4  # FSRS retrievability modulates ranking
-
-# Smart ingestion thresholds
-SMART_INGEST_SKIP_THRESHOLD = 0.95  # Nearly identical — skip
-SMART_INGEST_UPDATE_THRESHOLD = 0.75  # Similar enough to update
-SMART_INGEST_SUPERSEDE_THRESHOLD = 0.6  # Similar topic, may contradict
-
-# Context slicing
-MEMORY_CONTEXT_SLICE = 4  # Recent messages for memory extraction context
-THREAD_SUMMARY_MAX_MESSAGES = 30  # Messages included in thread summary
-
-# Access log pruning
-MEMORY_ACCESS_LOG_RETENTION_DAYS = 90
-PRUNE_CHECK_FREQUENCY = 100  # Check every N promote_memory calls
-
-
-def _format_message_timestamp(dt: datetime | None) -> str:
-    """Format a message timestamp for display in conversation history.
-
-    Returns short time format like "10:43 PM" in the configured timezone.
-    """
-    if dt is None:
-        return ""
-
-    try:
-        from zoneinfo import ZoneInfo
-
-        tz = ZoneInfo(DEFAULT_TIMEZONE)
-        # Convert to local timezone if UTC
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=UTC)
-        local_dt = dt.astimezone(tz)
-        return local_dt.strftime("%-I:%M %p")
-    except Exception:
-        # Fallback to UTC
-        if dt.tzinfo is None:
-            return dt.strftime("%H:%M UTC")
-        return dt.strftime("%-I:%M %p")
 
 
 class MemoryManager:
@@ -120,13 +86,13 @@ class MemoryManager:
                 Called with (event_type, data) where event_type is "memory_retrieved"
                 or "memory_extracted" and data contains event-specific information.
         """
-        from mypalclara.core.intention_manager import IntentionManager
-        from mypalclara.core.memory_dynamics_manager import MemoryDynamicsManager
-        from mypalclara.core.memory_ingestion import MemoryIngestionManager
-        from mypalclara.core.memory_retriever import MemoryRetriever
-        from mypalclara.core.memory_writer import MemoryWriter
+        from mypalclara.core.memory.dynamics.manager import MemoryDynamicsManager
+        from mypalclara.core.memory.ingestion import MemoryIngestionManager
+        from mypalclara.core.memory.intentions import IntentionManager
+        from mypalclara.core.memory.retrieval import MemoryRetriever
+        from mypalclara.core.memory.session import SessionManager
+        from mypalclara.core.memory.writer import MemoryWriter
         from mypalclara.core.prompt_builder import PromptBuilder
-        from mypalclara.core.session_manager import SessionManager
 
         self.llm = llm_callable
         self.agent_id = agent_id

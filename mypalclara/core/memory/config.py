@@ -4,15 +4,77 @@ This module provides configuration and initialization for Clara's memory system.
 The memory system is called "Rook" internally.
 
 Environment variables use ROOK_* prefix with MEM0_* as deprecated fallback.
+
+Also contains tuning constants used across the memory subsystem.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+# ---------------------------------------------------------------------------
+# Memory system tuning constants
+# ---------------------------------------------------------------------------
+
+# Conversation context sizes
+CONTEXT_MESSAGE_COUNT = 30  # Direct conversation history
+CHANNEL_CONTEXT_COUNT = 50  # Channel-wide context (all users)
+SUMMARY_INTERVAL = 10
+THREAD_SUMMARY_MAX_MESSAGES = 30  # Messages included in thread summary
+
+# Memory retrieval limits
+MAX_SEARCH_QUERY_CHARS = 6000
+MAX_KEY_MEMORIES = 15  # Key memories always included in every request
+MAX_MEMORIES_PER_TYPE = 35  # Limit per type (50 total - 15 reserved for key memories)
+MAX_GRAPH_RELATIONS = 20  # Limit graph relations to avoid prompt bloat
+
+# FSRS scoring weights
+FSRS_SEMANTIC_WEIGHT = 0.6  # Semantic similarity is primary signal
+FSRS_DYNAMICS_WEIGHT = 0.4  # FSRS retrievability modulates ranking
+
+# Smart ingestion thresholds
+SMART_INGEST_SKIP_THRESHOLD = 0.95  # Nearly identical — skip
+SMART_INGEST_UPDATE_THRESHOLD = 0.75  # Similar enough to update
+SMART_INGEST_SUPERSEDE_THRESHOLD = 0.6  # Similar topic, may contradict
+
+# Context slicing
+MEMORY_CONTEXT_SLICE = 4  # Recent messages for memory extraction context
+
+# Access log pruning
+MEMORY_ACCESS_LOG_RETENTION_DAYS = 90
+PRUNE_CHECK_FREQUENCY = 100  # Check every N promote_memory calls
+
+# Timezone for message timestamps (defaults to America/New_York)
+DEFAULT_TIMEZONE = os.getenv("DEFAULT_TIMEZONE", "America/New_York")
+
+
+def _format_message_timestamp(dt: datetime | None) -> str:
+    """Format a message timestamp for display in conversation history.
+
+    Returns short time format like "10:43 PM" in the configured timezone.
+    """
+    if dt is None:
+        return ""
+
+    try:
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo(DEFAULT_TIMEZONE)
+        # Convert to local timezone if UTC
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        local_dt = dt.astimezone(tz)
+        return local_dt.strftime("%-I:%M %p")
+    except Exception:
+        # Fallback to UTC
+        if dt.tzinfo is None:
+            return dt.strftime("%H:%M UTC")
+        return dt.strftime("%-I:%M %p")
 
 # Use Clara's native memory system
 from mypalclara.core.memory.core.memory import ClaraMemory

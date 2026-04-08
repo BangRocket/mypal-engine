@@ -8,14 +8,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from mypalclara.config.logging import get_logger
-from mypalclara.core.memory_manager import (
+from mypalclara.core.memory.config import (
     SMART_INGEST_SKIP_THRESHOLD,
     SMART_INGEST_SUPERSEDE_THRESHOLD,
     SMART_INGEST_UPDATE_THRESHOLD,
 )
 
 if TYPE_CHECKING:
-    from mypalclara.core.memory_dynamics_manager import MemoryDynamicsManager
+    from mypalclara.core.memory.dynamics.manager import MemoryDynamicsManager
 
 memory_logger = get_logger("memory")
 

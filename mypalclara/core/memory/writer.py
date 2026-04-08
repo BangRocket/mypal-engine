@@ -11,15 +11,15 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from mypalclara.config.logging import get_logger
 from mypalclara.core.llm.messages import AssistantMessage, UserMessage
-from mypalclara.core.memory_manager import MEMORY_CONTEXT_SLICE
+from mypalclara.core.memory.config import MEMORY_CONTEXT_SLICE
 
 # Module loggers (matching memory_manager.py conventions)
 logger = get_logger("rook")
 memory_logger = get_logger("memory")
 
 if TYPE_CHECKING:
-    from mypalclara.core.memory_dynamics_manager import MemoryDynamicsManager
-    from mypalclara.core.memory_ingestion import MemoryIngestionManager
+    from mypalclara.core.memory.dynamics.manager import MemoryDynamicsManager
+    from mypalclara.core.memory.ingestion import MemoryIngestionManager
     from mypalclara.db.models import Message
 
 
