@@ -34,11 +34,9 @@ VM_WORKSPACE_DIR = "/home/clara/workspace"
 VM_PRIVATE_DIR = "/home/clara/private"
 VM_PUBLIC_DIR = "/home/clara/public"
 
-# Setup script run after container creation (replaces cloud-init)
+# Setup script run after container creation — just user + dirs, no package install
 _SETUP_SCRIPT = """\
 set -e
-apt-get update -qq
-apt-get install -y -qq python3 python3-pip git curl >/dev/null 2>&1
 useradd -m -u 1000 -s /bin/bash clara 2>/dev/null || true
 mkdir -p /home/clara/workspace /home/clara/private /home/clara/public
 chown -R clara:clara /home/clara
