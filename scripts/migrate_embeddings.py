@@ -58,9 +58,9 @@ def main():
         logger.error("Rook not initialized — check your configuration")
         sys.exit(1)
 
-    # Get all memories
+    # Get all memories — use agent_id to satisfy the filter requirement
     logger.info("Fetching all memories...")
-    all_memories = ROOK.get_all()
+    all_memories = ROOK.get_all(agent_id="clara", limit=10000)
     total = len(all_memories.get("results", []))
     logger.info(f"Found {total} memories")
 
