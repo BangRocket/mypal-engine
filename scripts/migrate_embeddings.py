@@ -58,10 +58,27 @@ def main():
         logger.error("Rook not initialized — check your configuration")
         sys.exit(1)
 
-    # Get all memories — use agent_id to satisfy the filter requirement
-    logger.info("Fetching all memories...")
-    all_memories = ROOK.get_all(agent_id="clara", limit=10000)
-    total = len(all_memories.get("results", []))
+    # Get all memories directly from vector store (skip graph — we only need vectors)
+    logger.info("Fetching all memories from vector store...")
+    vs = ROOK.vector_store
+    raw_memories = vs.list(filters={"agent_id": "clara"}, limit=10000)
+
+    # Normalize — vector store may return dicts or objects
+    memories = []
+    if isinstance(raw_memories, list):
+        for item in raw_memories:
+            if isinstance(item, dict):
+                memories.append(item)
+            elif hasattr(item, "payload"):
+                mem = item.payload or {}
+                mem["id"] = str(item.id) if hasattr(item, "id") else mem.get("id")
+                memories.append(mem)
+            else:
+                memories.append(item)
+    elif isinstance(raw_memories, dict):
+        memories = raw_memories.get("results", raw_memories.get("memories", []))
+
+    total = len(memories)
     logger.info(f"Found {total} memories")
 
     if args.dry_run:
@@ -75,7 +92,6 @@ def main():
     # Recreate the vector store collection with new dimensions
     logger.info(f"Recreating vector store with {EMBEDDING_MODEL_DIMS} dimensions...")
     try:
-        vs = ROOK.vector_store
         if hasattr(vs, "delete_col"):
             vs.delete_col()
         if hasattr(vs, "create_col"):
@@ -91,7 +107,6 @@ def main():
         sys.exit(1)
 
     # Re-embed and insert all memories
-    memories = all_memories["results"]
     failed = 0
     start = time.time()
 
