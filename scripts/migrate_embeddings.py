@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Re-embed all memories after switching embedding model.
 
-Recreates the Qdrant collection with new dimensions and re-embeds all
-existing memories using the currently configured embedding provider.
+Reads memory text from the memory_history database table (which survives
+vector store changes), re-embeds with the currently configured provider,
+and inserts into the vector store.
 
 Usage:
     # Dry run (count memories, show config)
@@ -34,6 +35,45 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 
+def _fetch_memories_from_db() -> list[dict]:
+    """Fetch the latest version of each memory from memory_history table.
+
+    Returns list of dicts with keys: memory_id, memory (text), event, actor_id, role.
+    Only returns the most recent non-deleted version of each memory.
+    """
+    from sqlalchemy import text as sql_text
+
+    from mypalclara.db import SessionLocal
+
+    session = SessionLocal()
+    try:
+        # Get the latest event per memory_id, excluding deleted ones
+        rows = session.execute(
+            sql_text("""
+                SELECT DISTINCT ON (memory_id)
+                    memory_id, new_memory, event, actor_id, role, created_at
+                FROM memory_history
+                WHERE is_deleted = false
+                  AND new_memory IS NOT NULL
+                  AND new_memory != ''
+                  AND event IN ('ADD', 'UPDATE')
+                ORDER BY memory_id, created_at DESC
+            """)
+        ).fetchall()
+
+        memories = []
+        for row in rows:
+            memories.append({
+                "id": row.memory_id,
+                "memory": row.new_memory,
+                "actor_id": row.actor_id,
+                "role": row.role,
+            })
+        return memories
+    finally:
+        session.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Re-embed memories after embedding model change")
     parser.add_argument("--dry-run", action="store_true", help="Count memories and show config without migrating")
@@ -58,53 +98,25 @@ def main():
         logger.error("Rook not initialized — check your configuration")
         sys.exit(1)
 
-    # Get all memories directly from vector store (skip graph — we only need vectors)
-    logger.info("Fetching all memories from vector store...")
-    vs = ROOK.vector_store
-    raw_memories = vs.list(filters={"agent_id": "clara"}, limit=10000)
-
-    # Normalize — vector store may return dicts or objects
-    memories = []
-    if isinstance(raw_memories, list):
-        for item in raw_memories:
-            if isinstance(item, dict):
-                memories.append(item)
-            elif hasattr(item, "payload"):
-                mem = item.payload or {}
-                mem["id"] = str(item.id) if hasattr(item, "id") else mem.get("id")
-                memories.append(mem)
-            else:
-                memories.append(item)
-    elif isinstance(raw_memories, dict):
-        memories = raw_memories.get("results", raw_memories.get("memories", []))
-
+    # Fetch memories from the database (survives vector store changes)
+    logger.info("Fetching memories from database (memory_history)...")
+    memories = _fetch_memories_from_db()
     total = len(memories)
-    logger.info(f"Found {total} memories")
+    logger.info(f"Found {total} memories to re-embed")
 
     if args.dry_run:
         logger.info("Dry run — no changes made")
+        if memories:
+            logger.info(f"Sample: {memories[0]['memory'][:100]}...")
         return
 
     if total == 0:
         logger.info("No memories to migrate")
         return
 
-    # Recreate the vector store collection with new dimensions
-    logger.info(f"Recreating vector store with {EMBEDDING_MODEL_DIMS} dimensions...")
-    try:
-        if hasattr(vs, "delete_col"):
-            vs.delete_col()
-        if hasattr(vs, "create_col"):
-            vs.create_col(
-                vector_size=EMBEDDING_MODEL_DIMS,
-                distance="cosine",
-            )
-            logger.info("Vector store collection recreated")
-        else:
-            logger.warning("Vector store doesn't support create_col — may need manual setup")
-    except Exception as e:
-        logger.error(f"Failed to recreate collection: {e}")
-        sys.exit(1)
+    # The vector store collection should already exist with correct dims
+    # (created during Rook init). If needed, recreate it.
+    vs = ROOK.vector_store
 
     # Re-embed and insert all memories
     failed = 0
@@ -116,14 +128,18 @@ def main():
         batch_total = (total + args.batch_size - 1) // args.batch_size
 
         for mem in batch:
-            mem_id = mem.get("id", "unknown")
-            text = mem.get("memory", "")
-            metadata = mem.get("metadata", {})
+            mem_id = mem["id"]
+            text = mem["memory"]
 
-            if not text:
-                logger.warning(f"Skipping memory {mem_id} — empty text")
-                failed += 1
-                continue
+            # Reconstruct minimal metadata for the vector store payload
+            metadata = {
+                "data": text,
+                "agent_id": "clara",
+            }
+            if mem.get("actor_id"):
+                metadata["actor_id"] = mem["actor_id"]
+            if mem.get("role"):
+                metadata["role"] = mem["role"]
 
             try:
                 embedding = ROOK.embedding_model.embed(text, "add")
