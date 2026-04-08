@@ -54,11 +54,17 @@ class MemoryGraph:
         )
         self.graph = self.client.select_graph(graph_config.get("graph_name", "clara_memory"))
 
-        # Embedder
+        # Embedder (provider-driven, same as ClaraMemory)
         embedder_conf = config.embedder.config
         if isinstance(embedder_conf, dict):
             embedder_conf = BaseEmbedderConfig(**embedder_conf)
-        self.embedding_model = OpenAIEmbedding(embedder_conf)
+        embedder_provider = getattr(config.embedder, "provider", "huggingface")
+        if embedder_provider == "openai":
+            self.embedding_model = OpenAIEmbedding(embedder_conf)
+        else:
+            from mypalclara.core.memory.embeddings.huggingface import HuggingFaceEmbedding
+
+            self.embedding_model = HuggingFaceEmbedding(embedder_conf)
 
         # Indexes
         self._create_indexes()
