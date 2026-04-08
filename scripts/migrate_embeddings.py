@@ -120,7 +120,7 @@ def main():
     if hasattr(vs, "delete_col"):
         vs.delete_col()
     if hasattr(vs, "create_col"):
-        vs.create_col(vector_size=EMBEDDING_MODEL_DIMS, distance="cosine")
+        vs.create_col(vector_size=EMBEDDING_MODEL_DIMS, distance="Cosine")
         logger.info("Collection recreated")
     else:
         logger.warning("Vector store doesn't support create_col — may fail if dims mismatch")
