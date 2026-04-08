@@ -1253,7 +1253,7 @@ TOOLS = [
     ToolDef(
         name="download_from_sandbox",
         description=(
-            "Download a file from the Docker/Incus sandbox to persistent storage. "
+            "Download a file from the Docker sandbox to persistent storage. "
             "Use this to save sandbox results permanently or to share them in chat."
         ),
         parameters={
@@ -1280,7 +1280,7 @@ TOOLS = [
     ToolDef(
         name="upload_to_sandbox",
         description=(
-            "Upload a file from persistent storage to the Docker/Incus sandbox. "
+            "Upload a file from persistent storage to the Docker sandbox. "
             "Use this to make saved files available for code execution or data analysis."
         ),
         parameters={

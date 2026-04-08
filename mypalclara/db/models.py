@@ -364,7 +364,7 @@ class GuildConfig(Base):
     ors_quiet_end = Column(String, nullable=True)  # HH:MM format
 
     # Sandbox settings
-    sandbox_mode = Column(String, default="auto")  # docker, incus, incus-vm, auto
+    sandbox_mode = Column(String, default="docker")  # docker
 
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)

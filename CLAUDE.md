@@ -77,7 +77,7 @@ git config core.hooksPath .githooks  # Enable hooks (run once)
 | `mypalclara/core/email/` | Email monitoring and alerts |
 | `mypalclara/core/core_tools/` | Tool implementations including MCP management |
 | `mypalclara/db/` | Database models, migrations, connection |
-| `mypalclara/sandbox/` | Code execution (Docker, Incus containers/VMs) |
+| `mypalclara/sandbox/` | Code execution (Docker containers) |
 | `mypalclara/tools/` | Tool loader infrastructure |
 | `mypalclara/config/` | Configuration modules |
 | `mypalclara/services/email/` | Email monitoring service |
@@ -309,7 +309,6 @@ Benefits:
 
 To enable Docker sandbox + web search:
 ```bash
-SANDBOX_MODE=auto                 # docker, incus, incus-vm, or auto
 DOCKER_SANDBOX_IMAGE=python:3.12-slim
 DOCKER_SANDBOX_TIMEOUT=900
 ```
@@ -346,12 +345,10 @@ EMAIL_MONITORING_ENABLED=false    # Email alerts
 TAVILY_API_KEY=...                # Web search in sandbox
 ```
 
-### Per-User VMs
+### Per-User Containers
 ```bash
-USER_VM_ENABLED=false             # Enable persistent per-user VMs
-USER_VM_IDLE_TIMEOUT=1800         # Seconds before suspend (default: 1800 = 30 min)
-USER_VM_INSTANCE_TYPE=container   # 'container' or 'vm'
-USER_VM_IMAGE=images:debian/12/cloud  # Incus image for user VMs
+USER_VM_ENABLED=false             # Enable persistent per-user Docker containers
+USER_VM_IMAGE=debian:12-slim      # Docker image for user containers
 ```
 
 ### Qdrant Resilience
@@ -362,7 +359,7 @@ QDRANT_CB_COOLDOWN=30             # Seconds to skip Qdrant calls after circuit o
 MEMORY_FETCH_TIMEOUT=10           # Seconds before memory fetch times out (returns empty)
 ```
 
-Each user can get a persistent Incus VM with personal workspace files and filesystem access. VMs are provisioned on demand, suspended on idle, and resumed when the user returns.
+Each user can get a persistent Docker container with personal workspace files and filesystem access. Containers are provisioned on demand and restarted when the user returns.
 
 **Privacy model:** Memories default to `private`. Users can mark memories as `public` for group channel visibility. Clara respects the boundary automatically based on channel type (DM = full access, group = public only).
 
@@ -376,7 +373,7 @@ Each user can get a persistent Incus VM with personal workspace files and filesy
   - `ToolCall`/`ToolResponse` dataclasses for standardized tool handling
   - Backward compatibility via `make_llm()`, `make_llm_streaming()`, etc.
 - `LLM_PROVIDER=anthropic` uses native Anthropic SDK with native tool calling (recommended for clewdr)
-- Sandbox system auto-selects between Docker and Incus based on availability
+- Sandbox system uses Docker containers for code execution
 - Rook (Clara's memory system) is in `mypalclara/core/memory/`
 
 ## Production Deployment

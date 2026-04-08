@@ -6,8 +6,8 @@ Gives Clara runtime read/write access to her workspace files
 SOUL.md and IDENTITY.md are read-only (owner-controlled).
 Clara can read, write, and create other .md files in the workspace.
 
-When a user has a per-user VM, workspace tools route through the
-VM manager (incus exec) instead of direct host filesystem access.
+When a user has a per-user container, workspace tools route through the
+VM manager (Docker) instead of direct host filesystem access.
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ SYSTEM_PROMPT = """
 You have access to workspace files that shape your behavior and memory.
 Use the workspace tools to read, update, or create these files.
 
-**IMPORTANT:** Each user's workspace lives inside their personal VM (Incus container). The `workspace_*` tools automatically route to the correct VM. Do NOT use terminal commands (`execute_command`, `read_file`, `ls`, `cat`, etc.) to access workspace files — those operate on the host server, not the user's VM. Always use `workspace_read`, `workspace_write`, `workspace_list`, and `workspace_create`.
+**IMPORTANT:** Each user's workspace lives inside their personal Docker container. The `workspace_*` tools automatically route to the correct container. Do NOT use terminal commands (`execute_command`, `read_file`, `ls`, `cat`, etc.) to access workspace files — those operate on the host server, not the user's container. Always use `workspace_read`, `workspace_write`, `workspace_list`, and `workspace_create`.
 
 **Read-only files (owner-controlled):**
 - SOUL.md — Core behavioral instructions (you cannot edit this)

@@ -1,7 +1,6 @@
 """Terminal tool for Clara.
 
 Provides terminal command execution and file system operations.
-Python implementation of rustterm-mcp capabilities.
 
 Features:
 - Command execution with configurable timeouts

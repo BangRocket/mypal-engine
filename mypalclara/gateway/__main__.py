@@ -485,7 +485,6 @@ async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] 
         await vm_manager.load_from_db()
         logger.info(f"VM manager ready ({len(vm_manager._instances)} user VMs loaded)")
         processor.set_vm_manager(vm_manager)
-        asyncio.create_task(vm_manager.idle_check_loop())
     else:
         logger.info("Per-user VMs disabled (set USER_VM_ENABLED=true to enable)")
 

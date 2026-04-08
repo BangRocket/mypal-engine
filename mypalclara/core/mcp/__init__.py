@@ -7,7 +7,7 @@ Architecture:
 - Local servers: Run as subprocesses (stdio transport)
   - Stored in .mcp_servers/local/{name}/config.json
   - Supports hot reload for development
-  - Includes built-in servers (rustterm, clara-mcp)
+  - Includes built-in servers (clara-mcp)
 
 - Remote servers: Connect via HTTP transport
   - Stored in .mcp_servers/remote/{name}/config.json

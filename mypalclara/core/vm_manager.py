@@ -1,8 +1,8 @@
-"""Persistent per-user VM lifecycle management.
+"""Persistent per-user container lifecycle management.
 
-Each user can get a persistent Incus VM (or container) that survives
-across sessions. VMs are provisioned on demand, suspended on idle,
-and resumed when the user returns.
+Each user can get a persistent Docker container that survives
+across sessions. Containers are provisioned on demand, stopped
+when idle, and restarted when the user returns.
 """
 
 from __future__ import annotations
@@ -11,43 +11,42 @@ import asyncio
 import logging
 import os
 import re
-import time
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
+try:
+    import docker
+    from docker.errors import NotFound as DockerNotFound
+
+    DOCKER_AVAILABLE = True
+except ImportError:
+    DOCKER_AVAILABLE = False
+    docker = None  # type: ignore[assignment]
+    DockerNotFound = Exception  # type: ignore[assignment, misc]
+
 logger = logging.getLogger(__name__)
 
-# Default Incus image for user VMs
-DEFAULT_IMAGE = "images:debian/12/cloud"
-DEFAULT_INSTANCE_TYPE = "container"
+# Configuration
+DEFAULT_IMAGE = os.getenv("USER_VM_IMAGE", "debian:12-slim")
 VM_WORKSPACE_DIR = "/home/clara/workspace"
 VM_PRIVATE_DIR = "/home/clara/private"
 VM_PUBLIC_DIR = "/home/clara/public"
 
-# Cloud-init for user VMs
-USER_VM_CLOUD_INIT = """\
-#cloud-config
-users:
-  - name: clara
-    uid: 1000
-    shell: /bin/bash
-    sudo: ALL=(ALL) NOPASSWD:ALL
-    home: /home/clara
-packages:
-  - python3
-  - python3-pip
-  - git
-  - curl
-runcmd:
-  - mkdir -p /home/clara/workspace /home/clara/private /home/clara/public
-  - chown -R clara:clara /home/clara
+# Setup script run after container creation (replaces cloud-init)
+_SETUP_SCRIPT = """\
+set -e
+apt-get update -qq
+apt-get install -y -qq python3 python3-pip git curl >/dev/null 2>&1
+useradd -m -u 1000 -s /bin/bash clara 2>/dev/null || true
+mkdir -p /home/clara/workspace /home/clara/private /home/clara/public
+chown -R clara:clara /home/clara
 """
 
 
 def _sanitize_user_id(user_id: str) -> str:
-    """Convert user_id to a safe Incus instance name component."""
+    """Convert user_id to a safe container name component."""
     if not user_id:
         raise ValueError("user_id cannot be empty")
     safe_id = re.sub(r"[^a-zA-Z0-9-]", "-", user_id).strip("-").lower()
@@ -57,11 +56,11 @@ def _sanitize_user_id(user_id: str) -> str:
 
 
 class VMManager:
-    """Manages persistent per-user Incus VMs.
+    """Manages persistent per-user Docker containers.
 
     Args:
         session_factory: Optional callable returning a SQLAlchemy Session.
-            When provided, VM state is persisted to the database.
+            When provided, container state is persisted to the database.
             When None, only in-memory tracking is used.
     """
 
@@ -69,82 +68,114 @@ class VMManager:
         self,
         session_factory: Callable[[], Session] | None = None,
     ) -> None:
-        self._instances: dict[str, str] = {}  # user_id -> instance_name
+        self._instances: dict[str, str] = {}  # user_id -> container_name
         self._statuses: dict[str, str] = {}  # user_id -> status
-        self._last_access: dict[str, float] = {}  # user_id -> monotonic timestamp
         self._lock = asyncio.Lock()
         self._session_factory = session_factory
-        self._idle_timeout = int(os.getenv("USER_VM_IDLE_TIMEOUT", "1800"))
+        self._client: Any = None
+        self._containers: dict[str, Any] = {}  # container_name -> container object cache
 
-    async def _run_incus(self, *args: str, timeout: float = 60.0) -> str:
-        """Run an incus CLI command and return stdout."""
-        cmd = ["incus", *args]
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        except asyncio.TimeoutError:
-            proc.kill()
-            raise RuntimeError(f"incus {args[0]} timed out after {timeout}s")
-        if proc.returncode != 0:
-            error = stderr.decode().strip()
-            raise RuntimeError(f"incus {args[0]} failed: {error}")
-        return stdout.decode().strip()
+    @property
+    def client(self) -> Any:
+        """Lazy-load Docker client."""
+        if self._client is None and DOCKER_AVAILABLE:
+            self._client = docker.from_env()
+        return self._client
 
-    def _instance_name(self, user_id: str) -> str:
-        """Generate instance name for a user."""
+    def _container_name(self, user_id: str) -> str:
+        """Generate container name for a user."""
         safe_id = _sanitize_user_id(user_id)
         return f"clara-user-{safe_id}"
 
     async def provision(self, user_id: str) -> bool:
-        """Provision a new persistent VM for a user."""
+        """Provision a new persistent container for a user."""
         async with self._lock:
-            instance_name = self._instance_name(user_id)
+            container_name = self._container_name(user_id)
 
             if user_id in self._instances:
                 return True
 
+            # Check if container already exists in Docker
             try:
-                output = await self._run_incus("info", instance_name)
-                if output:
-                    self._instances[user_id] = instance_name
+                existing = await self._docker_get(container_name)
+                if existing:
+                    status = existing.status
+                    if status != "running":
+                        loop = asyncio.get_event_loop()
+                        await loop.run_in_executor(None, existing.start)
+                    self._instances[user_id] = container_name
                     self._statuses[user_id] = "running"
                     return True
-            except RuntimeError:
+            except DockerNotFound:
                 pass
 
-            await self._run_incus(
-                "launch",
-                DEFAULT_IMAGE,
-                instance_name,
-                "--config",
-                f"user.user-data={USER_VM_CLOUD_INIT}",
+            # Create new container
+            loop = asyncio.get_event_loop()
+            container = await loop.run_in_executor(
+                None,
+                lambda: self.client.containers.run(
+                    DEFAULT_IMAGE,
+                    "tail -f /dev/null",  # Keep container alive
+                    name=container_name,
+                    detach=True,
+                    mem_limit="512m",
+                    cpu_period=100000,
+                    cpu_quota=100000,
+                    volumes={
+                        f"clara-user-{_sanitize_user_id(user_id)}-data": {
+                            "bind": "/home/clara",
+                            "mode": "rw",
+                        }
+                    },
+                ),
             )
+            self._containers[container_name] = container
 
-            self._instances[user_id] = instance_name
+            # Run setup
+            await self._exec_direct_raw(container_name, ["sh", "-c", _SETUP_SCRIPT], as_root=True)
+
+            self._instances[user_id] = container_name
             self._statuses[user_id] = "running"
-            self._save_to_db(user_id, instance_name, DEFAULT_INSTANCE_TYPE)
-            logger.info(f"[VM] Provisioned {instance_name} for {user_id}")
+            self._save_to_db(user_id, container_name, "container")
+            logger.info(f"[VM] Provisioned {container_name} for {user_id}")
 
         # Seed outside the lock — exec_in_vm calls ensure_vm which acquires it
         await self._seed_workspace(user_id)
         return True
 
-    async def _exec_direct(self, user_id: str, command: list[str], as_root: bool = False) -> str:
-        """Execute in a VM without calling ensure_vm (avoids recursion).
+    async def _docker_get(self, container_name: str) -> Any:
+        """Get a Docker container by name. Raises DockerNotFound if missing."""
+        if container_name in self._containers:
+            return self._containers[container_name]
+        loop = asyncio.get_event_loop()
+        container = await loop.run_in_executor(
+            None, lambda: self.client.containers.get(container_name)
+        )
+        self._containers[container_name] = container
+        return container
 
-        Only use from methods already called by ensure_vm/provision.
-        """
-        instance_name = self._instances[user_id]
-        if as_root:
-            return await self._run_incus("exec", instance_name, "--", *command)
-        return await self._run_incus("exec", instance_name, "--user", "1000", "--group", "1000", "--", *command)
+    async def _exec_direct_raw(
+        self, container_name: str, command: list[str], as_root: bool = False
+    ) -> str:
+        """Execute in a container by name (no ensure_vm, avoids recursion)."""
+        loop = asyncio.get_event_loop()
+        container = await self._docker_get(container_name)
+        user = "root" if as_root else "clara"
+        exit_code, output = await loop.run_in_executor(
+            None, lambda: container.exec_run(command, user=user)
+        )
+        decoded = output.decode("utf-8", errors="replace") if isinstance(output, bytes) else str(output)
+        if exit_code != 0:
+            raise RuntimeError(f"Command failed (exit {exit_code}): {decoded}")
+        return decoded
+
+    async def _exec_direct(self, user_id: str, command: list[str], as_root: bool = False) -> str:
+        """Execute in a user's container without calling ensure_vm (avoids recursion)."""
+        container_name = self._instances[user_id]
+        return await self._exec_direct_raw(container_name, command, as_root=as_root)
 
     async def _write_direct(self, user_id: str, path: str, content: str) -> None:
-        """Write a file to a VM without calling ensure_vm (avoids recursion)."""
+        """Write a file to a container without calling ensure_vm (avoids recursion)."""
         if "CLARA_EOF" in content:
             raise ValueError("Content contains reserved delimiter 'CLARA_EOF'")
         escaped_path = path.replace("'", "'\\''")
@@ -154,12 +185,12 @@ class VMManager:
         )
 
     async def _seed_workspace(self, user_id: str) -> None:
-        """Copy SOUL.md and IDENTITY.md from the shared workspace into a new VM."""
+        """Copy SOUL.md and IDENTITY.md from the shared workspace into a new container."""
         from pathlib import Path
 
         shared_ws = Path(__file__).parent.parent / "workspace"
 
-        # Ensure directories exist — cloud-init may not have finished yet
+        # Ensure directories exist
         await self._exec_direct(
             user_id,
             ["mkdir", "-p", VM_WORKSPACE_DIR, VM_PRIVATE_DIR, VM_PUBLIC_DIR],
@@ -183,7 +214,7 @@ class VMManager:
                 logger.warning(f"[VM] Could not seed {filename}: {e}")
 
     async def _ensure_seeded(self, user_id: str) -> None:
-        """Check if SOUL.md/IDENTITY.md exist in the VM; seed any that are missing."""
+        """Check if SOUL.md/IDENTITY.md exist in the container; seed any that are missing."""
         from pathlib import Path
 
         shared_ws = Path(__file__).parent.parent / "workspace"
@@ -195,7 +226,6 @@ class VMManager:
             try:
                 await self._exec_direct(user_id, ["test", "-f", f"{VM_WORKSPACE_DIR}/{filename}"])
             except RuntimeError:
-                # File doesn't exist in VM — seed it
                 try:
                     await self._exec_direct(
                         user_id,
@@ -209,33 +239,37 @@ class VMManager:
                     logger.warning(f"[VM] Could not seed {filename}: {e}")
 
     async def suspend(self, user_id: str) -> None:
-        """Suspend (pause) a user's VM."""
+        """Stop a user's container."""
         if user_id not in self._instances:
             raise ValueError(f"No VM found for user {user_id}")
 
-        instance_name = self._instances[user_id]
-        await self._run_incus("pause", instance_name)
+        container_name = self._instances[user_id]
+        container = await self._docker_get(container_name)
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, container.stop)
         self._statuses[user_id] = "suspended"
         self._update_db_status(user_id, "suspended")
-        logger.info(f"[VM] Suspended {instance_name}")
+        logger.info(f"[VM] Stopped {container_name}")
 
     async def resume(self, user_id: str) -> None:
-        """Resume a suspended user VM."""
+        """Restart a stopped user container."""
         if user_id not in self._instances:
             raise ValueError(f"No VM found for user {user_id}")
 
-        instance_name = self._instances[user_id]
-        await self._run_incus("start", instance_name)
+        container_name = self._instances[user_id]
+        container = await self._docker_get(container_name)
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, container.start)
         self._statuses[user_id] = "running"
         self._update_db_status(user_id, "running")
-        logger.info(f"[VM] Resumed {instance_name}")
+        logger.info(f"[VM] Started {container_name}")
 
     # ------------------------------------------------------------------
     # DB persistence helpers
     # ------------------------------------------------------------------
 
     async def load_from_db(self) -> None:
-        """Load VM state from database on startup."""
+        """Load container state from database on startup."""
         if self._session_factory is None:
             return
         from mypalclara.db.models import UserVM
@@ -247,7 +281,7 @@ class VMManager:
                 self._instances[vm.user_id] = vm.instance_name
                 self._statuses[vm.user_id] = vm.status
             if vms:
-                logger.info(f"[VM] Loaded {len(vms)} VM(s) from database")
+                logger.info(f"[VM] Loaded {len(vms)} container(s) from database")
         finally:
             session.close()
 
@@ -279,7 +313,7 @@ class VMManager:
             session.close()
 
     def _update_db_status(self, user_id: str, status: str) -> None:
-        """Update a VM's status in the database."""
+        """Update a container's status in the database."""
         if self._session_factory is None:
             return
         from mypalclara.db.models import UserVM
@@ -302,18 +336,18 @@ class VMManager:
         finally:
             session.close()
 
-    async def _vm_exists(self, instance_name: str) -> bool:
-        """Check if a VM actually exists in Incus."""
+    async def _vm_exists(self, container_name: str) -> bool:
+        """Check if a container actually exists in Docker."""
         try:
-            await self._run_incus("info", instance_name)
+            await self._docker_get(container_name)
             return True
-        except RuntimeError:
+        except DockerNotFound:
             return False
 
     async def ensure_vm(self, user_id: str) -> str:
-        """Ensure a user's VM is running, provisioning or resuming as needed.
+        """Ensure a user's container is running, provisioning or resuming as needed.
 
-        Verifies the VM actually exists in Incus — if it was deleted
+        Verifies the container actually exists in Docker — if it was deleted
         externally, clears stale state and reprovisions.
         """
         status = self._statuses.get(user_id)
@@ -322,46 +356,40 @@ class VMManager:
         # If we think it's running or suspended, verify it actually exists
         if status in ("running", "suspended") and instance_name:
             if not await self._vm_exists(instance_name):
-                logger.warning(f"[VM] {instance_name} not found in Incus (was {status}), reprovisioning")
+                logger.warning(f"[VM] {instance_name} not found in Docker (was {status}), reprovisioning")
                 self._instances.pop(user_id, None)
                 self._statuses.pop(user_id, None)
                 status = None
 
         if status == "running":
-            self._last_access[user_id] = time.monotonic()
             await self._ensure_seeded(user_id)
             return self._instances[user_id]
 
         if status == "suspended":
             await self.resume(user_id)
-            self._last_access[user_id] = time.monotonic()
             await self._ensure_seeded(user_id)
             return self._instances[user_id]
 
         await self.provision(user_id)
-        self._last_access[user_id] = time.monotonic()
-        return self._instances.get(user_id, self._instance_name(user_id))
+        return self._instances.get(user_id, self._container_name(user_id))
 
     async def exec_in_vm(self, user_id: str, command: list[str], as_root: bool = False) -> str:
-        """Execute a command inside a user's VM.
+        """Execute a command inside a user's container.
 
         Args:
-            user_id: The user whose VM to execute in.
+            user_id: The user whose container to execute in.
             command: Command and arguments to run.
             as_root: If True, run as root. Otherwise runs as the 'clara' user.
         """
         await self.ensure_vm(user_id)
-        instance_name = self._instances[user_id]
-        if as_root:
-            return await self._run_incus("exec", instance_name, "--", *command)
-        return await self._run_incus("exec", instance_name, "--user", "1000", "--group", "1000", "--", *command)
+        return await self._exec_direct(user_id, command, as_root=as_root)
 
     async def read_file(self, user_id: str, path: str) -> str:
-        """Read a file from a user's VM."""
+        """Read a file from a user's container."""
         return await self.exec_in_vm(user_id, ["cat", path])
 
     async def write_file(self, user_id: str, path: str, content: str) -> None:
-        """Write content to a file in a user's VM."""
+        """Write content to a file in a user's container."""
         if "CLARA_EOF" in content:
             raise ValueError("Content contains reserved delimiter 'CLARA_EOF'")
         escaped_path = path.replace("'", "'\\''")
@@ -375,13 +403,12 @@ class VMManager:
         )
 
     async def read_workspace_files(self, user_id: str) -> dict[str, str]:
-        """Read all .md files from a user's VM workspace.
+        """Read all .md files from a user's container workspace.
 
         Returns:
             Dict mapping filename to content, e.g. {"USER.md": "...", "MEMORY.md": "..."}
         """
         try:
-            # List .md files in workspace
             file_list = await self.exec_in_vm(
                 user_id, ["find", VM_WORKSPACE_DIR, "-maxdepth", "1", "-name", "*.md", "-type", "f"]
             )
@@ -403,7 +430,7 @@ class VMManager:
         return files
 
     async def get_status(self, user_id: str) -> dict[str, str | None]:
-        """Get the status of a user's VM."""
+        """Get the status of a user's container."""
         return {
             "user_id": user_id,
             "instance_name": self._instances.get(user_id),
@@ -411,42 +438,5 @@ class VMManager:
         }
 
     async def list_vms(self) -> list[dict[str, str | None]]:
-        """List all tracked user VMs."""
+        """List all tracked user containers."""
         return [await self.get_status(uid) for uid in self._instances]
-
-    async def _check_idle_vms(self) -> None:
-        """Suspend VMs that have been idle longer than the timeout."""
-        now = time.monotonic()
-        to_suspend = []
-
-        for user_id, status in list(self._statuses.items()):
-            if status != "running":
-                continue
-            last = self._last_access.get(user_id)
-            if last is None:
-                continue
-            if (now - last) >= self._idle_timeout:
-                to_suspend.append(user_id)
-
-        for user_id in to_suspend:
-            try:
-                await self.suspend(user_id)
-                logger.info(f"[VM] Suspended {self._instances.get(user_id)} " f"after {self._idle_timeout}s idle")
-            except Exception as e:
-                logger.warning(f"[VM] Failed to idle-suspend VM for {user_id}: {e}")
-
-    async def idle_check_loop(self) -> None:
-        """Run idle VM checks forever. Start as an asyncio task."""
-        check_interval = min(self._idle_timeout // 2, 300)  # At least every 5 min
-        check_interval = max(check_interval, 60)  # At least every 60s
-        logger.info(
-            f"[VM] Idle check loop started (timeout={self._idle_timeout}s, " f"check_interval={check_interval}s)"
-        )
-        while True:
-            try:
-                await self._check_idle_vms()
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                logger.error(f"[VM] Idle check error: {e}")
-            await asyncio.sleep(check_interval)

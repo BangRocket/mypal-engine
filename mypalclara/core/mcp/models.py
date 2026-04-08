@@ -6,8 +6,6 @@ stored as JSON files in the MCP_SERVERS_DIR directory.
 New Structure:
     .mcp_servers/
         local/                   # Local MCP servers (stdio transport)
-            rustterm/
-                config.json
             clara-mcp/
                 config.json
             {user-installed}/
@@ -69,7 +67,7 @@ class LocalServerConfig:
 
     Local servers run as subprocesses and communicate via stdio.
     They include:
-    - Built-in servers: rustterm, clara-mcp
+    - Built-in servers: clara-mcp
     - User-installed servers from npm, GitHub, local paths
     """
 
