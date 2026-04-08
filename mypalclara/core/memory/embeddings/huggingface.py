@@ -33,7 +33,7 @@ class HuggingFaceEmbedding(EmbeddingBase):
         self._client = InferenceClient(
             model=self.config.model,
             token=token,
-            api_url="https://router.huggingface.co",
+            base_url="https://router.huggingface.co",
         )
         self._is_e5 = "e5" in (self.config.model or "").lower()
 
