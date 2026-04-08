@@ -9,7 +9,7 @@ from mypalclara.core.memory.embeddings.base import BaseEmbedderConfig, Embedding
 logger = logging.getLogger("clara.memory.embeddings.huggingface")
 
 # Default model
-DEFAULT_MODEL = "intfloat/e5-large-v2"
+DEFAULT_MODEL = "BAAI/bge-large-en-v1.5"
 DEFAULT_DIMS = 1024
 
 
@@ -35,19 +35,26 @@ class HuggingFaceEmbedding(EmbeddingBase):
             model=self.config.model,
             token=token,
         )
-        self._is_e5 = "e5" in (self.config.model or "").lower()
+        model_lower = (self.config.model or "").lower()
+        self._is_e5 = "e5" in model_lower
+        self._is_bge = "bge" in model_lower
 
     def _prefix_text(self, text: str, memory_action: Optional[str]) -> str:
-        """Add e5-style prefix based on memory action.
+        """Add model-specific prefix based on memory action.
 
-        e5 models require "query: " for search and "passage: " for documents.
-        Non-e5 models get no prefix.
+        e5 models: "query: " for search, "passage: " for documents.
+        BGE models: "Represent this sentence: " for documents (search has no prefix).
+        Other models: no prefix.
         """
-        if not self._is_e5:
+        if self._is_e5:
+            if memory_action == "search":
+                return f"query: {text}"
+            return f"passage: {text}"
+        if self._is_bge:
+            if memory_action == "search":
+                return f"Represent this sentence for searching relevant passages: {text}"
             return text
-        if memory_action == "search":
-            return f"query: {text}"
-        return f"passage: {text}"
+        return text
 
     def embed(
         self,

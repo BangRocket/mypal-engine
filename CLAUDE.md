@@ -120,7 +120,7 @@ HF_TOKEN=...                # Required for HuggingFace embeddings (default provi
 ### Embedding Provider
 ```bash
 EMBEDDING_PROVIDER=huggingface  # "huggingface" (default) or "openai"
-EMBEDDING_MODEL=intfloat/e5-large-v2  # Default HuggingFace model (1024 dims)
+EMBEDDING_MODEL=BAAI/bge-large-en-v1.5  # Default HuggingFace model (1024 dims)
 EMBEDDING_MODEL_DIMS=1024      # Must match model output dimensions
 # For OpenAI embeddings: set EMBEDDING_PROVIDER=openai and OPENAI_API_KEY
 ```

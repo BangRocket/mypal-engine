@@ -314,7 +314,7 @@ else:
     _embedder_config = {
         "provider": "huggingface",
         "config": {
-            "model": os.getenv("EMBEDDING_MODEL", "intfloat/e5-large-v2"),
+            "model": os.getenv("EMBEDDING_MODEL", "BAAI/bge-large-en-v1.5"),
             "api_key": os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_API_KEY"),
             "embedding_dims": EMBEDDING_MODEL_DIMS,
         },
