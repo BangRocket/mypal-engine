@@ -113,8 +113,16 @@ Web UI uses Rails as BFF (backend-for-frontend). Rails handles game logic direct
 
 ### Required
 ```bash
-OPENAI_API_KEY=...          # Always required for embeddings
 LLM_PROVIDER=anthropic      # openrouter, nanogpt, openai, or anthropic
+HF_TOKEN=...                # Required for HuggingFace embeddings (default provider)
+```
+
+### Embedding Provider
+```bash
+EMBEDDING_PROVIDER=huggingface  # "huggingface" (default) or "openai"
+EMBEDDING_MODEL=intfloat/e5-large-v2  # Default HuggingFace model (1024 dims)
+EMBEDDING_MODEL_DIMS=1024      # Must match model output dimensions
+# For OpenAI embeddings: set EMBEDDING_PROVIDER=openai and OPENAI_API_KEY
 ```
 
 ### Chat LLM Providers

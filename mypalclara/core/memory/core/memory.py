@@ -176,11 +176,18 @@ class ClaraMemory(MemoryBase):
         self.custom_update_memory_prompt = getattr(config, "custom_update_memory_prompt", None)
         self.retrieval_criteria = getattr(config, "retrieval_criteria", None)
 
-        # Initialize embedding model
+        # Initialize embedding model (provider-driven factory)
         embedder_conf = self.config.embedder.config
         if isinstance(embedder_conf, dict):
             embedder_conf = BaseEmbedderConfig(**embedder_conf)
-        self.embedding_model = OpenAIEmbedding(embedder_conf)
+
+        embedder_provider = getattr(self.config.embedder, "provider", "huggingface")
+        if embedder_provider == "openai":
+            self.embedding_model = OpenAIEmbedding(embedder_conf)
+        else:
+            from mypalclara.core.memory.embeddings.huggingface import HuggingFaceEmbedding
+
+            self.embedding_model = HuggingFaceEmbedding(embedder_conf)
 
         # Wrap with cache if configured
         enable_cache = os.getenv("MEMORY_EMBEDDING_CACHE", "true").lower() == "true"

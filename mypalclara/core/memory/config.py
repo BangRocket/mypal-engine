@@ -233,8 +233,8 @@ graph_store_config = _get_graph_store_config()
 ROOK_COLLECTION_NAME = _get_env("ROOK_COLLECTION_NAME", "MEM0_COLLECTION_NAME", "clara_memories")
 
 
-# Embedding dimensions for text-embedding-3-small
-EMBEDDING_MODEL_DIMS = 1536
+# Embedding dimensions (1024 for intfloat/e5-large-v2, 1536 for OpenAI text-embedding-3-small)
+EMBEDDING_MODEL_DIMS = int(os.getenv("EMBEDDING_MODEL_DIMS", "1024"))
 
 
 def _build_vector_store_config() -> dict:
@@ -297,16 +297,33 @@ vector_store_config = _build_vector_store_config()
 # Embedding cache toggle
 MEMORY_EMBEDDING_CACHE = os.getenv("MEMORY_EMBEDDING_CACHE", "true").lower() == "true"
 
-# Build config - embeddings always use OpenAI (with optional caching)
-config = {
-    "vector_store": vector_store_config,
-    "embedder": {
+# Embedding provider: "huggingface" (default) or "openai"
+EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "huggingface").lower()
+
+if EMBEDDING_PROVIDER == "openai":
+    _embedder_config = {
         "provider": "openai",
         "config": {
-            "model": "text-embedding-3-small",
+            "model": os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"),
             "api_key": OPENAI_API_KEY,
+            "embedding_dims": EMBEDDING_MODEL_DIMS,
         },
-    },
+    }
+    logger.info(f"Embeddings: OpenAI {_embedder_config['config']['model']}")
+else:
+    _embedder_config = {
+        "provider": "huggingface",
+        "config": {
+            "model": os.getenv("EMBEDDING_MODEL", "intfloat/e5-large-v2"),
+            "api_key": os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_API_KEY"),
+            "embedding_dims": EMBEDDING_MODEL_DIMS,
+        },
+    }
+    logger.info(f"Embeddings: HuggingFace {_embedder_config['config']['model']}")
+
+config = {
+    "vector_store": vector_store_config,
+    "embedder": _embedder_config,
 }
 
 # Log embedding cache status
@@ -330,7 +347,6 @@ if graph_store_config:
         config["graph_store"]["llm"] = llm_config.copy()
 
 # Debug summary
-logger.info("Embeddings: OpenAI text-embedding-3-small")
 if graph_store_config:
     logger.info(f"Graph memory: ENABLED ({GRAPH_STORE_PROVIDER})")
 else:
@@ -342,7 +358,7 @@ ROOK: ClaraMemory | None = None
 
 def _init_rook() -> ClaraMemory | None:
     """Initialize Rook (Clara's memory system) synchronously."""
-    if not OPENAI_API_KEY:
+    if EMBEDDING_PROVIDER == "openai" and not OPENAI_API_KEY:
         logger.warning("OPENAI_API_KEY not set - Rook disabled (no embeddings)")
         return None
 
