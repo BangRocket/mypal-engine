@@ -29,7 +29,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Configuration
-DEFAULT_IMAGE = os.getenv("USER_VM_IMAGE", "debian:12-slim")
+DEFAULT_IMAGE = os.getenv("USER_VM_IMAGE", "python:3.13-slim")
 VM_WORKSPACE_DIR = "/home/clara/workspace"
 VM_PRIVATE_DIR = "/home/clara/private"
 VM_PUBLIC_DIR = "/home/clara/public"
