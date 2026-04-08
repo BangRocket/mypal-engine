@@ -31,9 +31,9 @@ class HuggingFaceEmbedding(EmbeddingBase):
         from huggingface_hub import InferenceClient
 
         self._client = InferenceClient(
+            provider="hf-inference",
             model=self.config.model,
             token=token,
-            base_url="https://router.huggingface.co",
         )
         self._is_e5 = "e5" in (self.config.model or "").lower()
 
