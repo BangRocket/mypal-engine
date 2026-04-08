@@ -194,6 +194,9 @@ class LLMOrchestrator:
 
                 if iteration == 0 and not might_auto_continue:
                     # First iteration, no auto-continue - use real streaming
+                    # Reset content since _call_llm already populated it;
+                    # the streaming call regenerates the response.
+                    content = ""
                     async for chunk in self._call_main_llm_streaming(
                         messages_for_llm,
                         tier,
