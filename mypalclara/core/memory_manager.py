@@ -336,6 +336,31 @@ class MemoryManager:
             user_id=user_id,
         )
 
+    def build_prompt_layered(
+        self,
+        user_id: str,
+        user_message: str,
+        recent_msgs: list,
+        channel_context: list | None = None,
+        tools: list[dict] | None = None,
+        model_name: str = "claude",
+        privacy_scope: str = "full",
+    ) -> list:
+        """Build prompt using layered retrieval (episodes, graph, memories).
+
+        Replaces the old build_prompt with user_mems/proj_mems split.
+        """
+        return self._prompt_builder.build_prompt_layered(
+            user_id=user_id,
+            user_message=user_message,
+            recent_msgs=recent_msgs,
+            memory_manager=self,
+            channel_context=channel_context,
+            tools=tools,
+            model_name=model_name,
+            privacy_scope=privacy_scope,
+        )
+
     async def load_user_workspace(self, user_id: str, vm_manager: object) -> None:
         """Load per-user workspace files from a VM into the prompt builder cache."""
         await self._prompt_builder.load_user_workspace(user_id, vm_manager)

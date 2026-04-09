@@ -10,6 +10,7 @@ import platform
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from enum import Enum
+from typing import Any
 
 from mypalclara.config.bot import PERSONALITY_BRIEF
 from mypalclara.config.logging import get_logger
@@ -327,6 +328,177 @@ class PromptBuilder:
         if recent_msgs:
             components.append(f"history={len(recent_msgs)}")
         logger.info(f"[prompt] Built with: {', '.join(components)}")
+
+        return messages
+
+    # ---------- layered prompt building ----------
+
+    def build_prompt_layered(
+        self,
+        user_id: str,
+        user_message: str,
+        recent_msgs: list["Message"],
+        memory_manager: Any = None,
+        channel_context: list["Message"] | None = None,
+        tools: list[dict] | None = None,
+        model_name: str = "claude",
+        privacy_scope: str = "full",
+    ) -> list[Message]:
+        """Build prompt using the layered retrieval system.
+
+        Replaces the old user_mems/proj_mems split with:
+        - L0: Identity (SOUL.md, always loaded)
+        - L1: User profile (key facts, emotional trajectory, active arcs)
+        - L2: Relevant context (episodes, memories, graph relations)
+
+        Args:
+            user_id: User making the request.
+            user_message: Current user message.
+            recent_msgs: Recent conversation history.
+            memory_manager: MemoryManager instance for data access.
+            channel_context: Optional channel-wide messages.
+            tools: Optional tool schemas for WORM inventory.
+            model_name: Model name for token budgeting.
+            privacy_scope: "full" for DMs, "public_only" for group channels.
+
+        Returns:
+            List of typed Messages ready for LLM.
+        """
+        from mypalclara.core.memory.config import ROOK
+        from mypalclara.core.memory.retrieval_layers import LayeredRetrieval
+        from mypalclara.core.security.worm_persona import build_worm_persona
+
+        retrieval = LayeredRetrieval()
+
+        # --- Gather data for each layer ---
+
+        # L1: Semantic memories (key facts about this user)
+        semantic_memories = []
+        if ROOK is not None:
+            try:
+                results = ROOK.search(
+                    user_message,
+                    user_id=user_id,
+                    agent_id=self.agent_id,
+                    limit=15,
+                )
+                semantic_memories = results.get("results", [])
+            except Exception as e:
+                logger.debug(f"Semantic memory fetch failed: {e}")
+
+        # L1: Recent episodes (for emotional trajectory)
+        recent_episodes = []
+        if memory_manager and memory_manager.episode_store:
+            try:
+                recent_episodes = [
+                    ep.__dict__ if hasattr(ep, "__dict__") else ep
+                    for ep in memory_manager.episode_store.get_recent(user_id, limit=5)
+                ]
+            except Exception as e:
+                logger.debug(f"Recent episode fetch failed: {e}")
+
+        # L1: Graph context (key relationships for this user)
+        graph_context = []
+        if ROOK is not None and hasattr(ROOK, "graph") and ROOK.graph is not None:
+            try:
+                graph_context = ROOK.graph.search(
+                    user_message, {"user_id": user_id}, limit=20
+                )
+            except Exception as e:
+                logger.debug(f"Graph search failed: {e}")
+
+        # L2: Relevant episodes (semantic search on current message)
+        relevant_episodes = []
+        if memory_manager and memory_manager.episode_store:
+            try:
+                relevant_episodes = [
+                    ep.__dict__ if hasattr(ep, "__dict__") else ep
+                    for ep in memory_manager.episode_store.search(
+                        user_message, user_id, limit=3, min_significance=0.3
+                    )
+                ]
+            except Exception as e:
+                logger.debug(f"Episode search failed: {e}")
+
+        # --- Build layered context ---
+        layered_context = retrieval.build_context(
+            user_id=user_id,
+            semantic_memories=semantic_memories,
+            recent_episodes=recent_episodes,
+            graph_context=graph_context,
+            relevant_episodes=relevant_episodes,
+            relevant_memories=semantic_memories,  # Same data, filtered differently by L2
+            relevant_relations=graph_context,
+        )
+
+        # --- Build persona ---
+        personality = self._load_workspace_persona()
+        system_base = build_worm_persona(personality, tools)
+
+        # --- Assemble messages ---
+        messages: list[Message] = [
+            SystemMessage(content=system_base),
+        ]
+
+        # Add layered context as second system message
+        if layered_context:
+            # Remove L0 identity from layered context — it's already in system_base
+            # (the workspace persona includes SOUL.md and IDENTITY.md)
+            parts = layered_context.split("\n\n## About this user\n")
+            if len(parts) == 2:
+                # Skip L0, keep L1+L2
+                context_without_l0 = "## About this user\n" + parts[1]
+                messages.append(SystemMessage(content=context_without_l0))
+            elif "## About this user" in layered_context or "## Context" in layered_context:
+                messages.append(SystemMessage(content=layered_context))
+
+        # Add channel context
+        if channel_context:
+            channel_block = self._format_channel_context(channel_context)
+            if channel_block:
+                messages.append(SystemMessage(content=channel_block))
+
+        # Add per-user workspace content (only in DMs / full privacy scope)
+        if privacy_scope == "full" and user_id and user_id in self._user_workspace_cache:
+            user_ws = self._user_workspace_cache[user_id]
+            if user_ws:
+                ws_parts = []
+                for filename, content in user_ws.items():
+                    ws_parts.append(f"### {filename}\n{content}")
+                messages.append(
+                    SystemMessage(content="USER WORKSPACE (private):\n" + "\n\n".join(ws_parts))
+                )
+
+        # Add conversation history
+        for m in recent_msgs:
+            if m.role == "user":
+                timestamp = _format_message_timestamp(getattr(m, "created_at", None))
+                if timestamp:
+                    content = f"[{timestamp}] {m.content}"
+                else:
+                    content = m.content
+                messages.append(UserMessage(content=content))
+            else:
+                messages.append(AssistantMessage(content=m.content))
+
+        messages.append(UserMessage(content=user_message))
+
+        # Enforce token budget
+        messages = self._trim_to_budget(messages, model_name)
+
+        # Log
+        components = [f"personality={len(system_base)} chars"]
+        if semantic_memories:
+            components.append(f"memories={len(semantic_memories)}")
+        if recent_episodes:
+            components.append(f"recent_eps={len(recent_episodes)}")
+        if relevant_episodes:
+            components.append(f"relevant_eps={len(relevant_episodes)}")
+        if graph_context:
+            components.append(f"graph={len(graph_context)}")
+        if recent_msgs:
+            components.append(f"history={len(recent_msgs)}")
+        logger.info(f"[prompt] Built (layered) with: {', '.join(components)}")
 
         return messages
 

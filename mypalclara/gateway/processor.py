@@ -591,49 +591,6 @@ class MessageProcessor:
             except Exception as e:
                 logger.warning(f"Could not set up user VM for {user_id}: {e}")
 
-        # Fetch memories from mem0 (with timeout for resilience)
-        try:
-            user_mems, proj_mems, graph_relations = await asyncio.wait_for(
-                loop.run_in_executor(
-                    BLOCKING_EXECUTOR,
-                    lambda: self._memory_manager.fetch_mem0_context(
-                        user_id,
-                        None,
-                        user_content,
-                        participants=participants,
-                        is_dm=is_dm,
-                        privacy_scope=privacy_scope,
-                    ),
-                ),
-                timeout=MEMORY_FETCH_TIMEOUT,
-            )
-        except (TimeoutError, asyncio.TimeoutError):
-            logger.warning(
-                f"Memory fetch timed out after {MEMORY_FETCH_TIMEOUT}s for user {user_id}, "
-                "proceeding without memories"
-            )
-            user_mems, proj_mems, graph_relations = [], [], []
-
-        # Fetch emotional context (last 3 sessions)
-        emotional_context = None
-        try:
-            emotional_context = await loop.run_in_executor(
-                BLOCKING_EXECUTOR,
-                lambda: self._memory_manager.fetch_emotional_context(user_id, limit=3),
-            )
-        except Exception as e:
-            logger.debug(f"Could not fetch emotional context: {e}")
-
-        # Fetch recurring topics (2+ mentions in 14 days)
-        recurring_topics = None
-        try:
-            recurring_topics = await loop.run_in_executor(
-                BLOCKING_EXECUTOR,
-                lambda: self._memory_manager.fetch_recurring_topics(user_id, min_mentions=2, lookback_days=14),
-            )
-        except Exception as e:
-            logger.debug(f"Could not fetch recurring topics: {e}")
-
         # Check intentions for this message
         fired_intentions = []
         try:
@@ -650,24 +607,31 @@ class MessageProcessor:
         except Exception as e:
             logger.debug(f"Could not check intentions: {e}")
 
-        # Get session summary if available
-        session_summary = db_session.session_summary if db_session else None
-
-        # Build base prompt with Clara's persona (includes WORM security + capability inventory)
-        messages = self._memory_manager.build_prompt(
-            user_mems,
-            proj_mems,
-            session_summary,
-            recent_msgs,
-            user_content,
-            graph_relations=graph_relations,
-            emotional_context=emotional_context,
-            recurring_topics=recurring_topics,
-            tools=tools,
-            channel_context=channel_context_msgs if channel_context_msgs else None,
-            privacy_scope=privacy_scope,
-            user_id=user_id,
-        )
+        # Build prompt using layered retrieval (episodes, graph, memories)
+        try:
+            messages = await asyncio.wait_for(
+                loop.run_in_executor(
+                    BLOCKING_EXECUTOR,
+                    lambda: self._memory_manager.build_prompt_layered(
+                        user_id=user_id,
+                        user_message=user_content,
+                        recent_msgs=recent_msgs,
+                        channel_context=channel_context_msgs if channel_context_msgs else None,
+                        tools=tools,
+                        privacy_scope=privacy_scope,
+                    ),
+                ),
+                timeout=MEMORY_FETCH_TIMEOUT,
+            )
+        except (TimeoutError, asyncio.TimeoutError):
+            logger.warning(
+                f"Layered prompt build timed out after {MEMORY_FETCH_TIMEOUT}s, "
+                "falling back to minimal prompt"
+            )
+            messages = self._memory_manager.build_prompt(
+                [], [], None, recent_msgs, user_content,
+                privacy_scope=privacy_scope, user_id=user_id,
+            )
 
         # Add gateway context
         last_message_at = recent_msgs[-1].created_at if recent_msgs else None
@@ -739,8 +703,6 @@ class MessageProcessor:
             "user_id": user_id,
             "channel_id": channel_id,
             "is_dm": is_dm,
-            "user_mems": user_mems,
-            "proj_mems": proj_mems,
             "participants": participants,
             "db_session_id": db_session.id if db_session else None,
             "user_content": user_content,
