@@ -60,7 +60,7 @@ def fetch_threads(user_id: str | None = None, days: int | None = None) -> list[d
                 Session.last_activity_at,
                 func.count(Message.id).label("message_count"),
             )
-            .join(Message, Message.thread_id == Session.id)
+            .join(Message, Message.session_id == Session.id)
             .group_by(Session.id)
             .having(func.count(Message.id) >= 4)  # Need at least 4 messages
             .order_by(Session.last_activity_at.desc())
@@ -97,7 +97,7 @@ def fetch_thread_messages(thread_id: str) -> list[dict]:
     try:
         messages = (
             db.query(Message)
-            .filter(Message.thread_id == thread_id)
+            .filter(Message.session_id == thread_id)
             .order_by(Message.created_at.asc())
             .limit(50)
             .all()

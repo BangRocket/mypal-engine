@@ -1102,7 +1102,7 @@ class MessageProcessor:
 
                 messages = (
                     db.query(DbMessage)
-                    .filter(DbMessage.thread_id == thread.id)
+                    .filter(DbMessage.session_id == thread.id)
                     .order_by(DbMessage.created_at.asc())
                     .limit(30)
                     .all()

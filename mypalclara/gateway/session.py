@@ -509,7 +509,7 @@ class SessionManager:
 
                 messages = (
                     db.query(Message)
-                    .filter(Message.thread_id == thread.id)
+                    .filter(Message.session_id == thread.id)
                     .order_by(Message.created_at.asc())
                     .limit(50)
                     .all()
