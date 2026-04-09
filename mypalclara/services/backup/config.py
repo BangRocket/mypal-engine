@@ -16,7 +16,7 @@ class BackupConfig:
 
     # Databases
     clara_db_url: str = ""
-    rook_db_url: str = ""
+    palace_db_url: str = ""
 
     # Storage
     storage_type: str = "local"  # "local" or "s3"
@@ -58,7 +58,7 @@ class BackupConfig:
         config = cls(
             # Databases
             clara_db_url=os.getenv("DATABASE_URL", ""),
-            rook_db_url=os.getenv("ROOK_DATABASE_URL", os.getenv("MEM0_DATABASE_URL", "")),
+            palace_db_url=os.getenv("PALACE_DATABASE_URL", os.getenv("ROOK_DATABASE_URL", "")),
             # Storage
             storage_type=storage_type,
             local_backup_dir=Path(os.getenv("BACKUP_LOCAL_DIR", "./backups")),
@@ -117,6 +117,6 @@ class BackupConfig:
         dbs = {}
         if self.clara_db_url:
             dbs["clara"] = self.clara_db_url
-        if self.rook_db_url:
-            dbs["rook"] = self.rook_db_url
+        if self.palace_db_url:
+            dbs["palace"] = self.palace_db_url
         return dbs

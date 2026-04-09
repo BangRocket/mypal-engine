@@ -123,10 +123,10 @@ def main():
     parser.add_argument("--batch", type=int, default=25, help="Threads per batch (default: 25)")
     args = parser.parse_args()
 
-    from mypalclara.core.memory.config import ROOK
+    from mypalclara.core.memory.config import PALACE
 
-    if ROOK is None:
-        logger.error("Rook not initialized — check your configuration")
+    if PALACE is None:
+        logger.error("Palace not initialized — check your configuration")
         sys.exit(1)
 
     # Initialize memory manager for reflection

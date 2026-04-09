@@ -35,18 +35,18 @@ class MemoryIngestionManager:
         """Validate newly ingested memories against existing ones.
 
         Uses smart_ingest() as a post-ingestion check to detect duplicates
-        and contradictions that ROOK's built-in dedup may have missed.
+        and contradictions that Palace's built-in dedup may have missed.
 
         Args:
-            mem_results: Results from ROOK.add()
+            mem_results: Results from PALACE.add()
             user_id: User who owns the memories
 
         Returns:
             Filtered list of results (duplicates removed, contradictions superseded)
         """
-        from mypalclara.core.memory import ROOK
+        from mypalclara.core.memory import PALACE
 
-        if not mem_results or ROOK is None:
+        if not mem_results or PALACE is None:
             return mem_results
 
         # Collect all IDs from this batch to exclude from self-matching
@@ -58,7 +58,7 @@ class MemoryIngestionManager:
             memory_id = mem.get("id", "")
             event = mem.get("event", "")
 
-            # Only validate newly added memories (not updates ROOK already handled)
+            # Only validate newly added memories (not updates Palace already handled)
             if event != "ADD" or not memory_text:
                 validated.append(mem)
                 continue
@@ -70,10 +70,10 @@ class MemoryIngestionManager:
             )
 
             if decision == "skip":
-                # Near-duplicate of existing memory — delete the one ROOK just added
+                # Near-duplicate of existing memory — delete the one Palace just added
                 memory_logger.debug(f"Post-ingest: removing duplicate memory {memory_id}")
                 try:
-                    ROOK.delete(memory_id)
+                    PALACE.delete(memory_id)
                 except Exception as e:
                     memory_logger.warning(f"Failed to delete duplicate: {e}")
                 continue  # Don't include in validated list
@@ -122,18 +122,18 @@ class MemoryIngestionManager:
         Returns:
             Tuple of (decision, existing_memory_id)
         """
-        from mypalclara.core.memory import ROOK
+        from mypalclara.core.memory import PALACE
         from mypalclara.core.memory.dynamics.contradiction import (
             calculate_similarity,
             detect_contradiction,
         )
 
-        if ROOK is None:
+        if PALACE is None:
             return "create", None
 
         # Search for similar existing memories
         try:
-            existing = ROOK.search(
+            existing = PALACE.search(
                 content,
                 user_id=user_id,
                 agent_id=self.agent_id,
@@ -251,13 +251,13 @@ class MemoryIngestionManager:
         Returns:
             New memory ID, or None on failure
         """
-        from mypalclara.core.memory import ROOK
+        from mypalclara.core.memory import PALACE
 
-        if ROOK is None:
+        if PALACE is None:
             return None
 
         try:
-            result = ROOK.add(
+            result = PALACE.add(
                 new_content,
                 user_id=user_id,
                 agent_id=self.agent_id,

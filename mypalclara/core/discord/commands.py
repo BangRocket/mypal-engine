@@ -1233,7 +1233,7 @@ class ClaraCommands(commands.Cog):
             return
 
         try:
-            # Get memory stats from mem0
+            # Get memory stats from Palace
             from mypalclara.core.memory import ClaraMemory
 
             m = ClaraMemory()
@@ -1417,7 +1417,7 @@ class ClaraCommands(commands.Cog):
     backup = discord.SlashCommandGroup("backup", "Database backup management")
 
     @backup.command(name="now", description="Trigger an immediate backup (admin only)")
-    @option("database", description="Database to backup (clara, mem0, or both)", required=False)
+    @option("database", description="Database to backup (clara, palace, or both)", required=False)
     @commands.has_permissions(administrator=True)
     async def backup_now(self, ctx: discord.ApplicationContext, database: str = None):
         """Trigger immediate backup."""
@@ -1471,11 +1471,11 @@ class ClaraCommands(commands.Cog):
             connected = status.get("connected", {})
 
             clara_status = "\u2705" if connected.get("clara_db") else ("\u26ab" if config.get("clara_db") else "\u274c")
-            mem0_status = "\u2705" if connected.get("mem0_db") else ("\u26ab" if config.get("mem0_db") else "\u274c")
+            palace_status = "\u2705" if connected.get("palace_db") else ("\u26ab" if config.get("palace_db") else "\u274c")
             s3_status = "\u2705" if connected.get("s3") else ("\u26ab" if config.get("s3") else "\u274c")
 
             fields.append(("Clara DB", clara_status, True))
-            fields.append(("Mem0 DB", mem0_status, True))
+            fields.append(("Palace DB", palace_status, True))
             fields.append(("S3 Storage", s3_status, True))
 
             # Settings
@@ -1500,7 +1500,7 @@ class ClaraCommands(commands.Cog):
             await ctx.respond(embed=create_error_embed("Error", str(e)))
 
     @backup.command(name="list", description="List available backups")
-    @option("database", description="Filter by database (clara, mem0)", required=False)
+    @option("database", description="Filter by database (clara, palace)", required=False)
     @option("limit", description="Maximum backups to show", required=False, min_value=1, max_value=50)
     async def backup_list(self, ctx: discord.ApplicationContext, database: str = None, limit: int = 10):
         """List available backups."""

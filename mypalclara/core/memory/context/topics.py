@@ -6,7 +6,7 @@ how the emotional weight changes.
 
 Key components:
 - LLM-based topic extraction (entities + themes)
-- mem0 storage with sentiment and weight metadata
+- Palace storage with sentiment and weight metadata
 - Pattern detection (frequency, sentiment trend, weight progression)
 """
 
@@ -145,7 +145,7 @@ def store_topic_mention(
     agent_id: str = "clara",
 ) -> bool:
     """
-    Store a topic mention to mem0.
+    Store a topic mention to Palace memory.
 
     Args:
         user_id: The user's ID
@@ -157,14 +157,14 @@ def store_topic_mention(
         channel_id: The channel/DM ID
         channel_name: Human-readable channel name
         is_dm: Whether this is a DM conversation
-        agent_id: Clara's agent ID for mem0
+        agent_id: Clara's agent ID for Palace
 
     Returns:
         True if stored successfully, False otherwise
     """
-    from mypalclara.core.memory import ROOK
+    from mypalclara.core.memory import PALACE
 
-    if ROOK is None:
+    if PALACE is None:
         return False
 
     now = datetime.now(UTC)
@@ -185,7 +185,7 @@ def store_topic_mention(
     }
 
     try:
-        ROOK.add(
+        PALACE.add(
             [SystemMessage(content=memory_text)],
             user_id=user_id,
             agent_id=agent_id,
@@ -210,7 +210,7 @@ async def extract_and_store_topics(
     on_event: Callable[[str, dict], None] | None = None,
 ) -> list[dict]:
     """
-    Extract topics from a conversation and store them to mem0.
+    Extract topics from a conversation and store them to Palace memory.
 
     This is the main entry point called from emotional context finalization.
 
@@ -222,7 +222,7 @@ async def extract_and_store_topics(
         conversation_text: The conversation text to analyze
         conversation_sentiment: Overall sentiment score (-1 to +1)
         llm_call: Async function for LLM calls
-        agent_id: Clara's agent ID for mem0
+        agent_id: Clara's agent ID for Palace
         on_event: Optional callback for topic events.
             Called with ("topics_extracted", data_dict).
 
@@ -297,18 +297,18 @@ def fetch_topic_mentions(
     Args:
         user_id: The user's ID
         lookback_days: How many days to look back
-        agent_id: Clara's agent ID for mem0
+        agent_id: Clara's agent ID for Palace
 
     Returns:
-        List of topic mention dicts from mem0
+        List of topic mention dicts from Palace
     """
-    from mypalclara.core.memory import ROOK
+    from mypalclara.core.memory import PALACE
 
-    if ROOK is None:
+    if PALACE is None:
         return []
 
     try:
-        results = ROOK.get_all(
+        results = PALACE.get_all(
             user_id=user_id,
             agent_id=agent_id,
             limit=100,  # Get more to filter
@@ -437,7 +437,7 @@ def fetch_topic_recurrence(
         user_id: The user's ID
         lookback_days: How many days to look back
         min_mentions: Minimum mentions to consider a topic recurring
-        agent_id: Clara's agent ID for mem0
+        agent_id: Clara's agent ID for Palace
 
     Returns:
         List of recurring topic patterns with keys:

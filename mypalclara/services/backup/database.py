@@ -162,8 +162,8 @@ def restore_database(db_url: str, backup_data: bytes, db_name: str) -> bool:
         logger.error(f"[{db_name}] Failed to decompress backup: {e}")
         return False
 
-    # For rook/vectors DB, ensure pgvector extension exists
-    if db_name == "rook":
+    # For palace/vectors DB, ensure pgvector extension exists
+    if db_name == "palace":
         sql = b"CREATE EXTENSION IF NOT EXISTS vector;\n" + sql
 
     cmd = [

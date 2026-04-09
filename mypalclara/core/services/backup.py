@@ -1,6 +1,6 @@
 """Database backup service for Clara.
 
-Provides backup functionality for Clara and Mem0 PostgreSQL databases
+Provides backup functionality for Clara and Palace PostgreSQL databases
 to S3-compatible storage (Wasabi, AWS S3, etc.).
 
 This module is designed to be used directly by Clara's core and Discord commands,
@@ -29,7 +29,7 @@ class BackupConfig:
 
     # Database URLs
     clara_db_url: str = ""
-    mem0_db_url: str = ""
+    palace_db_url: str = ""
 
     # S3 configuration
     s3_bucket: str = "clara-backups"
@@ -47,7 +47,7 @@ class BackupConfig:
         """Load configuration from environment variables."""
         return cls(
             clara_db_url=os.getenv("DATABASE_URL", ""),
-            mem0_db_url=os.getenv("MEM0_DATABASE_URL", ""),
+            palace_db_url=os.getenv("PALACE_DATABASE_URL", os.getenv("ROOK_DATABASE_URL", "")),
             s3_bucket=os.getenv("S3_BUCKET", "clara-backups"),
             s3_endpoint_url=os.getenv("S3_ENDPOINT_URL", "https://s3.wasabisys.com"),
             s3_access_key=os.getenv("S3_ACCESS_KEY", ""),
@@ -291,8 +291,8 @@ class BackupService:
         if not self.config.s3_access_key or not self.config.s3_secret_key:
             errors.append("S3 credentials not configured (S3_ACCESS_KEY, S3_SECRET_KEY)")
 
-        if not self.config.clara_db_url and not self.config.mem0_db_url:
-            errors.append("No database URLs configured (DATABASE_URL, MEM0_DATABASE_URL)")
+        if not self.config.clara_db_url and not self.config.palace_db_url:
+            errors.append("No database URLs configured (DATABASE_URL, PALACE_DATABASE_URL)")
 
         return errors
 
@@ -313,7 +313,7 @@ class BackupService:
         """Run an immediate backup.
 
         Args:
-            databases: Optional list of databases to backup ("clara", "mem0").
+            databases: Optional list of databases to backup ("clara", "palace").
                       If not specified, backs up all configured databases.
 
         Returns:
@@ -343,11 +343,11 @@ class BackupService:
             elif databases and "clara" in databases:
                 result.databases_skipped.append("clara (not configured)")
 
-        if databases is None or "mem0" in databases:
-            if self.config.mem0_db_url:
-                db_configs.append(("mem0", self.config.mem0_db_url))
-            elif databases and "mem0" in databases:
-                result.databases_skipped.append("mem0 (not configured)")
+        if databases is None or "palace" in databases:
+            if self.config.palace_db_url:
+                db_configs.append(("palace", self.config.palace_db_url))
+            elif databases and "palace" in databases:
+                result.databases_skipped.append("palace (not configured)")
 
         if not db_configs:
             result.message = "No databases to backup"
@@ -392,7 +392,7 @@ class BackupService:
         """List available backups.
 
         Args:
-            database: Optional filter by database name ("clara" or "mem0")
+            database: Optional filter by database name ("clara" or "palace")
             limit: Maximum number of backups to return per database
 
         Returns:
@@ -404,7 +404,7 @@ class BackupService:
         s3 = self._get_s3_client()
         backups = []
 
-        db_names = [database] if database else ["clara", "mem0"]
+        db_names = [database] if database else ["clara", "palace"]
 
         for db_name in db_names:
             prefix = f"{self.config.backup_prefix}/{db_name}/"
@@ -439,18 +439,18 @@ class BackupService:
         """
         # Check configurations
         clara_configured = bool(self.config.clara_db_url)
-        mem0_configured = bool(self.config.mem0_db_url)
+        palace_configured = bool(self.config.palace_db_url)
         s3_configured = bool(self.config.s3_access_key and self.config.s3_secret_key)
 
         # Check connectivity
         s3_connected = self._check_s3_connection() if s3_configured else False
 
         clara_connected = False
-        mem0_connected = False
+        palace_connected = False
         if clara_configured:
             clara_connected = await self._check_db_connection(self.config.clara_db_url, "clara")
-        if mem0_configured:
-            mem0_connected = await self._check_db_connection(self.config.mem0_db_url, "mem0")
+        if palace_configured:
+            palace_connected = await self._check_db_connection(self.config.palace_db_url, "palace")
 
         # Get last backup info
         last_backup = None
@@ -462,12 +462,12 @@ class BackupService:
         return {
             "configured": {
                 "clara_db": clara_configured,
-                "mem0_db": mem0_configured,
+                "palace_db": palace_configured,
                 "s3": s3_configured,
             },
             "connected": {
                 "clara_db": clara_connected,
-                "mem0_db": mem0_connected,
+                "palace_db": palace_connected,
                 "s3": s3_connected,
             },
             "settings": {

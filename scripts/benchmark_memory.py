@@ -126,17 +126,17 @@ def benchmark_embedding_cache_hit(iterations: int) -> BenchmarkResult:
 
 def benchmark_key_memories(iterations: int, user_id: str = "benchmark-user") -> BenchmarkResult:
     """Benchmark key memories retrieval."""
-    from mypalclara.core.memory import ROOK
+    from mypalclara.core.memory import PALACE
 
     result = BenchmarkResult(operation="key_memories")
 
-    if ROOK is None:
-        logger.warning("ROOK not available, skipping key_memories benchmark")
+    if PALACE is None:
+        logger.warning("PALACE not available, skipping key_memories benchmark")
         return result
 
     for _ in range(iterations):
         elapsed_ms, _ = time_operation(
-            ROOK.get_all,
+            PALACE.get_all,
             user_id=user_id,
             agent_id="clara",
             filters={"is_key": "true"},
@@ -149,12 +149,12 @@ def benchmark_key_memories(iterations: int, user_id: str = "benchmark-user") -> 
 
 def benchmark_user_search(iterations: int, user_id: str = "benchmark-user") -> BenchmarkResult:
     """Benchmark user memory search."""
-    from mypalclara.core.memory import ROOK
+    from mypalclara.core.memory import PALACE
 
     result = BenchmarkResult(operation="user_search")
 
-    if ROOK is None:
-        logger.warning("ROOK not available, skipping user_search benchmark")
+    if PALACE is None:
+        logger.warning("PALACE not available, skipping user_search benchmark")
         return result
 
     queries = [
@@ -168,7 +168,7 @@ def benchmark_user_search(iterations: int, user_id: str = "benchmark-user") -> B
     for i in range(iterations):
         query = queries[i % len(queries)]
         elapsed_ms, _ = time_operation(
-            ROOK.search,
+            PALACE.search,
             query,
             user_id=user_id,
             agent_id="clara",
@@ -184,12 +184,12 @@ def benchmark_project_search(
     project_id: str = "benchmark-project",
 ) -> BenchmarkResult:
     """Benchmark project memory search."""
-    from mypalclara.core.memory import ROOK
+    from mypalclara.core.memory import PALACE
 
     result = BenchmarkResult(operation="project_search")
 
-    if ROOK is None:
-        logger.warning("ROOK not available, skipping project_search benchmark")
+    if PALACE is None:
+        logger.warning("PALACE not available, skipping project_search benchmark")
         return result
 
     queries = [
@@ -203,7 +203,7 @@ def benchmark_project_search(
     for i in range(iterations):
         query = queries[i % len(queries)]
         elapsed_ms, _ = time_operation(
-            ROOK.search,
+            PALACE.search,
             query,
             user_id=user_id,
             agent_id="clara",
@@ -214,15 +214,15 @@ def benchmark_project_search(
     return result
 
 
-def benchmark_fetch_mem0_context(
+def benchmark_fetch_context(
     iterations: int,
     user_id: str = "benchmark-user",
     project_id: str = "benchmark-project",
 ) -> BenchmarkResult:
-    """Benchmark the full fetch_mem0_context operation."""
+    """Benchmark the full fetch_context operation."""
     from mypalclara.core.memory_manager import MemoryManager
 
-    result = BenchmarkResult(operation="fetch_mem0_context")
+    result = BenchmarkResult(operation="fetch_context")
 
     try:
         manager = MemoryManager.get_instance()
@@ -241,7 +241,7 @@ def benchmark_fetch_mem0_context(
     for i in range(iterations):
         message = messages[i % len(messages)]
         elapsed_ms, _ = time_operation(
-            manager.fetch_mem0_context,
+            manager.fetch_context,
             user_id=user_id,
             project_id=project_id,
             user_message=message,
@@ -382,8 +382,8 @@ def main():
     results.append(benchmark_project_search(args.iterations, args.user_id))
 
     # Full context fetch
-    print("  - Full fetch_mem0_context...")
-    results.append(benchmark_fetch_mem0_context(args.iterations, args.user_id))
+    print("  - Full fetch_context...")
+    results.append(benchmark_fetch_context(args.iterations, args.user_id))
 
     # FSRS ranking
     print("  - FSRS ranking (batched)...")
@@ -398,7 +398,7 @@ def main():
     print("  - Embedding (cold): ~150ms, (warm): ~5ms")
     print("  - Key memories (cold): ~100ms, (warm): ~10ms")
     print("  - User/Project search (cold): ~200ms, (warm): ~10ms")
-    print("  - Total fetch_mem0_context (cold): ~250ms, (warm): ~25ms")
+    print("  - Total fetch_context (cold): ~250ms, (warm): ~25ms")
 
 
 if __name__ == "__main__":

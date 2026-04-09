@@ -226,7 +226,7 @@ def _check_topic_trigger(
 ) -> tuple[bool, dict]:
     """Check if message is semantically similar to trigger topic.
 
-    Uses mem0's search capability to check semantic similarity.
+    Uses Palace's search capability to check semantic similarity.
 
     Args:
         message: User message
@@ -242,9 +242,9 @@ def _check_topic_trigger(
         return False, {}
 
     try:
-        from mypalclara.core.memory import ROOK
+        from mypalclara.core.memory import PALACE
 
-        if ROOK is None:
+        if PALACE is None:
             return False, {}
 
         # Use embeddings to check similarity

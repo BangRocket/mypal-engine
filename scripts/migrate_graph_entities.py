@@ -41,17 +41,17 @@ def main():
     parser.add_argument("--register", action="append", default=[], help="Register name: id=Name")
     args = parser.parse_args()
 
-    from mypalclara.core.memory.config import ROOK
+    from mypalclara.core.memory.config import PALACE
 
-    if ROOK is None:
-        logger.error("Rook not initialized")
+    if PALACE is None:
+        logger.error("Palace not initialized")
         sys.exit(1)
 
-    if not hasattr(ROOK, "graph") or ROOK.graph is None:
+    if not hasattr(PALACE, "graph") or PALACE.graph is None:
         logger.error("Graph store not available")
         sys.exit(1)
 
-    graph_store = ROOK.graph
+    graph_store = PALACE.graph
 
     # Register any manually provided mappings
     from mypalclara.core.memory.entity_resolver import EntityResolver

@@ -65,22 +65,25 @@ class S3Backend:
 
         if db_name:
             prefixes = [f"{BACKUP_PREFIX}/{db_name}/"]
-            # Backward compat: also scan mem0/ prefix for old rook backups
-            if db_name == "rook":
+            # Backward compat: also scan rook/ and mem0/ prefixes for old backups
+            if db_name == "palace":
+                prefixes.append(f"{BACKUP_PREFIX}/rook/")
                 prefixes.append(f"{BACKUP_PREFIX}/mem0/")
         else:
             prefixes = [
                 f"{BACKUP_PREFIX}/clara/",
-                f"{BACKUP_PREFIX}/rook/",
+                f"{BACKUP_PREFIX}/palace/",
+                f"{BACKUP_PREFIX}/rook/",  # Backward compat
                 f"{BACKUP_PREFIX}/mem0/",  # Backward compat
                 f"{BACKUP_PREFIX}/config/",
             ]
 
         # Map prefix path component to display db_name
         _prefix_to_db = {
-            "mem0": "rook",
+            "mem0": "palace",
             "clara": "clara",
-            "rook": "rook",
+            "rook": "palace",
+            "palace": "palace",
             "config": "config",
         }
 

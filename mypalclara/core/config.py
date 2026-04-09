@@ -25,7 +25,7 @@ class ClaraConfig:
 
     # Database
     database_url: str = ""
-    mem0_database_url: str = ""
+    palace_database_url: str = ""
 
     # LLM Provider
     llm_provider: str = "openrouter"
@@ -48,11 +48,11 @@ class ClaraConfig:
     # OpenAI (for embeddings)
     openai_api_key: str = ""
 
-    # Mem0 Provider (independent from chat LLM)
-    mem0_provider: str = "openrouter"
-    mem0_model: str = "openai/gpt-4o-mini"
-    mem0_api_key: str = ""
-    mem0_base_url: str = ""
+    # Palace Provider (independent from chat LLM)
+    palace_provider: str = "openrouter"
+    palace_model: str = "openai/gpt-4o-mini"
+    palace_api_key: str = ""
+    palace_base_url: str = ""
 
     # Tool calling
     tool_api_key: str = ""
@@ -124,7 +124,7 @@ class ClaraConfig:
         return cls(
             # Database
             database_url=os.getenv("DATABASE_URL", ""),
-            mem0_database_url=os.getenv("MEM0_DATABASE_URL", ""),
+            palace_database_url=os.getenv("PALACE_DATABASE_URL", os.getenv("ROOK_DATABASE_URL", "")),
             # LLM Provider
             llm_provider=os.getenv("LLM_PROVIDER", "openrouter").lower(),
             # OpenRouter
@@ -141,11 +141,11 @@ class ClaraConfig:
             custom_openai_model=os.getenv("CUSTOM_OPENAI_MODEL", "gpt-4o"),
             # OpenAI
             openai_api_key=os.getenv("OPENAI_API_KEY", ""),
-            # Mem0 Provider
-            mem0_provider=os.getenv("MEM0_PROVIDER", "openrouter").lower(),
-            mem0_model=os.getenv("MEM0_MODEL", "openai/gpt-4o-mini"),
-            mem0_api_key=os.getenv("MEM0_API_KEY", ""),
-            mem0_base_url=os.getenv("MEM0_BASE_URL", ""),
+            # Palace Provider
+            palace_provider=os.getenv("PALACE_PROVIDER", os.getenv("ROOK_PROVIDER", "openrouter")).lower(),
+            palace_model=os.getenv("PALACE_MODEL", os.getenv("ROOK_MODEL", "openai/gpt-4o-mini")),
+            palace_api_key=os.getenv("PALACE_API_KEY", os.getenv("ROOK_API_KEY", "")),
+            palace_base_url=os.getenv("PALACE_BASE_URL", os.getenv("ROOK_BASE_URL", "")),
             # Tool calling
             tool_api_key=os.getenv("TOOL_API_KEY", ""),
             tool_base_url=os.getenv("TOOL_BASE_URL", ""),

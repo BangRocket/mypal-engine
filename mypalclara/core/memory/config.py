@@ -1,9 +1,9 @@
-"""Clara Memory System configuration (Rook).
+"""Clara Memory System configuration (Palace).
 
 This module provides configuration and initialization for Clara's memory system.
-The memory system is called "Rook" internally.
+The memory system is called "Palace" internally.
 
-Environment variables use ROOK_* prefix with MEM0_* as deprecated fallback.
+Environment variables use PALACE_* prefix with ROOK_* as deprecated fallback.
 
 Also contains tuning constants used across the memory subsystem.
 """
@@ -86,29 +86,29 @@ from mypalclara.core.memory.core.memory import ClaraMemory
 
 load_dotenv()
 
-logger = logging.getLogger("clara.rook.config")
+logger = logging.getLogger("clara.palace.config")
 
 
-def _get_env(rook_key: str, mem0_key: str, default: str | None = None) -> str | None:
-    """Get env var with ROOK_* preferred, MEM0_* as deprecated fallback."""
+def _get_env(palace_key: str, rook_key: str, default: str | None = None) -> str | None:
+    """Get env var with PALACE_* preferred, ROOK_* as deprecated fallback."""
+    palace_val = os.getenv(palace_key)
+    if palace_val:
+        return palace_val
     rook_val = os.getenv(rook_key)
     if rook_val:
+        logger.warning(f"{rook_key} is deprecated, use {palace_key} instead")
         return rook_val
-    mem0_val = os.getenv(mem0_key)
-    if mem0_val:
-        logger.warning(f"{mem0_key} is deprecated, use {rook_key} instead")
-        return mem0_val
     return default
 
 
-# Rook has its own independent provider config (separate from chat LLM)
-# ROOK_* preferred, MEM0_* fallback for backward compatibility
-ROOK_PROVIDER = _get_env("ROOK_PROVIDER", "MEM0_PROVIDER", "openrouter").lower()
-ROOK_MODEL = _get_env("ROOK_MODEL", "MEM0_MODEL", "openai/gpt-4o-mini")
+# Palace has its own independent provider config (separate from chat LLM)
+# PALACE_* preferred, ROOK_* fallback for backward compatibility
+PALACE_PROVIDER = _get_env("PALACE_PROVIDER", "ROOK_PROVIDER", "openrouter").lower()
+PALACE_MODEL = _get_env("PALACE_MODEL", "ROOK_MODEL", "openai/gpt-4o-mini")
 
 # Optional overrides - if not set, uses the provider's default key/url
-ROOK_API_KEY = _get_env("ROOK_API_KEY", "MEM0_API_KEY")
-ROOK_BASE_URL = _get_env("ROOK_BASE_URL", "MEM0_BASE_URL")
+PALACE_API_KEY = _get_env("PALACE_API_KEY", "ROOK_API_KEY")
+PALACE_BASE_URL = _get_env("PALACE_BASE_URL", "ROOK_BASE_URL")
 
 # OpenAI API for embeddings (always required)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -144,15 +144,15 @@ QDRANT_DATA_DIR = BASE_DATA_DIR / "qdrant_data"
 # Self-hosted Qdrant (recommended for production)
 QDRANT_URL = os.getenv("QDRANT_URL")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
-# PostgreSQL with pgvector (legacy option, set ROOK_DATABASE_URL to use)
-ROOK_DATABASE_URL = _get_env("ROOK_DATABASE_URL", "MEM0_DATABASE_URL")
+# PostgreSQL with pgvector (legacy option, set PALACE_DATABASE_URL to use)
+PALACE_DATABASE_URL = _get_env("PALACE_DATABASE_URL", "ROOK_DATABASE_URL")
 
 # Vector store migration mode (for blue-green deployment)
 # Options: primary_only, dual_write, dual_read, secondary_only
 VECTOR_STORE_MODE = os.getenv("VECTOR_STORE_MODE", "primary_only")
 
 # Only create Qdrant directory if we're using local Qdrant
-if not ROOK_DATABASE_URL and not QDRANT_URL:
+if not PALACE_DATABASE_URL and not QDRANT_URL:
     QDRANT_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # Graph memory configuration (optional - for relationship tracking)
@@ -188,38 +188,38 @@ def _get_graph_store_config() -> dict | None:
 
 
 def _get_llm_config() -> dict | None:
-    """Build LLM config based on ROOK_PROVIDER.
+    """Build LLM config based on PALACE_PROVIDER.
 
     Uses the unified provider from mypalclara.core.llm for consistent behavior
     across all LLM operations (chat, memory, tools).
     """
-    if ROOK_PROVIDER not in PROVIDER_DEFAULTS:
-        logger.warning(f"Unknown ROOK_PROVIDER={ROOK_PROVIDER} - LLM disabled")
+    if PALACE_PROVIDER not in PROVIDER_DEFAULTS:
+        logger.warning(f"Unknown PALACE_PROVIDER={PALACE_PROVIDER} - LLM disabled")
         return None
 
-    provider_config = PROVIDER_DEFAULTS[ROOK_PROVIDER]
+    provider_config = PROVIDER_DEFAULTS[PALACE_PROVIDER]
 
-    # Get API key: explicit ROOK_API_KEY > provider's default key
-    api_key = ROOK_API_KEY or os.getenv(provider_config["api_key_env"])
+    # Get API key: explicit PALACE_API_KEY > provider's default key
+    api_key = PALACE_API_KEY or os.getenv(provider_config["api_key_env"])
     if not api_key:
-        logger.info(f"No API key found for ROOK_PROVIDER={ROOK_PROVIDER} - LLM disabled")
+        logger.info(f"No API key found for PALACE_PROVIDER={PALACE_PROVIDER} - LLM disabled")
         return None
 
-    # Get base URL: explicit ROOK_BASE_URL > provider's default URL
-    base_url = ROOK_BASE_URL or provider_config["base_url"]
+    # Get base URL: explicit PALACE_BASE_URL > provider's default URL
+    base_url = PALACE_BASE_URL or provider_config["base_url"]
 
-    logger.info(f"Rook LLM Provider: {ROOK_PROVIDER} (via unified)")
-    logger.info(f"Rook LLM Model: {ROOK_MODEL}")
+    logger.info(f"Palace LLM Provider: {PALACE_PROVIDER} (via unified)")
+    logger.info(f"Palace LLM Model: {PALACE_MODEL}")
     if base_url:
-        logger.info(f"Rook LLM Base URL: {base_url}")
+        logger.info(f"Palace LLM Base URL: {base_url}")
 
     # Use unified provider for all backends
     # This ensures consistent behavior with clara_core.llm
     return {
         "provider": "unified",
         "config": {
-            "provider": ROOK_PROVIDER,  # Actual provider (openrouter, anthropic, etc.)
-            "model": ROOK_MODEL,
+            "provider": PALACE_PROVIDER,  # Actual provider (openrouter, anthropic, etc.)
+            "model": PALACE_MODEL,
             "api_key": api_key,
             "base_url": base_url,
             "temperature": 0,
@@ -235,7 +235,7 @@ llm_config = _get_llm_config()
 graph_store_config = _get_graph_store_config()
 
 # Collection name
-ROOK_COLLECTION_NAME = _get_env("ROOK_COLLECTION_NAME", "MEM0_COLLECTION_NAME", "clara_memories")
+PALACE_COLLECTION_NAME = _get_env("PALACE_COLLECTION_NAME", "ROOK_COLLECTION_NAME", "clara_memories")
 
 
 # Embedding dimensions (1024 for intfloat/e5-large-v2, 1536 for OpenAI text-embedding-3-small)
@@ -247,7 +247,7 @@ def _build_vector_store_config() -> dict:
 
     Priority order:
     1. QDRANT_URL (self-hosted Qdrant) — recommended for all deployments
-    2. ROOK_DATABASE_URL (pgvector) — legacy option, use migrate_pgvector_to_qdrant.py to migrate
+    2. PALACE_DATABASE_URL (pgvector) — legacy option, use migrate_pgvector_to_qdrant.py to migrate
     3. Local Qdrant (development default)
     """
     # 1. Self-hosted Qdrant (recommended)
@@ -255,7 +255,7 @@ def _build_vector_store_config() -> dict:
         config = {
             "provider": "qdrant",
             "config": {
-                "collection_name": ROOK_COLLECTION_NAME,
+                "collection_name": PALACE_COLLECTION_NAME,
                 "embedding_model_dims": EMBEDDING_MODEL_DIMS,
                 "url": QDRANT_URL,
                 "on_disk": True,  # Persist to disk
@@ -264,22 +264,22 @@ def _build_vector_store_config() -> dict:
         if QDRANT_API_KEY:
             config["config"]["api_key"] = QDRANT_API_KEY
         logger.info(f"Vector store: Qdrant (self-hosted) at {QDRANT_URL}")
-        logger.info(f"Collection: {ROOK_COLLECTION_NAME}")
+        logger.info(f"Collection: {PALACE_COLLECTION_NAME}")
         return config
 
     # 2. PostgreSQL with pgvector (legacy — migrate to Qdrant with scripts/migrate_pgvector_to_qdrant.py)
-    if ROOK_DATABASE_URL:
-        pgvector_url = ROOK_DATABASE_URL
+    if PALACE_DATABASE_URL:
+        pgvector_url = PALACE_DATABASE_URL
         if pgvector_url.startswith("postgres://"):
             pgvector_url = pgvector_url.replace("postgres://", "postgresql://", 1)
 
         logger.info("Vector store: pgvector")
-        logger.info(f"Collection: {ROOK_COLLECTION_NAME}")
+        logger.info(f"Collection: {PALACE_COLLECTION_NAME}")
         return {
             "provider": "pgvector",
             "config": {
                 "connection_string": pgvector_url,
-                "collection_name": ROOK_COLLECTION_NAME,
+                "collection_name": PALACE_COLLECTION_NAME,
                 "embedding_model_dims": EMBEDDING_MODEL_DIMS,
             },
         }
@@ -357,25 +357,25 @@ if graph_store_config:
 else:
     logger.info("Graph memory: DISABLED (set ENABLE_GRAPH_MEMORY=true to enable)")
 
-# Initialize Rook (Clara's memory system singleton)
-ROOK: ClaraMemory | None = None
+# Initialize Palace (Clara's memory system singleton)
+PALACE: ClaraMemory | None = None
 
 
-def _init_rook() -> ClaraMemory | None:
-    """Initialize Rook (Clara's memory system) synchronously."""
+def _init_palace() -> ClaraMemory | None:
+    """Initialize Palace (Clara's memory system) synchronously."""
     if EMBEDDING_PROVIDER == "openai" and not OPENAI_API_KEY:
-        logger.warning("OPENAI_API_KEY not set - Rook disabled (no embeddings)")
+        logger.warning("OPENAI_API_KEY not set - Palace disabled (no embeddings)")
         return None
 
     try:
         memory = ClaraMemory.from_config(config)
-        logger.info("Rook initialized successfully")
+        logger.info("Palace initialized successfully")
         return memory
     except Exception as e:
-        logger.error(f"Failed to initialize Rook: {e}")
+        logger.error(f"Failed to initialize Palace: {e}")
         logger.warning("App will run without memory features")
         return None
 
 
 # Initialize at module load
-ROOK = _init_rook()
+PALACE = _init_palace()

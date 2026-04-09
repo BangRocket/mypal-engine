@@ -17,10 +17,10 @@ import json
 import os
 import re
 import sys
+import webbrowser
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
-import webbrowser
 
 # ---------------------------------------------------------------------------
 # Auto-flagging rules

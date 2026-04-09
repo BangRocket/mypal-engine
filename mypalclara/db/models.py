@@ -399,13 +399,13 @@ class UserVM(Base):
 
 
 class MemoryDynamics(Base):
-    """FSRS-6 scheduling data for mem0 memories.
+    """FSRS-6 scheduling data for Palace memories.
 
     Tracks the spaced repetition state for each memory to enable
     intelligent retrieval weighting based on the forgetting curve.
 
     Attributes:
-        memory_id: The mem0 memory ID this tracks
+        memory_id: The Palace memory ID this tracks
         user_id: Owner of the memory
         stability: Days until retrievability drops to 90% (FSRS S parameter)
         difficulty: Inherent difficulty 1-10 (FSRS D parameter)
@@ -417,7 +417,7 @@ class MemoryDynamics(Base):
 
     __tablename__ = "memory_dynamics"
 
-    memory_id = Column(String, primary_key=True)  # mem0 memory ID
+    memory_id = Column(String, primary_key=True)  # Palace memory ID
     user_id = Column(String, nullable=False, index=True)
 
     # FSRS-6 core fields
@@ -572,7 +572,7 @@ class MemorySupersession(Base):
 
 
 class MemoryHistory(Base):
-    """History of memory changes for Rook (Clara's memory system).
+    """History of memory changes for Palace (Clara's memory system).
 
     Tracks ADD, UPDATE, and DELETE events for memories stored in the
     vector store. Used for auditing and debugging memory operations.
@@ -821,7 +821,7 @@ __all__ = [
     "MemoryAccessLog",
     "Intention",
     "MemorySupersession",
-    # Memory history (Rook)
+    # Memory history (Palace)
     "MemoryHistory",
     # Web interface identity
     "CanonicalUser",

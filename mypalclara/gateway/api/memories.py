@@ -58,13 +58,13 @@ def _get_user_ids(user: CanonicalUser, db: DBSession) -> list[str]:
 
 
 def _get_memory_client():
-    """Get the ClaraMemory singleton (Rook)."""
-    from mypalclara.core.memory import ROOK
+    """Get the ClaraMemory singleton (Palace)."""
+    from mypalclara.core.memory import PALACE
 
-    if ROOK is None:
-        logger.error("Rook memory system not initialized")
+    if PALACE is None:
+        logger.error("Palace memory system not initialized")
         raise HTTPException(status_code=503, detail="Memory system unavailable")
-    return ROOK
+    return PALACE
 
 
 # --- Endpoints -------------------------------------------------------------

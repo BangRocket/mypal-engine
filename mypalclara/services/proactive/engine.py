@@ -1466,7 +1466,7 @@ def update_interaction_from_extraction(user_id: str, extraction: dict):
         session.commit()
         logger.info(f"Updated interaction pattern for {user_id} from extraction")
 
-        # Also finalize emotional context to mem0 (when ORS is enabled)
+        # Also finalize emotional context to Palace (when ORS is enabled)
         if extraction.get("summary") and extraction.get("energy"):
             channel_id = pattern.last_interaction_channel or "unknown"
             is_dm = channel_id.startswith("discord-dm-") if channel_id else False

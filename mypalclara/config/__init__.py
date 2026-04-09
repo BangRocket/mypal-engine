@@ -9,4 +9,4 @@ Submodules:
 # Import directly from submodules as needed:
 #   from mypalclara.config.bot import PERSONALITY, BOT_NAME
 #   from mypalclara.config.logging import init_logging, get_logger
-#   from mypalclara.core.memory import ROOK  # Rook memory config
+#   from mypalclara.core.memory import PALACE  # Palace memory config

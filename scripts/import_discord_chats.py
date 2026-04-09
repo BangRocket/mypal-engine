@@ -220,10 +220,10 @@ def main():
     parser.add_argument("--gap-minutes", type=int, default=30, help="Gap for session splitting (default: 30)")
     args = parser.parse_args()
 
-    from mypalclara.core.memory.config import ROOK
+    from mypalclara.core.memory.config import PALACE
 
-    if ROOK is None:
-        logger.error("Rook not initialized")
+    if PALACE is None:
+        logger.error("Palace not initialized")
         sys.exit(1)
 
     from mypalclara.core import make_llm

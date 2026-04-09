@@ -92,14 +92,14 @@ class PromptBuilder:
             - is_dm: Whether it was a DM
         """
 
-        from mypalclara.core.memory import ROOK
+        from mypalclara.core.memory import PALACE
 
-        if ROOK is None:
+        if PALACE is None:
             return []
 
         try:
             # Search for emotional_context memories
-            results = ROOK.get_all(
+            results = PALACE.get_all(
                 user_id=user_id,
                 agent_id=self.agent_id,
                 limit=limit * 2,  # Fetch extra to filter by age
@@ -364,7 +364,7 @@ class PromptBuilder:
         Returns:
             List of typed Messages ready for LLM.
         """
-        from mypalclara.core.memory.config import ROOK
+        from mypalclara.core.memory.config import PALACE
         from mypalclara.core.memory.retrieval_layers import LayeredRetrieval
         from mypalclara.core.security.worm_persona import build_worm_persona
 
@@ -384,17 +384,17 @@ class PromptBuilder:
             futures = {}
 
             # Semantic memory search (embeds query)
-            if ROOK is not None:
+            if PALACE is not None:
                 futures["semantic"] = pool.submit(
-                    lambda: ROOK.search(
+                    lambda: PALACE.search(
                         user_message, user_id=user_id, agent_id=self.agent_id, limit=15
                     )
                 )
 
             # Graph search (embeds query)
-            if ROOK is not None and hasattr(ROOK, "graph") and ROOK.graph is not None:
+            if PALACE is not None and hasattr(PALACE, "graph") and PALACE.graph is not None:
                 futures["graph"] = pool.submit(
-                    lambda: ROOK.graph.search(user_message, {"user_id": user_id}, limit=20)
+                    lambda: PALACE.graph.search(user_message, {"user_id": user_id}, limit=20)
                 )
 
             # Episode search (embeds query)

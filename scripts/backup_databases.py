@@ -12,7 +12,7 @@ Usage:
 
 Environment Variables:
     DATABASE_URL      - Clara PostgreSQL connection string
-    MEM0_DATABASE_URL - Mem0 PostgreSQL connection string
+    PALACE_DATABASE_URL - Palace PostgreSQL connection string (ROOK_DATABASE_URL as fallback)
     S3_ENABLED=true   - Enable S3 storage
     S3_BUCKET         - S3 bucket name
     S3_ENDPOINT_URL   - S3 endpoint (e.g., https://s3.wasabisys.com)
@@ -35,7 +35,7 @@ load_dotenv()
 
 # Configuration
 CLARA_DB_URL = os.getenv("DATABASE_URL", "")
-MEM0_DB_URL = os.getenv("MEM0_DATABASE_URL", "")
+PALACE_DB_URL = os.getenv("PALACE_DATABASE_URL", os.getenv("ROOK_DATABASE_URL", ""))
 
 S3_BUCKET = os.getenv("S3_BUCKET", "clara-files")
 S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL", "https://s3.wasabisys.com")
@@ -170,7 +170,7 @@ def list_backups(s3):
     """List all available backups."""
     print(f"\nAvailable backups in s3://{S3_BUCKET}/{BACKUP_PREFIX}/\n")
 
-    for db_name in ["clara", "mem0"]:
+    for db_name in ["clara", "palace"]:
         prefix = f"{BACKUP_PREFIX}/{db_name}/"
         print(f"{db_name.upper()} backups:")
 
@@ -220,14 +220,14 @@ def run_backup():
 
     print()
 
-    # Backup Mem0 DB
-    print("[2/2] Backing up Mem0 DB...")
-    mem0_data = dump_database(MEM0_DB_URL, "mem0")
-    if mem0_data:
-        if not upload_backup(s3, mem0_data, "mem0", timestamp):
+    # Backup Palace DB
+    print("[2/2] Backing up Palace DB...")
+    palace_data = dump_database(PALACE_DB_URL, "palace")
+    if palace_data:
+        if not upload_backup(s3, palace_data, "palace", timestamp):
             success = False
-        cleanup_old_backups(s3, "mem0")
-    elif MEM0_DB_URL:
+        cleanup_old_backups(s3, "palace")
+    elif PALACE_DB_URL:
         success = False
 
     print()

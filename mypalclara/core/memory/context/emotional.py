@@ -1,13 +1,13 @@
 """Emotional context tracking for conversation continuity.
 
 This module tracks sentiment across conversations and stores emotional
-summaries to mem0 for retrieval at session start. The goal is to carry
-forward emotional texture so new sessions don't start cold.
+summaries to Palace memory for retrieval at session start. The goal is to
+carry forward emotional texture so new sessions don't start cold.
 
 Key components:
 - Per-message sentiment tracking (in-memory, per user/channel)
 - Emotional arc computation (stable, improving, declining, volatile)
-- mem0 storage with metadata for retrieval
+- Palace storage with metadata for retrieval
 """
 
 from __future__ import annotations
@@ -137,7 +137,7 @@ def finalize_conversation_emotional_context(
     on_event: Callable[[str, dict], None] | None = None,
 ) -> EmotionalSummary | None:
     """
-    Finalize emotional context for a conversation and store to mem0.
+    Finalize emotional context for a conversation and store to Palace memory.
 
     Called when conversation goes idle (30+ min gap) or explicitly ends.
 
@@ -148,14 +148,14 @@ def finalize_conversation_emotional_context(
         is_dm: Whether this is a DM conversation
         energy: Energy level from ORS extraction (stressed, focused, casual, etc.)
         summary: Topic summary from ORS extraction
-        agent_id: Clara's agent ID for mem0
+        agent_id: Clara's agent ID for Palace
         on_event: Optional callback for emotional context events.
             Called with ("emotional_context_stored", data_dict).
 
     Returns:
         EmotionalSummary if successful, None if no data to finalize
     """
-    from mypalclara.core.memory import ROOK
+    from mypalclara.core.memory import PALACE
 
     sentiments = get_conversation_sentiments(user_id, channel_id)
 
@@ -180,8 +180,8 @@ def finalize_conversation_emotional_context(
         timestamp=now,
     )
 
-    # Store to mem0 as emotional context memory
-    if ROOK:
+    # Store to Palace as emotional context memory
+    if PALACE:
         memory_text = _format_emotional_memory(emotional_summary)
         metadata = {
             "memory_type": "emotional_context",
@@ -196,7 +196,7 @@ def finalize_conversation_emotional_context(
         }
 
         try:
-            ROOK.add(
+            PALACE.add(
                 [SystemMessage(content=memory_text)],
                 user_id=user_id,
                 agent_id=agent_id,

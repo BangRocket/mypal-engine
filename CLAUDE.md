@@ -4,7 +4,7 @@ Guidance for Claude Code working with this repository.
 
 ## Project Overview
 
-MyPalClara is a personal AI assistant (Clara) with session management, persistent memory (Rook), and multi-platform support. Uses a gateway architecture with platform adapters for Discord, Teams, Slack, Telegram, Matrix, Signal, and WhatsApp.
+MyPalClara is a personal AI assistant (Clara) with session management, persistent memory (Palace), and multi-platform support. Uses a gateway architecture with platform adapters for Discord, Teams, Slack, Telegram, Matrix, Signal, and WhatsApp.
 
 ## Quick Reference
 
@@ -58,7 +58,7 @@ git config core.hooksPath .githooks  # Enable hooks (run once)
 ## Architecture
 
 ### Core Structure
-- `mypalclara/core/memory_manager.py` - Core orchestrator: session handling, Rook integration, prompt building with Clara's persona
+- `mypalclara/core/memory_manager.py` - Core orchestrator: session handling, Palace integration, prompt building with Clara's persona
 - `mypalclara/core/llm/` - Unified LLM provider architecture (modular, supports OpenRouter, NanoGPT, OpenAI, Anthropic)
 - `mypalclara/core/memory/` - Memory system: episodes, layered retrieval, reflection, knowledge graph (HuggingFace embeddings)
 - `mypalclara/db/models.py` - SQLAlchemy models: Project, Session, Message, ChannelSummary
@@ -200,20 +200,20 @@ For custom OpenAI endpoints behind Cloudflare Access (like cloudflared tunnels):
 - `CF_ACCESS_CLIENT_ID` - Cloudflare Access Service Token client ID
 - `CF_ACCESS_CLIENT_SECRET` - Cloudflare Access Service Token client secret
 
-### Rook Provider (independent from chat LLM)
-Environment variables use `ROOK_*` prefix with `MEM0_*` fallback for backward compatibility.
+### Palace Provider (independent from chat LLM)
+Environment variables use `PALACE_*` prefix with `removed` fallback for backward compatibility.
 
-- `ROOK_PROVIDER` - Provider for memory extraction: "openrouter" (default), "nanogpt", "openai", or "anthropic"
-- `ROOK_MODEL` - Model for memory extraction (default: openai/gpt-4o-mini)
-- `ROOK_API_KEY` - Optional: override the provider's default API key
-- `ROOK_BASE_URL` - Optional: override the provider's default base URL
+- `PALACE_PROVIDER` - Provider for memory extraction: "openrouter" (default), "nanogpt", "openai", or "anthropic"
+- `PALACE_MODEL` - Model for memory extraction (default: openai/gpt-4o-mini)
+- `PALACE_API_KEY` - Optional: override the provider's default API key
+- `PALACE_BASE_URL` - Optional: override the provider's default base URL
 
-Note: For `ROOK_PROVIDER=anthropic`, uses native Anthropic SDK with `anthropic_base_url` support for proxies.
+Note: For `PALACE_PROVIDER=anthropic`, uses native Anthropic SDK with `anthropic_base_url` support for proxies.
 
 ### Optional
 - `USER_ID` - Single-user identifier (default: "demo-user")
 - `DEFAULT_PROJECT` - Default project name (default: "Default Project")
-- `SKIP_PROFILE_LOAD` - Skip initial Rook profile loading (default: true)
+- `SKIP_PROFILE_LOAD` - Skip initial Palace profile loading (default: true)
 - `ENABLE_GRAPH_MEMORY` - Enable graph memory for relationship tracking (default: false)
 - `GRAPH_STORE_PROVIDER` - Graph store provider: "falkordb" (default)
 - `FALKORDB_HOST` - FalkorDB host (default: localhost)
@@ -224,7 +224,7 @@ Note: For `ROOK_PROVIDER=anthropic`, uses native Anthropic SDK with `anthropic_b
 ### PostgreSQL (Production)
 For production, use managed PostgreSQL instead of SQLite/Qdrant:
 - `DATABASE_URL` - PostgreSQL connection for SQLAlchemy (default: uses SQLite)
-- `ROOK_DATABASE_URL` - PostgreSQL+pgvector connection for Rook vectors (default: uses Qdrant)
+- `PALACE_DATABASE_URL` - PostgreSQL+pgvector connection for Palace vectors (default: uses Qdrant)
 
 Example (Railway):
 ```bash
@@ -259,7 +259,7 @@ AUTO_TIER_SELECTION=false         # Auto-select based on complexity
 ### Database
 ```bash
 DATABASE_URL=postgresql://...     # Main database (default: SQLite)
-ROOK_DATABASE_URL=postgresql://...  # Vector store (default: Qdrant)
+PALACE_DATABASE_URL=postgresql://...  # Vector store (default: Qdrant)
 ```
 
 ### Discord Bot
@@ -271,10 +271,10 @@ DISCORD_MAX_MESSAGES=25           # Max conversation chain length
 DISCORD_STOP_PHRASES="clara stop,stop clara,nevermind"
 ```
 
-### Rook Memory Provider
+### Palace Memory Provider
 ```bash
-ROOK_PROVIDER=openrouter          # Memory extraction LLM
-ROOK_MODEL=openai/gpt-4o-mini
+PALACE_PROVIDER=openrouter          # Memory extraction LLM
+PALACE_MODEL=openai/gpt-4o-mini
 ```
 
 **For Claude proxies (like clewdr)**: Use `LLM_PROVIDER=anthropic` with `ANTHROPIC_BASE_URL` for native Anthropic SDK support. This uses native Claude tool calling without format conversion.
@@ -387,14 +387,14 @@ Each user can get a persistent Docker container with personal workspace files an
 - `LLM_PROVIDER=anthropic` uses native Anthropic SDK with native tool calling (recommended for clewdr)
 - Sandbox system uses Docker containers for code execution
 - Memory system in `mypalclara/core/memory/`: episodes, layered retrieval, reflection, graph
-- `memory_manager.py` is thin facade; retrieval uses `build_prompt_layered()` not old `fetch_mem0_context()`
+- `memory_manager.py` is thin facade; retrieval uses `build_prompt_layered()` not old `fetch_context()`
 
 ## Production Deployment
 
 ```bash
 # PostgreSQL setup
 DATABASE_URL=postgresql://user:pass@host:5432/clara_main
-ROOK_DATABASE_URL=postgresql://user:pass@host:5432/clara_vectors
+PALACE_DATABASE_URL=postgresql://user:pass@host:5432/clara_vectors
 
 # Enable pgvector
 CREATE EXTENSION IF NOT EXISTS vector;

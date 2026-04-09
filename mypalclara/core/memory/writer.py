@@ -1,6 +1,6 @@
 """Memory writing operations for Clara platform.
 
-Handles adding conversation exchanges to Rook memory, classifying memories,
+Handles adding conversation exchanges to Palace memory, classifying memories,
 creating FSRS dynamics records, and notifying about extraction events.
 """
 
@@ -14,7 +14,7 @@ from mypalclara.core.llm.messages import AssistantMessage, UserMessage
 from mypalclara.core.memory.config import MEMORY_CONTEXT_SLICE
 
 # Module loggers (matching memory_manager.py conventions)
-logger = get_logger("rook")
+logger = get_logger("palace")
 memory_logger = get_logger("memory")
 
 if TYPE_CHECKING:
@@ -27,7 +27,7 @@ class MemoryWriter:
     """Extracts and writes memories from conversation exchanges.
 
     Handles the write path of memory management: sending conversation slices
-    to Rook for extraction, classifying results, creating FSRS dynamics
+    to Palace for extraction, classifying results, creating FSRS dynamics
     records, and emitting notification events.
     """
 
@@ -52,7 +52,7 @@ class MemoryWriter:
         """Initialize MemoryWriter.
 
         Args:
-            agent_id: Agent identifier for Rook storage.
+            agent_id: Agent identifier for Palace storage.
             on_memory_event: Optional callback for memory extraction notifications.
                 Called with (event_type, event_data).
             ingestion_manager: Reference to MemoryIngestionManager for
@@ -69,7 +69,7 @@ class MemoryWriter:
         self._dynamics_manager = dynamics_manager
         self._on_memories_changed = on_memories_changed
 
-    def add_to_mem0(
+    def add_to_palace(
         self,
         user_id: str,
         project_id: str,
@@ -79,7 +79,7 @@ class MemoryWriter:
         participants: list[dict] | None = None,
         is_dm: bool = False,
     ) -> None:
-        """Send conversation slice to mem0 for memory extraction.
+        """Send conversation slice to Palace for memory extraction.
 
         Args:
             user_id: The user ID for memory storage
@@ -90,9 +90,9 @@ class MemoryWriter:
             participants: List of {"id": str, "name": str} for people mentioned
             is_dm: Whether this is a DM conversation (stores as "personal" vs "project")
         """
-        from mypalclara.core.memory import ROOK
+        from mypalclara.core.memory import PALACE
 
-        if ROOK is None:
+        if PALACE is None:
             return
 
         # Build context with participant names for better extraction
@@ -121,7 +121,7 @@ class MemoryWriter:
             metadata["participant_names"] = [p.get("name") for p in participants if p.get("name")]
 
         try:
-            result = ROOK.add(
+            result = PALACE.add(
                 history_slice,
                 user_id=user_id,
                 agent_id=self.agent_id,
@@ -182,7 +182,7 @@ class MemoryWriter:
     ) -> None:
         """Simplified method to add a conversation exchange to memory.
 
-        This is a convenience wrapper around add_to_mem0 for use by the
+        This is a convenience wrapper around add_to_palace for use by the
         gateway processor where we don't have access to recent messages
         or project context.
 
@@ -192,7 +192,7 @@ class MemoryWriter:
             assistant_reply: Clara's response
             is_dm: Whether this is a DM conversation
         """
-        self.add_to_mem0(
+        self.add_to_palace(
             user_id=user_id,
             project_id="default",
             recent_msgs=[],
@@ -267,7 +267,7 @@ class MemoryWriter:
 
         Args:
             user_id: User who owns the memories
-            memory_results: Results from ROOK.add() containing memory IDs
+            memory_results: Results from PALACE.add() containing memory IDs
         """
         from datetime import UTC, datetime
 

@@ -4,7 +4,7 @@ Runs probabilistically after memory extraction. An LLM call evaluates
 whether a conversation exchange reveals personality-relevant patterns
 worth evolving (new traits, updated traits, or trait removal).
 
-Uses the same LLM provider as Rook (memory extraction model).
+Uses the same LLM provider as Palace (memory extraction model).
 """
 
 from __future__ import annotations
@@ -18,9 +18,9 @@ from mypalclara.config.bot import SYSTEM_AGENT_ID
 
 logger = logging.getLogger("personality_evolution")
 
-# Lazily-cached provider + config for ROOK LLM calls
-_rook_provider: Any = None
-_rook_config: Any = None
+# Lazily-cached provider + config for Palace LLM calls
+_palace_provider: Any = None
+_palace_config: Any = None
 
 EVOLUTION_PROMPT = """\
 You are evaluating whether a conversation exchange reveals something meaningful \
@@ -57,37 +57,37 @@ Respond with ONLY valid JSON (no markdown, no explanation):
 """
 
 
-def _build_rook_llm() -> tuple[Any, Any]:
-    """Build an LLM provider + config using ROOK settings.
+def _build_palace_llm() -> tuple[Any, Any]:
+    """Build an LLM provider + config using Palace settings.
 
     Returns (provider, config) tuple, cached after first call.
     """
-    global _rook_provider, _rook_config
+    global _palace_provider, _palace_config
 
-    if _rook_provider is not None and _rook_config is not None:
-        return _rook_provider, _rook_config
+    if _palace_provider is not None and _palace_config is not None:
+        return _palace_provider, _palace_config
 
     from mypalclara.core.llm.config import LLMConfig
     from mypalclara.core.llm.providers import get_provider
     from mypalclara.core.memory.config import (
+        PALACE_API_KEY,
+        PALACE_BASE_URL,
+        PALACE_MODEL,
+        PALACE_PROVIDER,
         PROVIDER_DEFAULTS,
-        ROOK_API_KEY,
-        ROOK_BASE_URL,
-        ROOK_MODEL,
-        ROOK_PROVIDER,
     )
 
-    provider_config = PROVIDER_DEFAULTS[ROOK_PROVIDER]
+    provider_config = PROVIDER_DEFAULTS[PALACE_PROVIDER]
 
-    api_key = ROOK_API_KEY or provider_config["api_key_getter"]()
+    api_key = PALACE_API_KEY or provider_config["api_key_getter"]()
     default_base_url = provider_config["base_url"]
     if callable(default_base_url):
         default_base_url = default_base_url()
-    base_url = ROOK_BASE_URL or default_base_url
+    base_url = PALACE_BASE_URL or default_base_url
 
     config = LLMConfig(
-        provider=ROOK_PROVIDER,
-        model=ROOK_MODEL,
+        provider=PALACE_PROVIDER,
+        model=PALACE_MODEL,
         api_key=api_key,
         base_url=base_url,
         temperature=0,
@@ -97,8 +97,8 @@ def _build_rook_llm() -> tuple[Any, Any]:
     # Use langchain provider for broadest compatibility
     provider = get_provider("langchain")
 
-    _rook_provider = provider
-    _rook_config = config
+    _palace_provider = provider
+    _palace_config = config
     return provider, config
 
 
@@ -125,7 +125,7 @@ def _evaluate_evolution(user_message: str, assistant_reply: str) -> dict | None:
     """
     from mypalclara.core.llm.messages import UserMessage
 
-    provider, config = _build_rook_llm()
+    provider, config = _build_palace_llm()
 
     traits_text = _format_current_traits()
     prompt = EVOLUTION_PROMPT.format(

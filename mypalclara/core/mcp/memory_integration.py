@@ -1,12 +1,12 @@
-"""MCP memory integration with mem0.
+"""MCP memory integration with Palace.
 
 Provides:
-- Storage of MCP usage patterns to mem0 for long-term learning
+- Storage of MCP usage patterns to Palace for long-term learning
 - Retrieval of relevant MCP context for tool suggestions
 - Learning user tool preferences and successful patterns
 - Cross-session MCP knowledge persistence
 
-This module bridges the MCP metrics system with mem0's semantic memory,
+This module bridges the MCP metrics system with Palace's semantic memory,
 enabling Clara to learn from past tool usage and provide personalized
 tool suggestions based on user patterns.
 """
@@ -29,7 +29,7 @@ def utcnow():
 
 
 class MCPMemoryIntegration:
-    """Integrates MCP tool usage with mem0 semantic memory.
+    """Integrates MCP tool usage with Palace semantic memory.
 
     This class provides:
     1. Pattern storage - After successful tool calls, stores patterns that
@@ -79,7 +79,7 @@ class MCPMemoryIntegration:
         result_summary: str | None = None,
         arguments: dict[str, Any] | None = None,
     ) -> bool:
-        """Store a successful tool call pattern to mem0.
+        """Store a successful tool call pattern to Palace.
 
         Creates a semantic memory about how the user successfully used
         a tool, which can be retrieved later for suggestions.
@@ -96,10 +96,10 @@ class MCPMemoryIntegration:
             True if stored successfully, False otherwise
         """
         try:
-            from mypalclara.core.memory import ROOK
+            from mypalclara.core.memory import PALACE
 
-            if ROOK is None:
-                logger.debug("[MCPMemory] mem0 not available, skipping storage")
+            if PALACE is None:
+                logger.debug("[MCPMemory] Palace not available, skipping storage")
                 return False
 
             # Debounce: Don't store the same tool call within 5 minutes
@@ -122,7 +122,7 @@ class MCPMemoryIntegration:
             if not content:
                 return False
 
-            # Store to mem0 with MCP-specific metadata
+            # Store to Palace with MCP-specific metadata
             messages = [
                 SystemMessage(
                     content=(
@@ -134,7 +134,7 @@ class MCPMemoryIntegration:
                 UserMessage(content=content),
             ]
 
-            result = ROOK.add(
+            result = PALACE.add(
                 messages,
                 user_id=user_id,
                 agent_id=self.agent_id,
@@ -227,7 +227,7 @@ class MCPMemoryIntegration:
         preference_type: str,
         preference_value: str,
     ) -> bool:
-        """Store a user's tool preference to mem0.
+        """Store a user's tool preference to Palace.
 
         Preferences are explicit user choices like "always use X for Y"
         or learned patterns like "prefers markdown output".
@@ -243,9 +243,9 @@ class MCPMemoryIntegration:
             True if stored successfully
         """
         try:
-            from mypalclara.core.memory import ROOK
+            from mypalclara.core.memory import PALACE
 
-            if ROOK is None:
+            if PALACE is None:
                 return False
 
             content = (
@@ -258,7 +258,7 @@ class MCPMemoryIntegration:
                 UserMessage(content=content),
             ]
 
-            result = ROOK.add(
+            result = PALACE.add(
                 messages,
                 user_id=user_id,
                 agent_id=self.agent_id,
@@ -286,7 +286,7 @@ class MCPMemoryIntegration:
     ) -> list[dict[str, Any]]:
         """Fetch relevant MCP memories for a task.
 
-        Searches mem0 for past tool usage patterns that might be
+        Searches Palace for past tool usage patterns that might be
         relevant to the current task.
 
         Args:
@@ -300,12 +300,12 @@ class MCPMemoryIntegration:
             - memory: The memory text
             - server_name: Associated server (if any)
             - tool_name: Associated tool (if any)
-            - relevance_score: mem0's similarity score
+            - relevance_score: Palace's similarity score
         """
         try:
-            from mypalclara.core.memory import ROOK
+            from mypalclara.core.memory import PALACE
 
-            if ROOK is None:
+            if PALACE is None:
                 return []
 
             # Build search query
@@ -318,7 +318,7 @@ class MCPMemoryIntegration:
             if server_name:
                 filters["server_name"] = server_name
 
-            result = ROOK.search(
+            result = PALACE.search(
                 query,
                 user_id=user_id,
                 agent_id=self.agent_id,
@@ -364,9 +364,9 @@ class MCPMemoryIntegration:
             - preference_type: Type of preference
         """
         try:
-            from mypalclara.core.memory import ROOK
+            from mypalclara.core.memory import PALACE
 
-            if ROOK is None:
+            if PALACE is None:
                 return []
 
             # Get all MCP preference memories
@@ -374,7 +374,7 @@ class MCPMemoryIntegration:
             if server_name:
                 filters["server_name"] = server_name
 
-            result = ROOK.get_all(
+            result = PALACE.get_all(
                 user_id=user_id,
                 agent_id=self.agent_id,
                 limit=20,
@@ -420,7 +420,7 @@ class MCPMemoryIntegration:
             - total_calls: Total tool calls from metrics
             - top_servers: Most used servers
             - top_tools: Most used tools
-            - learned_patterns: Patterns learned from mem0
+            - learned_patterns: Patterns learned from Palace
             - preferences: User preferences
         """
         try:
@@ -430,7 +430,7 @@ class MCPMemoryIntegration:
             tracker = get_metrics_tracker()
             stats = await tracker.get_user_stats(user_id, days=days)
 
-            # Get learned patterns from mem0
+            # Get learned patterns from Palace
             patterns = await self.fetch_tool_context(
                 user_id=user_id,
                 task_description="tool usage patterns and preferences",

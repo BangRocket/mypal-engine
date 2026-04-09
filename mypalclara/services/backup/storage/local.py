@@ -23,7 +23,7 @@ _EXTENSIONS: dict[str, str] = {
 }
 _DEFAULT_EXT = ".sql.gz"
 
-ALL_DB_NAMES = ["clara", "rook", "config"]
+ALL_DB_NAMES = ["clara", "palace", "config"]
 
 
 class LocalBackend:

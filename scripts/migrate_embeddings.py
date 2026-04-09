@@ -83,7 +83,7 @@ def main():
     from mypalclara.core.memory.config import (
         EMBEDDING_MODEL_DIMS,
         EMBEDDING_PROVIDER,
-        ROOK,
+        PALACE,
         config,
     )
 
@@ -94,8 +94,8 @@ def main():
     logger.info(f"Embedding model: {model}")
     logger.info(f"Embedding dimensions: {EMBEDDING_MODEL_DIMS}")
 
-    if ROOK is None:
-        logger.error("Rook not initialized — check your configuration")
+    if PALACE is None:
+        logger.error("Palace not initialized — check your configuration")
         sys.exit(1)
 
     # Fetch memories from the database (survives vector store changes)
@@ -115,7 +115,7 @@ def main():
         return
 
     # Recreate vector store collection with correct dimensions
-    vs = ROOK.vector_store
+    vs = PALACE.vector_store
     logger.info(f"Recreating Qdrant collection with {EMBEDDING_MODEL_DIMS} dimensions...")
     if hasattr(vs, "delete_col"):
         vs.delete_col()
@@ -149,7 +149,7 @@ def main():
                 metadata["role"] = mem["role"]
 
             try:
-                embedding = ROOK.embedding_model.embed(text, "add")
+                embedding = PALACE.embedding_model.embed(text, "add")
                 vs.insert(
                     vectors=[embedding],
                     payloads=[metadata],

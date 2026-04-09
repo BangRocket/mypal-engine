@@ -53,8 +53,8 @@ TAG_COLORS = {
     "gateway": "\033[94m",  # Bright blue
     "adapter": "\033[93m",  # Bright yellow (covers adapter.* and adapter_manager)
     "adapters": "\033[93m",  # Bright yellow (covers adapters.*)
-    "clara.rook": "\033[95m",  # Bright magenta
-    "rook": "\033[95m",  # Bright magenta
+    "clara.palace": "\033[95m",  # Bright magenta
+    "palace": "\033[95m",  # Bright magenta
     "clara.memory": "\033[38;5;219m",  # Pink
     "memory": "\033[38;5;219m",  # Pink
     "thread": "\033[38;5;81m",  # Sky blue
@@ -248,7 +248,7 @@ class DiscordLogHandler(logging.Handler):
 
     # Tag colors for embeds (Discord decimal color values)
     TAG_EMBED_COLORS = {
-        "rook": 0xAA55FF,  # Purple
+        "palace": 0xAA55FF,  # Purple
         "thread": 0x00FFFF,  # Cyan
         "discord": 0xFFFF00,  # Yellow
         "db": 0x00FF00,  # Green
@@ -402,7 +402,7 @@ class DiscordLogHandler(logging.Handler):
             color: Embed color (decimal int). If None, uses tag color or default.
             fields: List of {"name": str, "value": str, "inline": bool} dicts
             footer: Footer text
-            tag: Tag name for auto-color (e.g., "rook", "emotional")
+            tag: Tag name for auto-color (e.g., "palace", "emotional")
         """
         if not self._bot or not self._channel_id:
             return

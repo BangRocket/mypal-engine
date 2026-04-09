@@ -7,7 +7,7 @@ Zero-downtime migration script with:
 - Resume from failure
 - Verification after each batch
 
-Requires ROOK_DATABASE_URL (or MEM0_DATABASE_URL) and QDRANT_URL to be set.
+Requires PALACE_DATABASE_URL (or MEM0_DATABASE_URL) and QDRANT_URL to be set.
 
 Usage:
     # Dry run (count only)
@@ -48,7 +48,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Module-level config (populated by _load_config)
-ROOK_DATABASE_URL: str | None = None
+PALACE_DATABASE_URL: str | None = None
 QDRANT_URL: str | None = None
 QDRANT_API_KEY: str | None = None
 COLLECTION_NAME: str = "clara_memories"
@@ -57,7 +57,7 @@ CHECKPOINT_FILE = Path("migration_checkpoint.json")
 
 def _load_config(env_file: str | None = None) -> None:
     """Load configuration from .env file and environment variables."""
-    global ROOK_DATABASE_URL, QDRANT_URL, QDRANT_API_KEY, COLLECTION_NAME
+    global PALACE_DATABASE_URL, QDRANT_URL, QDRANT_API_KEY, COLLECTION_NAME
 
     # Load .env file
     env_path = Path(env_file) if env_file else None
@@ -72,15 +72,15 @@ def _load_config(env_file: str | None = None) -> None:
         logger.info("Loaded env from: .env")
 
     # Read config (ROOK_* preferred, MEM0_* as deprecated fallback)
-    ROOK_DATABASE_URL = os.getenv("ROOK_DATABASE_URL") or os.getenv("MEM0_DATABASE_URL")
+    PALACE_DATABASE_URL = os.getenv("PALACE_DATABASE_URL") or os.getenv("MEM0_DATABASE_URL")
     QDRANT_URL = os.getenv("QDRANT_URL")
     QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
-    COLLECTION_NAME = os.getenv("ROOK_COLLECTION_NAME") or os.getenv("MEM0_COLLECTION_NAME", "clara_memories")
+    COLLECTION_NAME = os.getenv("PALACE_COLLECTION_NAME") or os.getenv("MEM0_COLLECTION_NAME", "clara_memories")
 
     # Log what we found
-    if ROOK_DATABASE_URL:
+    if PALACE_DATABASE_URL:
         # Mask password in URL for logging
-        masked = ROOK_DATABASE_URL
+        masked = PALACE_DATABASE_URL
         if "@" in masked:
             pre, post = masked.split("@", 1)
             if ":" in pre:
@@ -88,7 +88,7 @@ def _load_config(env_file: str | None = None) -> None:
                 masked = f"{scheme_user}:****@{post}"
         logger.info(f"Source (pgvector): {masked}")
     else:
-        logger.error("ROOK_DATABASE_URL not set (checked ROOK_DATABASE_URL, MEM0_DATABASE_URL)")
+        logger.error("PALACE_DATABASE_URL not set (checked PALACE_DATABASE_URL, MEM0_DATABASE_URL)")
 
     if QDRANT_URL:
         logger.info(f"Target (Qdrant):   {QDRANT_URL}")
@@ -102,7 +102,7 @@ def get_pgvector_connection():
     """Get SQLAlchemy connection to pgvector database."""
     from sqlalchemy import create_engine
 
-    url = ROOK_DATABASE_URL
+    url = PALACE_DATABASE_URL
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
 
@@ -366,7 +366,7 @@ def main():
     # Load config from .env
     _load_config(args.env_file)
 
-    if not ROOK_DATABASE_URL or not QDRANT_URL:
+    if not PALACE_DATABASE_URL or not QDRANT_URL:
         sys.exit(1)
 
     # Get connections

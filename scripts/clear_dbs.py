@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Clear all mem0 databases (vector store + graph store).
+Clear all Palace databases (vector store + graph store).
 
 Usage:
     python clear_dbs.py              # Clear with confirmation
@@ -21,11 +21,11 @@ USER_ID = os.getenv("USER_ID", "demo-user")
 
 
 def clear_databases(user_id: str, skip_confirm: bool = False):
-    """Clear all mem0 data for a user."""
-    from mypalclara.core.memory.config import QDRANT_DATA_DIR, ROOK
+    """Clear all Palace data for a user."""
+    from mypalclara.core.memory.config import PALACE, QDRANT_DATA_DIR
 
-    if ROOK is None:
-        print("Error: mem0 is not initialized")
+    if PALACE is None:
+        print("Error: Palace is not initialized")
         return False
 
     if not skip_confirm:
@@ -41,8 +41,8 @@ def clear_databases(user_id: str, skip_confirm: bool = False):
 
     # Clear via mem0 API (handles both vector and graph)
     try:
-        ROOK.delete_all(user_id=user_id)
-        print("  - mem0.delete_all() completed")
+        PALACE.delete_all(user_id=user_id)
+        print("  - PALACE.delete_all() completed")
     except Exception as e:
         print(f"  - Error during delete_all: {e}")
 
@@ -68,7 +68,7 @@ def clear_databases(user_id: str, skip_confirm: bool = False):
 
     # Verify
     print("\nVerifying...")
-    result = ROOK.get_all(user_id=user_id)
+    result = PALACE.get_all(user_id=user_id)
     memories = len(result.get("results", []))
     relations = len(result.get("relations", []))
     print(f"  - Remaining memories: {memories}")
@@ -83,7 +83,7 @@ def clear_databases(user_id: str, skip_confirm: bool = False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Clear all mem0 databases")
+    parser = argparse.ArgumentParser(description="Clear all Palace databases")
     parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
     parser.add_argument("--user", "-u", type=str, default=USER_ID, help=f"User ID to clear (default: {USER_ID})")
     args = parser.parse_args()

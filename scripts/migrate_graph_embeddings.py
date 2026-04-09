@@ -45,7 +45,7 @@ def main():
     from mypalclara.core.memory.config import (
         EMBEDDING_MODEL_DIMS,
         EMBEDDING_PROVIDER,
-        ROOK,
+        PALACE,
         config,
     )
 
@@ -56,15 +56,15 @@ def main():
     logger.info(f"Embedding model: {model}")
     logger.info(f"Embedding dimensions: {EMBEDDING_MODEL_DIMS}")
 
-    if ROOK is None:
-        logger.error("Rook not initialized — check your configuration")
+    if PALACE is None:
+        logger.error("Palace not initialized — check your configuration")
         sys.exit(1)
 
-    if not hasattr(ROOK, "graph") or ROOK.graph is None:
+    if not hasattr(PALACE, "graph") or PALACE.graph is None:
         logger.error("Graph store not initialized")
         sys.exit(1)
 
-    graph_store = ROOK.graph
+    graph_store = PALACE.graph
     graph = graph_store.graph
 
     # Step 1: Export all triples and entity metadata
@@ -123,7 +123,7 @@ def main():
     graph_store._create_indexes()
 
     # Step 4: Re-embed entities and reinsert triples
-    embedder = ROOK.embedding_model
+    embedder = PALACE.embedding_model
     failed = 0
     start = time.time()
 

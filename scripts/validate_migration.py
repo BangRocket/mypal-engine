@@ -42,11 +42,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration
-MEM0_DATABASE_URL = os.getenv("MEM0_DATABASE_URL")
+PALACE_DATABASE_URL = os.getenv("PALACE_DATABASE_URL", os.getenv("ROOK_DATABASE_URL"))
 QDRANT_URL = os.getenv("QDRANT_URL")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-COLLECTION_NAME = os.getenv("MEM0_COLLECTION_NAME", "clara_memories")
+COLLECTION_NAME = os.getenv("PALACE_COLLECTION_NAME", os.getenv("ROOK_COLLECTION_NAME", "clara_memories"))
 EMBEDDING_MODEL = "text-embedding-3-small"
 
 
@@ -74,13 +74,13 @@ class ComparisonResult:
 
 def get_pgvector_connection():
     """Get SQLAlchemy connection to pgvector database."""
-    if not MEM0_DATABASE_URL:
-        logger.error("MEM0_DATABASE_URL not set")
+    if not PALACE_DATABASE_URL:
+        logger.error("PALACE_DATABASE_URL not set")
         sys.exit(1)
 
     from sqlalchemy import create_engine
 
-    url = MEM0_DATABASE_URL
+    url = PALACE_DATABASE_URL
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
 

@@ -474,18 +474,18 @@ def main():
     logger.info("=" * 60)
 
     # Check if graph memory is enabled
-    logger.info("Initializing mem0...")
-    from mypalclara.core.memory import ENABLE_GRAPH_MEMORY, ROOK
+    logger.info("Initializing Palace...")
+    from mypalclara.core.memory import ENABLE_GRAPH_MEMORY, PALACE
 
     if not ENABLE_GRAPH_MEMORY:
         logger.error("✗ Graph memory is not enabled. Set ENABLE_GRAPH_MEMORY=true")
         sys.exit(1)
 
-    if ROOK is None:
-        logger.error("✗ mem0 failed to initialize. Check your configuration.")
+    if PALACE is None:
+        logger.error("✗ Palace failed to initialize. Check your configuration.")
         sys.exit(1)
 
-    logger.info("✓ mem0 initialized with graph memory enabled")
+    logger.info("✓ Palace initialized with graph memory enabled")
 
     if args.parallel > 1:
         logger.info(f"✓ Parallel mode: {args.parallel} concurrent sessions")
@@ -547,7 +547,7 @@ def main():
         # Use async processing if parallel > 1
         if args.parallel > 1:
             total_stats = asyncio.run(
-                run_parallel(sessions, db, ROOK, dry_run, args.verbose, args.parallel, processed_ids, progress)
+                run_parallel(sessions, db, PALACE, dry_run, args.verbose, args.parallel, processed_ids, progress)
             )
         else:
             # Original sequential processing
@@ -582,7 +582,7 @@ def main():
                 if len(user_display) > 25:
                     user_display = user_display[:22] + "..."
 
-                stats = process_session(session, messages, ROOK, dry_run=dry_run, verbose=args.verbose)
+                stats = process_session(session, messages, PALACE, dry_run=dry_run, verbose=args.verbose)
 
                 # Update totals
                 total_stats["sessions_processed"] += 1

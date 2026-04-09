@@ -286,8 +286,8 @@ def export_vectors(
 ) -> tuple[dict[str, int], str]:
     """Export vector store data. Returns (counts, provider_name)."""
     from mypalclara.core.memory.config import (
-        ROOK_COLLECTION_NAME,
-        ROOK_DATABASE_URL,
+        PALACE_COLLECTION_NAME,
+        PALACE_DATABASE_URL,
     )
 
     vec_dir = tmp_dir / "vectors"
@@ -296,17 +296,17 @@ def export_vectors(
     filepath = vec_dir / "memories.jsonl"
 
     # Try Qdrant first, fall back to pgvector
-    if not ROOK_DATABASE_URL:
+    if not PALACE_DATABASE_URL:
         provider = "qdrant"
         try:
-            count = _export_qdrant(filepath, ROOK_COLLECTION_NAME, user_id, since)
+            count = _export_qdrant(filepath, PALACE_COLLECTION_NAME, user_id, since)
         except Exception as e:
             log.error("Qdrant export failed: %s", e)
             count = 0
     else:
         provider = "pgvector"
         try:
-            count = _export_pgvector(filepath, ROOK_COLLECTION_NAME, ROOK_DATABASE_URL, user_id, since)
+            count = _export_pgvector(filepath, PALACE_COLLECTION_NAME, PALACE_DATABASE_URL, user_id, since)
         except Exception as e:
             log.error("pgvector export failed: %s", e)
             count = 0
@@ -697,7 +697,7 @@ def import_vectors(
     dry_run: bool,
 ) -> dict[str, int]:
     """Import vector data from JSONL. Returns record counts."""
-    from mypalclara.core.memory.config import ROOK_COLLECTION_NAME, ROOK_DATABASE_URL
+    from mypalclara.core.memory.config import PALACE_COLLECTION_NAME, PALACE_DATABASE_URL
 
     filepath = tmp_dir / "vectors" / "memories.jsonl"
     if not filepath.exists():
@@ -719,10 +719,10 @@ def import_vectors(
         )
         log.info("Re-embedding enabled — vectors will be recomputed")
 
-    if not ROOK_DATABASE_URL:
-        return _import_qdrant(filepath, ROOK_COLLECTION_NAME, need_re_embed, dry_run, embedder)
+    if not PALACE_DATABASE_URL:
+        return _import_qdrant(filepath, PALACE_COLLECTION_NAME, need_re_embed, dry_run, embedder)
     else:
-        return _import_pgvector(filepath, ROOK_COLLECTION_NAME, ROOK_DATABASE_URL, need_re_embed, dry_run, embedder)
+        return _import_pgvector(filepath, PALACE_COLLECTION_NAME, PALACE_DATABASE_URL, need_re_embed, dry_run, embedder)
 
 
 # ---------------------------------------------------------------------------

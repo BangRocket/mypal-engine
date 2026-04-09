@@ -1,7 +1,7 @@
 """Memory retrieval for Clara platform.
 
 Provides the MemoryRetriever class that handles:
-- Fetching key, user, and project memories from Rook
+- Fetching key, user, and project memories from Palace
 - Redis caching for memory search results
 - Parallel memory fetches with ThreadPoolExecutor
 - FSRS-based re-ranking via MemoryDynamicsManager
@@ -22,12 +22,12 @@ from mypalclara.core.memory.config import (
     MAX_SEARCH_QUERY_CHARS,
 )
 
-logger = get_logger("rook")
+logger = get_logger("palace")
 memory_logger = get_logger("memory")
 
 
 class MemoryRetriever:
-    """Retrieves and ranks memories from Rook for prompt building.
+    """Retrieves and ranks memories from Palace for prompt building.
 
     Handles parallel fetching of key, user, and project memories,
     Redis caching, FSRS re-ranking, and graph relation retrieval.
@@ -66,7 +66,7 @@ class MemoryRetriever:
             if count:
                 memory_logger.debug(f"Invalidated {count} cached searches for {user_id}")
 
-    def fetch_mem0_context(
+    def fetch_context(
         self,
         user_id: str,
         project_id: str,
@@ -75,7 +75,7 @@ class MemoryRetriever:
         is_dm: bool = False,
         privacy_scope: str = "full",
     ) -> tuple[list[str], list[str], list[dict]]:
-        """Fetch relevant memories from mem0 using parallel fetches.
+        """Fetch relevant memories from Palace using parallel fetches.
 
         Uses entity-scoped memory with user_id + agent_id for proper isolation.
         Performance optimized with:
@@ -102,9 +102,9 @@ class MemoryRetriever:
             Tuple of (user_memories, project_memories, graph_relations)
             graph_relations is a list of dicts with keys: source, relationship, destination
         """
-        from mypalclara.core.memory import ROOK
+        from mypalclara.core.memory import PALACE
 
-        if ROOK is None:
+        if PALACE is None:
             return [], [], []
 
         # Build visibility filter for privacy scoping
@@ -134,7 +134,7 @@ class MemoryRetriever:
                     return {"results": cached, "_cached": True}
 
             key_filters = {"is_key": "true", **visibility_filter}
-            result = ROOK.get_all(
+            result = PALACE.get_all(
                 user_id=user_id,
                 agent_id=self.agent_id,
                 filters=key_filters,
@@ -157,7 +157,7 @@ class MemoryRetriever:
                     return {"results": cached, "_cached": True}
 
             user_filters = {**visibility_filter} if visibility_filter else None
-            result = ROOK.search(
+            result = PALACE.search(
                 search_query,
                 user_id=user_id,
                 agent_id=self.agent_id,
@@ -181,7 +181,7 @@ class MemoryRetriever:
                     logger.debug("Project search cache hit")
                     return {"results": cached, "_cached": True}
 
-            result = ROOK.search(
+            result = PALACE.search(
                 search_query,
                 user_id=user_id,
                 agent_id=self.agent_id,
@@ -282,7 +282,7 @@ class MemoryRetriever:
                         continue
 
                     def fetch_participant(name=p_name, query=search_query):
-                        return ROOK.search(
+                        return PALACE.search(
                             f"{name} {query[:500]}",
                             user_id=user_id,
                             agent_id=self.agent_id,

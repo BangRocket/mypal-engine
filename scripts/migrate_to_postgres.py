@@ -4,7 +4,7 @@ Migrate data from SQLite + Qdrant to PostgreSQL.
 
 This script handles migration of:
 1. SQLAlchemy models (Projects, Sessions, Messages, ChannelSummary) -> PostgreSQL
-2. Qdrant vectors -> pgvector (via mem0)
+2. Qdrant vectors -> pgvector (via Palace)
 
 Prerequisites:
 1. Set up two PostgreSQL databases on Railway (or other provider)
@@ -12,12 +12,12 @@ Prerequisites:
    CREATE EXTENSION IF NOT EXISTS vector;
 3. Set environment variables:
    - DATABASE_URL: PostgreSQL connection string for main DB
-   - MEM0_DATABASE_URL: PostgreSQL connection string for vectors DB
+   - PALACE_DATABASE_URL: PostgreSQL connection string for vectors DB
 
 Usage:
     # Set environment variables first
     export DATABASE_URL=postgresql://user:pass@host:5432/clara_main
-    export MEM0_DATABASE_URL=postgresql://user:pass@host:5432/clara_vectors
+    export PALACE_DATABASE_URL=postgresql://user:pass@host:5432/clara_vectors
 
     # Run migration
     poetry run python scripts/migrate_to_postgres.py --sqlite
@@ -159,17 +159,17 @@ def migrate_qdrant_to_pgvector():
     """
     Migrate vectors from Qdrant to pgvector.
 
-    Note: mem0 handles vector storage internally, so we need to:
-    1. Export memories from Qdrant-backed mem0
-    2. Re-add them to pgvector-backed mem0
+    Note: Palace handles vector storage internally, so we need to:
+    1. Export memories from Qdrant-backed Palace
+    2. Re-add them to pgvector-backed Palace
     """
     from mem0 import Memory
     from qdrant_client import QdrantClient
 
     # Check for required env vars
-    pgvector_url = os.getenv("MEM0_DATABASE_URL")
+    pgvector_url = os.getenv("PALACE_DATABASE_URL", os.getenv("ROOK_DATABASE_URL"))
     if not pgvector_url:
-        print("[ERROR] MEM0_DATABASE_URL not set. Cannot migrate to pgvector.")
+        print("[ERROR] PALACE_DATABASE_URL not set. Cannot migrate to pgvector.")
         return False
 
     # Fix postgres:// prefix
@@ -236,8 +236,8 @@ def migrate_qdrant_to_pgvector():
         json.dump(backup_data, f)
     print(f"[migrate] Backup saved to {backup_file}")
 
-    # Initialize pgvector-backed mem0
-    # Note: We need to import vectors directly into pgvector since mem0
+    # Initialize pgvector-backed Palace
+    # Note: We need to import vectors directly into pgvector since Palace
     # doesn't expose a direct import API for raw vectors
     print("[migrate] Importing vectors to pgvector...")
 
@@ -249,7 +249,7 @@ def migrate_qdrant_to_pgvector():
         register_vector(conn)
         cur = conn.cursor()
 
-        # Create table if not exists (matching mem0's schema)
+        # Create table if not exists (matching Palace's schema)
         cur.execute("""
             CREATE EXTENSION IF NOT EXISTS vector;
 

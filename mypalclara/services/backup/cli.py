@@ -41,7 +41,7 @@ logger = logging.getLogger("backup_service")
 
 class DbFilter(str, Enum):
     clara = "clara"
-    rook = "rook"
+    palace = "palace"
     config = "config"
 
 
@@ -123,7 +123,7 @@ def run(
 
     # Determine which databases to backup
     databases = config.databases
-    if db and db.value in ("clara", "rook"):
+    if db and db.value in ("clara", "palace"):
         if db.value not in databases:
             console.print(f"[red]Error:[/] {db.value} database URL not configured")
             raise typer.Exit(1)
@@ -307,8 +307,8 @@ def _infer_db_name(filename: str) -> str | None:
         return "config"
     if "clara" in lower:
         return "clara"
-    if "rook" in lower or "mem0" in lower:
-        return "rook"
+    if "palace" in lower or "rook" in lower or "mem0" in lower:
+        return "palace"
     return None
 
 
@@ -361,7 +361,7 @@ def restore(
         db_name = _infer_db_name(path.name)
         if not db_name:
             console.print("[yellow]Cannot determine backup type from filename.[/]")
-            console.print("Filename should contain 'clara', 'rook', or 'config'.")
+            console.print("Filename should contain 'clara', 'palace', or 'config'.")
             raise typer.Exit(1)
 
         # Verify it's gzipped (check magic number)

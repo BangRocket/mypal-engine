@@ -1,22 +1,22 @@
-"""Clara Memory System (Rook) - Native memory management for Clara.
+"""Clara Memory System (Palace) - Native memory management for Clara.
 
-This module provides Clara's memory system, called "Rook" internally.
+This module provides Clara's memory system, called "Palace" internally.
 
 Usage:
-    from mypalclara.core.memory import ROOK
+    from mypalclara.core.memory import PALACE
 
-    if ROOK:
-        ROOK.add(messages, user_id="user-123", agent_id="clara")
-        results = ROOK.search("preferences", user_id="user-123")
+    if PALACE:
+        PALACE.add(messages, user_id="user-123", agent_id="clara")
+        results = PALACE.search("preferences", user_id="user-123")
 """
 
 from mypalclara.core.memory.config import (
     ENABLE_GRAPH_MEMORY,
     GRAPH_STORE_PROVIDER,
-    ROOK,
-    ROOK_DATABASE_URL,
-    ROOK_MODEL,
-    ROOK_PROVIDER,
+    PALACE,
+    PALACE_DATABASE_URL,
+    PALACE_MODEL,
+    PALACE_PROVIDER,
     config,
 )
 from mypalclara.core.memory.core.memory import (
@@ -33,11 +33,11 @@ __all__ = [
     "ClaraMemoryItem",
     "ClaraMemoryValidationError",
     "MemoryType",
-    "ROOK",
+    "PALACE",
     "config",
-    "ROOK_PROVIDER",
-    "ROOK_MODEL",
-    "ROOK_DATABASE_URL",
+    "PALACE_PROVIDER",
+    "PALACE_MODEL",
+    "PALACE_DATABASE_URL",
     "ENABLE_GRAPH_MEMORY",
     "GRAPH_STORE_PROVIDER",
 ]

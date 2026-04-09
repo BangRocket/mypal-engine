@@ -411,10 +411,10 @@ def link_user_to_person(user_id: str):
 
 def apply_to_mem0(memories: dict, user_id: str, dry_run: bool = False):
     """Upsert memories to mem0 with relationship-rich grouping for graph extraction."""
-    from mypalclara.core.memory import ROOK
+    from mypalclara.core.memory import PALACE
 
-    if ROOK is None:
-        print("[bootstrap] Error: mem0 is not initialized")
+    if PALACE is None:
+        print("[bootstrap] Error: Palace is not initialized")
         return
 
     # Group memories for better graph extraction
@@ -454,7 +454,7 @@ def apply_to_mem0(memories: dict, user_id: str, dry_run: bool = False):
                 {"role": "assistant", "content": f"I've noted this information about {category.replace('_', ' ')}."},
             ]
 
-            result = ROOK.add(
+            result = PALACE.add(
                 messages,
                 user_id=user_id,
                 metadata=metadata,
@@ -526,7 +526,7 @@ def main():
     parser.add_argument("--input", "-i", type=str, required=True, help="Input profile text file")
     parser.add_argument("--out", "-o", type=str, default="generated/", help="Output directory for JSON files")
     parser.add_argument(
-        "--apply", action="store_true", help="Apply memories to mem0 (without this flag, only generates JSON)"
+        "--apply", action="store_true", help="Apply memories to Palace (without this flag, only generates JSON)"
     )
     parser.add_argument("--user", "-u", type=str, default=os.getenv("USER_ID", "demo-user"), help="User ID for mem0")
     parser.add_argument("--force", action="store_true", help="Force regeneration even if JSON files exist")
@@ -569,10 +569,10 @@ def main():
 
     # Apply to mem0 if requested
     if args.apply:
-        print(f"\n[bootstrap] Applying to mem0 for user '{args.user}'...")
+        print(f"\n[bootstrap] Applying to Palace for user '{args.user}'...")
         apply_to_mem0(memories, args.user)
     else:
-        print("\n[bootstrap] Dry run complete. Use --apply to upsert to mem0.")
+        print("\n[bootstrap] Dry run complete. Use --apply to upsert to Palace.")
 
 
 if __name__ == "__main__":

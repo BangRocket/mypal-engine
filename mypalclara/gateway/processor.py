@@ -949,7 +949,7 @@ class MessageProcessor:
         response: str,
         context: dict[str, Any],
     ) -> None:
-        """Run memory operations in background (sentiment, mem0, FSRS promotion).
+        """Run memory operations in background (sentiment, Palace, FSRS promotion).
 
         Errors are logged but do not affect the user response.
         """
@@ -957,7 +957,7 @@ class MessageProcessor:
             # Track sentiment for emotional context
             await self._track_sentiment(request, context)
 
-            # Store in mem0 for semantic memory
+            # Store in Palace for semantic memory
             loop = asyncio.get_event_loop()
             try:
                 await loop.run_in_executor(
@@ -970,7 +970,7 @@ class MessageProcessor:
                     ),
                 )
             except Exception as e:
-                logger.warning(f"Failed to store in mem0: {e}")
+                logger.warning(f"Failed to store in Palace: {e}")
 
             # Promote memories that were used in this response (FSRS feedback)
             await self._promote_retrieved_memories(context)

@@ -112,7 +112,7 @@ class L1UserProfile:
 
         Args:
             user_id: The user to build profile for.
-            semantic_memories: Key facts/preferences from Rook.
+            semantic_memories: Key facts/preferences from Palace.
             recent_episodes: Last few episodes (for emotional trajectory).
             active_arcs: Currently active narrative arcs.
             graph_context: Key relationships from knowledge graph.

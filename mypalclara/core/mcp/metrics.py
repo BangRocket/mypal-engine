@@ -150,7 +150,7 @@ class MCPMetricsTracker:
             result_preview: First N chars of result
             error_message: Error message if failed
             error_type: Error type (timeout, connection, execution)
-            store_to_memory: If True and successful, store to mem0 for learning
+            store_to_memory: If True and successful, store to Palace for learning
             task_description: Optional description of what the user was trying to do
         """
         completed_at = utcnow()
@@ -214,7 +214,7 @@ class MCPMetricsTracker:
                 duration_ms,
             )
 
-            # Store to mem0 for learning if requested and successful
+            # Store to Palace for learning if requested and successful
             if store_to_memory and success:
                 await self._store_to_memory(
                     pending["user_id"],
@@ -308,7 +308,7 @@ class MCPMetricsTracker:
         result_preview: str | None,
         arguments: dict[str, Any] | None,
     ) -> None:
-        """Store successful tool call to mem0 for learning.
+        """Store successful tool call to Palace for learning.
 
         This is called after successful tool calls when store_to_memory=True.
         It uses the MCP memory integration to store patterns that can be

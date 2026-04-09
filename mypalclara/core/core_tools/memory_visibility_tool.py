@@ -27,10 +27,10 @@ Never make a memory public without the user's explicit consent.
 
 
 def _get_memory():
-    """Get the Rook memory instance."""
-    from mypalclara.core.memory import ROOK
+    """Get the Palace memory instance."""
+    from mypalclara.core.memory import PALACE
 
-    return ROOK
+    return PALACE
 
 
 async def _handle_set_visibility(args: dict[str, Any], ctx: ToolContext) -> str:

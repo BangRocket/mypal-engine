@@ -223,10 +223,10 @@ def import_to_mem0(
         dry_run: If True, only show what would be imported without actually importing
         user_id: User ID for mem0 storage
     """
-    from mypalclara.core.memory import ROOK
+    from mypalclara.core.memory import PALACE
 
-    if ROOK is None:
-        print("Error: mem0 is not initialized. Check your configuration.")
+    if PALACE is None:
+        print("Error: Palace is not initialized. Check your configuration.")
         sys.exit(1)
 
     contact_names = contact_names or {}
@@ -301,7 +301,7 @@ def import_to_mem0(
 
                 # Add to mem0 with contact metadata
                 try:
-                    result = ROOK.add(
+                    result = PALACE.add(
                         context_intro + mem0_messages,
                         user_id=user_id,
                         metadata={

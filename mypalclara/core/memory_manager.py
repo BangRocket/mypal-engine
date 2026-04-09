@@ -2,7 +2,7 @@
 
 Provides the MemoryManager singleton facade that delegates to:
 - SessionManager: thread/message persistence
-- MemoryRetriever: Rook context fetching and caching
+- MemoryRetriever: Palace context fetching and caching
 - MemoryWriter: memory extraction and storage
 - MemoryDynamicsManager: FSRS scoring and promotion
 - MemoryIngestionManager: smart ingest and supersession
@@ -40,7 +40,7 @@ from mypalclara.core.memory.config import (
 )
 
 # Module loggers
-logger = get_logger("rook")
+logger = get_logger("palace")
 thread_logger = get_logger("thread")
 memory_logger = get_logger("memory")
 
@@ -55,7 +55,7 @@ class MemoryManager:
 
     Thin facade that delegates to specialized sub-managers:
     - SessionManager: thread/message persistence
-    - MemoryRetriever: Rook context fetching and caching
+    - MemoryRetriever: Palace context fetching and caching
     - MemoryWriter: memory extraction and storage
     - MemoryDynamicsManager: FSRS scoring and promotion
     - MemoryIngestionManager: smart ingest and supersession
@@ -230,7 +230,7 @@ class MemoryManager:
 
     # ---------- Memory retrieval (delegates to MemoryRetriever) ----------
 
-    def fetch_mem0_context(
+    def fetch_context(
         self,
         user_id: str,
         project_id: str,
@@ -239,7 +239,7 @@ class MemoryManager:
         is_dm: bool = False,
         privacy_scope: str = "full",
     ) -> tuple[list[str], list[str], list[dict]]:
-        """Fetch relevant memories from mem0 using parallel fetches.
+        """Fetch relevant memories from Palace using parallel fetches.
 
         Args:
             user_id: The user making the request
@@ -250,7 +250,7 @@ class MemoryManager:
             privacy_scope: 'full' for DMs (all memories), 'public_only' for
                 group channels (only memories with visibility='public')
         """
-        return self._memory_retriever.fetch_mem0_context(
+        return self._memory_retriever.fetch_context(
             user_id,
             project_id,
             user_message,
@@ -261,7 +261,7 @@ class MemoryManager:
 
     # ---------- Memory writing (delegates to MemoryWriter) ----------
 
-    def add_to_mem0(
+    def add_to_palace(
         self,
         user_id: str,
         project_id: str,
@@ -271,8 +271,8 @@ class MemoryManager:
         participants: list[dict] | None = None,
         is_dm: bool = False,
     ) -> None:
-        """Send conversation slice to mem0 for memory extraction."""
-        self._memory_writer.add_to_mem0(
+        """Send conversation slice to Palace for memory extraction."""
+        self._memory_writer.add_to_palace(
             user_id,
             project_id,
             recent_msgs,
@@ -289,7 +289,7 @@ class MemoryManager:
         assistant_reply: str,
         is_dm: bool = False,
     ) -> None:
-        """Simplified method to add a conversation exchange to memory."""
+        """Simplified method to add a conversation exchange to Palace memory."""
         self._memory_writer.add_to_memory(user_id, user_message, assistant_reply, is_dm)
 
     # ---------- Prompt building (delegates to PromptBuilder) ----------
@@ -489,10 +489,10 @@ class MemoryManager:
         """Lazy-initialized episode store."""
         if self._episode_store is None:
             try:
-                from mypalclara.core.memory.config import ROOK
+                from mypalclara.core.memory.config import PALACE
                 from mypalclara.core.memory.episodes import EpisodeStore
 
-                if ROOK is not None:
+                if PALACE is not None:
                     # Build qdrant config from env (same source as main memory store)
                     qdrant_config = {}
                     qdrant_url = os.getenv("QDRANT_URL")
@@ -503,7 +503,7 @@ class MemoryManager:
                             qdrant_config["api_key"] = api_key
 
                     self._episode_store = EpisodeStore(
-                        embedding_model=ROOK.embedding_model,
+                        embedding_model=PALACE.embedding_model,
                         qdrant_config=qdrant_config,
                     )
                     memory_logger.info("Episode store initialized")
@@ -591,13 +591,13 @@ class MemoryManager:
         # Store self-notes as semantic memories
         self_notes = extract_self_notes(reflection)
         if self_notes:
-            from mypalclara.core.memory.config import ROOK
+            from mypalclara.core.memory.config import PALACE
 
-            if ROOK is not None:
+            if PALACE is not None:
                 for note in self_notes:
                     memory_logger.info(f"Self-note: {note}")
                     try:
-                        ROOK.add(
+                        PALACE.add(
                             messages=[{"role": "assistant", "content": note}],
                             user_id=user_id,
                             agent_id=self.agent_id,
