@@ -230,6 +230,7 @@ def main():
     parser = argparse.ArgumentParser(description="Chat Cleaner web tool")
     parser.add_argument("chat_file", help="Path to Discord chat export JSON")
     parser.add_argument("--port", type=int, default=8899, help="Port (default: 8899)")
+    parser.add_argument("--bind", type=str, default="0.0.0.0", help="Bind address (default: 0.0.0.0)")
     parser.add_argument("--no-browser", action="store_true", help="Don't open browser")
     args = parser.parse_args()
 
@@ -280,8 +281,8 @@ def main():
     CleanerHandler.decisions_path = str(decisions_path)
     CleanerHandler.html_path = str(html_path)
 
-    server = HTTPServer(("127.0.0.1", args.port), CleanerHandler)
-    url = f"http://127.0.0.1:{args.port}"
+    server = HTTPServer((args.bind, args.port), CleanerHandler)
+    url = f"http://{args.bind}:{args.port}"
     print(f"\nChat Cleaner running at {url}")
     print("Press Ctrl+C to stop\n")
 

@@ -202,6 +202,7 @@ class InspectorHandler(SimpleHTTPRequestHandler):
 def main():
     parser = argparse.ArgumentParser(description="Memory Inspector")
     parser.add_argument("--port", type=int, default=8898)
+    parser.add_argument("--bind", type=str, default="0.0.0.0", help="Bind address (default: 0.0.0.0)")
     parser.add_argument("--user", type=str, default="discord-271274659385835521")
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
@@ -227,9 +228,14 @@ def main():
     InspectorHandler.default_user_id = args.user
     InspectorHandler.html_path = str(Path(__file__).parent / "index.html")
 
-    server = HTTPServer(("127.0.0.1", args.port), InspectorHandler)
-    url = f"http://127.0.0.1:{args.port}"
+    bind = args.bind
+    server = HTTPServer((bind, args.port), InspectorHandler)
+    url = f"http://{bind}:{args.port}" if bind != "0.0.0.0" else f"http://0.0.0.0:{args.port}"
     print(f"\nMemory Inspector at {url}")
+    if bind == "0.0.0.0":
+        import socket
+        hostname = socket.gethostname()
+        print(f"  Accessible at http://{hostname}:{args.port}")
     print("Press Ctrl+C to stop\n")
 
     if not args.no_browser:
