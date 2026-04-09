@@ -183,7 +183,11 @@ class EntityResolver:
         conversation_text = _format_conversation(messages)
         prompt_messages: list[dict[str, str]] = [
             {"role": "system", "content": _NAME_EXTRACTION_PROMPT},
-            {"role": "user", "content": conversation_text},
+            {"role": "user", "content": (
+                "Extract names from this conversation. "
+                "Respond ONLY with the JSON object, nothing else.\n\n"
+                "<conversation>\n" + conversation_text + "\n</conversation>"
+            )},
         ]
 
         try:
