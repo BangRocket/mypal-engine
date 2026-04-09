@@ -127,6 +127,8 @@ class MessageProcessor:
         self._summary_manager: ChannelSummaryManager | None = None
         self._vm_manager: Any = None
         self._background_tasks: set[asyncio.Task] = set()
+        self._message_counts: dict[str, int] = {}  # user_id -> messages since last reflection
+        self._reflection_threshold = 10  # Reflect every N message pairs
 
     def set_vm_manager(self, vm_manager: Any) -> None:
         """Set the VM manager for per-user VM access."""
@@ -973,6 +975,9 @@ class MessageProcessor:
             # Promote memories that were used in this response (FSRS feedback)
             await self._promote_retrieved_memories(context)
 
+            # Trigger periodic episode reflection (every ~10 messages)
+            await self._maybe_reflect(context, request, response)
+
             # Personality evolution (probabilistic, low-cost gate)
             try:
                 from mypalclara.core.memory.personality import maybe_evolve_personality
@@ -1051,6 +1056,80 @@ class MessageProcessor:
             logger.debug(f"Promoted {len(memory_ids)} memories for user {user_id}")
         except Exception as e:
             logger.warning(f"Failed to promote memories: {e}")
+
+    async def _maybe_reflect(
+        self, context: dict[str, Any], request: Any, response: str
+    ) -> None:
+        """Trigger episode reflection when enough messages have accumulated.
+
+        Runs session reflection every N message pairs to capture episodes
+        without waiting for session timeout.
+        """
+        user_id = context.get("user_id")
+        if not user_id or not self._memory_manager:
+            return
+
+        # Increment message count for this user
+        self._message_counts[user_id] = self._message_counts.get(user_id, 0) + 1
+
+        if self._message_counts[user_id] < self._reflection_threshold:
+            return
+
+        # Reset counter
+        self._message_counts[user_id] = 0
+
+        logger.info(f"Triggering periodic reflection for {user_id}")
+
+        try:
+            # Fetch recent messages from DB for reflection
+            from mypalclara.db import SessionLocal
+            from mypalclara.db.models import Message as DbMessage
+            from mypalclara.db.models import Session
+
+            db = SessionLocal()
+            try:
+                channel_id = context.get("channel_id", "default")
+                thread = (
+                    db.query(Session)
+                    .filter(Session.user_id == user_id, Session.context_id == channel_id)
+                    .order_by(Session.updated_at.desc())
+                    .first()
+                )
+                if not thread:
+                    return
+
+                messages = (
+                    db.query(DbMessage)
+                    .filter(DbMessage.thread_id == thread.id)
+                    .order_by(DbMessage.created_at.asc())
+                    .limit(30)
+                    .all()
+                )
+
+                msg_dicts = [
+                    {
+                        "role": msg.role,
+                        "content": msg.content,
+                        "name": msg.user_id if msg.role == "user" else "Clara",
+                        "timestamp": msg.created_at.isoformat() if msg.created_at else "",
+                    }
+                    for msg in messages
+                ]
+            finally:
+                db.close()
+
+            if len(msg_dicts) < 4:
+                return
+
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                BLOCKING_EXECUTOR,
+                lambda: self._memory_manager.reflect_on_session(
+                    msg_dicts, user_id, session_id=context.get("channel_id")
+                ),
+            )
+        except Exception as e:
+            logger.warning(f"Periodic reflection failed for {user_id}: {e}")
 
     def _get_tool_emoji(self, tool_name: str) -> str:
         """Get emoji for a tool.
