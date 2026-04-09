@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 def fetch_threads(user_id: str | None = None, days: int | None = None) -> list[dict]:
     """Fetch conversation threads from the database.
 
-    Returns list of dicts with id, user_id, context_id, message_count, updated_at.
+    Returns list of dicts with id, user_id, context_id, message_count, last_activity_at.
     """
     from sqlalchemy import func, text
 
@@ -57,13 +57,13 @@ def fetch_threads(user_id: str | None = None, days: int | None = None) -> list[d
                 Session.id,
                 Session.user_id,
                 Session.context_id,
-                Session.updated_at,
+                Session.last_activity_at,
                 func.count(Message.id).label("message_count"),
             )
             .join(Message, Message.thread_id == Session.id)
             .group_by(Session.id)
             .having(func.count(Message.id) >= 4)  # Need at least 4 messages
-            .order_by(Session.updated_at.desc())
+            .order_by(Session.last_activity_at.desc())
         )
 
         if user_id:
@@ -71,7 +71,7 @@ def fetch_threads(user_id: str | None = None, days: int | None = None) -> list[d
 
         if days:
             cutoff = datetime.now(UTC) - timedelta(days=days)
-            query = query.filter(Session.updated_at >= cutoff)
+            query = query.filter(Session.last_activity_at >= cutoff)
 
         results = query.all()
         return [
@@ -80,7 +80,7 @@ def fetch_threads(user_id: str | None = None, days: int | None = None) -> list[d
                 "user_id": r.user_id,
                 "context_id": r.context_id,
                 "message_count": r.message_count,
-                "updated_at": r.updated_at,
+                "last_activity_at": r.last_activity_at,
             }
             for r in results
         ]
@@ -149,7 +149,7 @@ def main():
         for t in threads[:20]:
             logger.info(
                 f"  Thread {t['id'][:8]}... | user={t['user_id']} | "
-                f"msgs={t['message_count']} | updated={t['updated_at']}"
+                f"msgs={t['message_count']} | updated={t['last_activity_at']}"
             )
         if len(threads) > 20:
             logger.info(f"  ... and {len(threads) - 20} more")
