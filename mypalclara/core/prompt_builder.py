@@ -370,24 +370,58 @@ class PromptBuilder:
 
         retrieval = LayeredRetrieval()
 
-        # --- Gather data for each layer ---
+        # --- Gather data for each layer (parallel where possible) ---
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        # L1: Semantic memories (key facts about this user)
         semantic_memories = []
-        if ROOK is not None:
-            try:
-                results = ROOK.search(
-                    user_message,
-                    user_id=user_id,
-                    agent_id=self.agent_id,
-                    limit=15,
-                )
-                semantic_memories = results.get("results", [])
-            except Exception as e:
-                logger.debug(f"Semantic memory fetch failed: {e}")
-
-        # L1: Recent episodes (for emotional trajectory)
+        graph_context = []
+        relevant_episodes = []
         recent_episodes = []
+        active_arcs = []
+
+        # Run embedding-heavy searches in parallel to avoid 3x latency
+        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="memory") as pool:
+            futures = {}
+
+            # Semantic memory search (embeds query)
+            if ROOK is not None:
+                futures["semantic"] = pool.submit(
+                    lambda: ROOK.search(
+                        user_message, user_id=user_id, agent_id=self.agent_id, limit=15
+                    )
+                )
+
+            # Graph search (embeds query)
+            if ROOK is not None and hasattr(ROOK, "graph") and ROOK.graph is not None:
+                futures["graph"] = pool.submit(
+                    lambda: ROOK.graph.search(user_message, {"user_id": user_id}, limit=20)
+                )
+
+            # Episode search (embeds query)
+            if memory_manager and memory_manager.episode_store:
+                futures["episodes"] = pool.submit(
+                    lambda: memory_manager.episode_store.search(
+                        user_message, user_id, limit=3, min_significance=0.3
+                    )
+                )
+
+            # Collect results
+            for key, future in futures.items():
+                try:
+                    result = future.result(timeout=15)
+                    if key == "semantic":
+                        semantic_memories = result.get("results", []) if isinstance(result, dict) else []
+                    elif key == "graph":
+                        graph_context = result if isinstance(result, list) else []
+                    elif key == "episodes":
+                        relevant_episodes = [
+                            ep.__dict__ if hasattr(ep, "__dict__") else ep
+                            for ep in (result if isinstance(result, list) else [])
+                        ]
+                except Exception as e:
+                    logger.debug(f"{key} fetch failed: {e}")
+
+        # Non-embedding fetches (fast, no parallelization needed)
         if memory_manager and memory_manager.episode_store:
             try:
                 recent_episodes = [
@@ -397,19 +431,6 @@ class PromptBuilder:
             except Exception as e:
                 logger.debug(f"Recent episode fetch failed: {e}")
 
-        # L1: Graph context (key relationships for this user)
-        graph_context = []
-        if ROOK is not None and hasattr(ROOK, "graph") and ROOK.graph is not None:
-            try:
-                graph_context = ROOK.graph.search(
-                    user_message, {"user_id": user_id}, limit=20
-                )
-            except Exception as e:
-                logger.debug(f"Graph search failed: {e}")
-
-        # L1: Active narrative arcs
-        active_arcs = []
-        if memory_manager and memory_manager.episode_store:
             try:
                 active_arcs = [
                     arc.__dict__ if hasattr(arc, "__dict__") else arc
@@ -417,19 +438,6 @@ class PromptBuilder:
                 ]
             except Exception as e:
                 logger.debug(f"Active arc fetch failed: {e}")
-
-        # L2: Relevant episodes (semantic search on current message)
-        relevant_episodes = []
-        if memory_manager and memory_manager.episode_store:
-            try:
-                relevant_episodes = [
-                    ep.__dict__ if hasattr(ep, "__dict__") else ep
-                    for ep in memory_manager.episode_store.search(
-                        user_message, user_id, limit=3, min_significance=0.3
-                    )
-                ]
-            except Exception as e:
-                logger.debug(f"Episode search failed: {e}")
 
         # --- Build layered context ---
         layered_context = retrieval.build_context(

@@ -48,7 +48,7 @@ BLOCKING_EXECUTOR = ThreadPoolExecutor(
 )
 
 # Memory fetch timeout (graceful degradation on Qdrant slowness)
-MEMORY_FETCH_TIMEOUT = float(os.getenv("MEMORY_FETCH_TIMEOUT", "10"))
+MEMORY_FETCH_TIMEOUT = float(os.getenv("MEMORY_FETCH_TIMEOUT", "30"))
 
 # Per-user VM feature flag
 USER_VM_ENABLED = os.getenv("USER_VM_ENABLED", "false").lower() == "true"
@@ -1071,8 +1071,10 @@ class MessageProcessor:
 
         # Increment message count for this user
         self._message_counts[user_id] = self._message_counts.get(user_id, 0) + 1
+        count = self._message_counts[user_id]
+        logger.debug(f"Reflection counter for {user_id}: {count}/{self._reflection_threshold}")
 
-        if self._message_counts[user_id] < self._reflection_threshold:
+        if count < self._reflection_threshold:
             return
 
         # Reset counter
