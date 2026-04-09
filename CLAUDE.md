@@ -60,7 +60,7 @@ git config core.hooksPath .githooks  # Enable hooks (run once)
 ### Core Structure
 - `mypalclara/core/memory_manager.py` - Core orchestrator: session handling, Rook integration, prompt building with Clara's persona
 - `mypalclara/core/llm/` - Unified LLM provider architecture (modular, supports OpenRouter, NanoGPT, OpenAI, Anthropic)
-- `mypalclara/core/memory/` - Rook memory system (Qdrant/pgvector for vectors, OpenAI embeddings)
+- `mypalclara/core/memory/` - Memory system: episodes, layered retrieval, reflection, knowledge graph (HuggingFace embeddings)
 - `mypalclara/db/models.py` - SQLAlchemy models: Project, Session, Message, ChannelSummary
 - `mypalclara/db/db.py` - Database setup (SQLite for dev, PostgreSQL for production)
 - `mypalclara/core/email/` - Email monitoring and auto-response system
@@ -72,7 +72,7 @@ git config core.hooksPath .githooks  # Enable hooks (run once)
 | `mypalclara/` | Top-level Python package (all code lives here) |
 | `mypalclara/gateway/` | WebSocket gateway for platform adapters |
 | `mypalclara/adapters/` | Platform adapters (Discord, Teams, Slack, etc.) |
-| `mypalclara/core/memory/` | Rook memory system (Qdrant/pgvector, embeddings) |
+| `mypalclara/core/memory/` | Memory system: episodes, layered retrieval, reflection, knowledge graph |
 | `mypalclara/core/mcp/` | MCP plugin system (servers, tools, OAuth) |
 | `mypalclara/core/email/` | Email monitoring and alerts |
 | `mypalclara/core/core_tools/` | Tool implementations including MCP management |
@@ -87,11 +87,15 @@ git config core.hooksPath .githooks  # Enable hooks (run once)
 | `web-ui/backend/` | Rails API-only backend (game logic, gateway proxy) |
 | `web-ui/frontend/` | React SPA (Vite, TypeScript, TailwindCSS) |
 
-### Memory System (Rook)
-- **User memories**: Persistent facts/preferences per user
-- **Project memories**: Topic-specific context per project
-- **Session context**: Recent 20 messages + last session snapshot
-- **Session summary**: LLM-generated on timeout (30 min idle)
+### Memory System (Clara's Memory Palace)
+- **Episodes**: Verbatim conversation chunks stored in Qdrant (`clara_episodes`) with topics, emotional tone, significance
+- **Semantic memories**: Extracted facts/preferences in Qdrant (`clara_memories`)
+- **Knowledge graph**: Typed entities (person/project/place/concept/event) with temporal relationships in FalkorDB
+- **Layered retrieval**: L0 identity → L1 user profile → L2 relevant context (episodes + memories + graph)
+- **Reflection**: Session-end extraction of episodes, entities, and self-awareness notes
+- **Narrative arcs**: Periodic synthesis connecting episodes into ongoing stories
+- **Entity resolver**: Maps platform IDs (discord-123) to human names (Josh)
+- **Embeddings**: HuggingFace (BAAI/bge-large-en-v1.5) via Inference API, or OpenAI (configurable)
 
 ### Gateway System
 WebSocket server for platform adapters with streaming support. Gateway now serves both WebSocket (port 18789) and HTTP API (port 18790).
@@ -382,7 +386,8 @@ Each user can get a persistent Docker container with personal workspace files an
   - Backward compatibility via `make_llm()`, `make_llm_streaming()`, etc.
 - `LLM_PROVIDER=anthropic` uses native Anthropic SDK with native tool calling (recommended for clewdr)
 - Sandbox system uses Docker containers for code execution
-- Rook (Clara's memory system) is in `mypalclara/core/memory/`
+- Memory system in `mypalclara/core/memory/`: episodes, layered retrieval, reflection, graph
+- `memory_manager.py` is thin facade; retrieval uses `build_prompt_layered()` not old `fetch_mem0_context()`
 
 ## Production Deployment
 

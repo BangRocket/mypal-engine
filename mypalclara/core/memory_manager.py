@@ -493,8 +493,18 @@ class MemoryManager:
                 from mypalclara.core.memory.episodes import EpisodeStore
 
                 if ROOK is not None:
+                    # Build qdrant config from env (same source as main memory store)
+                    qdrant_config = {}
+                    qdrant_url = os.getenv("QDRANT_URL")
+                    if qdrant_url:
+                        qdrant_config["url"] = qdrant_url
+                        api_key = os.getenv("QDRANT_API_KEY")
+                        if api_key:
+                            qdrant_config["api_key"] = api_key
+
                     self._episode_store = EpisodeStore(
                         embedding_model=ROOK.embedding_model,
+                        qdrant_config=qdrant_config,
                     )
                     memory_logger.info("Episode store initialized")
             except Exception as e:
@@ -576,9 +586,76 @@ class MemoryManager:
             except Exception as e:
                 memory_logger.warning(f"Entity resolution failed: {e}")
 
-        # Log self-notes
+        # Store self-notes as semantic memories
         self_notes = extract_self_notes(reflection)
-        for note in self_notes:
-            memory_logger.info(f"Self-note: {note}")
+        if self_notes:
+            from mypalclara.core.memory.config import ROOK
+
+            if ROOK is not None:
+                for note in self_notes:
+                    memory_logger.info(f"Self-note: {note}")
+                    try:
+                        ROOK.add(
+                            messages=[{"role": "assistant", "content": note}],
+                            user_id=user_id,
+                            agent_id=self.agent_id,
+                            metadata={"memory_type": "self_awareness", "category": "self_awareness"},
+                            infer=False,
+                        )
+                    except Exception as e:
+                        memory_logger.debug(f"Failed to store self-note: {e}")
+            else:
+                for note in self_notes:
+                    memory_logger.info(f"Self-note: {note}")
 
         return reflection
+
+    def run_narrative_synthesis(self, user_id: str) -> list[dict]:
+        """Synthesize narrative arcs from recent episodes.
+
+        Called periodically (daily/weekly) to connect episodes into
+        ongoing stories and arcs.
+        """
+        from mypalclara.core.memory.reflection import synthesize_narratives
+
+        if not self.episode_store:
+            return []
+
+        # Get recent episodes
+        recent = self.episode_store.get_recent(user_id, limit=20)
+        episode_dicts = [
+            ep.__dict__ if hasattr(ep, "__dict__") else ep
+            for ep in recent
+        ]
+
+        # Get existing arcs
+        existing_arcs = [
+            arc.__dict__ if hasattr(arc, "__dict__") else arc
+            for arc in self.episode_store.get_active_arcs(user_id)
+        ]
+
+        # Synthesize
+        arcs = synthesize_narratives(episode_dicts, self.llm, existing_arcs)
+
+        # Store arcs
+        import uuid
+
+        from mypalclara.core.memory.episodes import NarrativeArc
+
+        for arc_dict in arcs:
+            try:
+                arc = NarrativeArc(
+                    id=str(uuid.uuid4()),
+                    title=arc_dict.get("title", ""),
+                    summary=arc_dict.get("summary", ""),
+                    status=arc_dict.get("status", "active"),
+                    user_id=user_id,
+                    key_episode_ids=arc_dict.get("key_episodes", []),
+                    emotional_trajectory=arc_dict.get("emotional_trajectory", ""),
+                )
+                self.episode_store.store_arc(arc)
+            except Exception as e:
+                memory_logger.warning(f"Failed to store arc: {e}")
+
+        memory_logger.info(f"Narrative synthesis: {len(arcs)} arcs for {user_id}")
+        return arcs

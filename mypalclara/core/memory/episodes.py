@@ -100,6 +100,68 @@ class Episode:
         )
 
 
+@dataclass
+class NarrativeArc:
+    """A narrative arc synthesized from multiple episodes over time."""
+
+    id: str
+    title: str                    # "The job search", "Sleep and mental health"
+    summary: str                  # 2-3 sentences describing trajectory
+    status: str = "active"        # active, resolved, dormant
+    user_id: str = ""
+    agent_id: str = "clara"
+    key_episode_ids: list[str] = field(default_factory=list)
+    emotional_trajectory: str = ""  # "started anxious, becoming more determined"
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    def to_payload(self) -> dict:
+        return {
+            "id": self.id,
+            "type": "narrative_arc",
+            "title": self.title,
+            "summary": self.summary,
+            "status": self.status,
+            "user_id": self.user_id,
+            "agent_id": self.agent_id,
+            "key_episode_ids": self.key_episode_ids,
+            "emotional_trajectory": self.emotional_trajectory,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+        }
+
+    @classmethod
+    def from_payload(cls, payload: dict) -> "NarrativeArc":
+        created = payload.get("created_at")
+        if isinstance(created, str):
+            created = datetime.fromisoformat(created)
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=UTC)
+        elif created is None:
+            created = datetime.now(UTC)
+
+        updated = payload.get("updated_at")
+        if isinstance(updated, str):
+            updated = datetime.fromisoformat(updated)
+            if updated.tzinfo is None:
+                updated = updated.replace(tzinfo=UTC)
+        elif updated is None:
+            updated = datetime.now(UTC)
+
+        return cls(
+            id=payload["id"],
+            title=payload.get("title", ""),
+            summary=payload.get("summary", ""),
+            status=payload.get("status", "active"),
+            user_id=payload.get("user_id", ""),
+            agent_id=payload.get("agent_id", "clara"),
+            key_episode_ids=payload.get("key_episode_ids", []),
+            emotional_trajectory=payload.get("emotional_trajectory", ""),
+            created_at=created,
+            updated_at=updated,
+        )
+
+
 class EpisodeStore:
     """Storage and retrieval for conversation episodes in Qdrant.
 
@@ -333,6 +395,50 @@ class EpisodeStore:
         # Semantic search scoped to the user gives better recall than
         # exact payload matching on the topics list.
         return self.search(query=topic, user_id=user_id, limit=limit)
+
+    # ------------------------------------------------------------------
+    # Narrative arcs
+    # ------------------------------------------------------------------
+
+    def store_arc(self, arc: "NarrativeArc") -> str:
+        """Store a narrative arc in the episodes collection.
+
+        Arcs are stored alongside episodes with type=narrative_arc in metadata.
+        """
+        embedding = self.embedding_model.embed(
+            f"{arc.title}: {arc.summary}", "add"
+        )
+        point = PointStruct(
+            id=arc.id,
+            vector=embedding,
+            payload=arc.to_payload(),
+        )
+        self.client.upsert(
+            collection_name=EPISODES_COLLECTION,
+            points=[point],
+        )
+        logger.info(f"Stored arc '{arc.title}' ({arc.id})")
+        return arc.id
+
+    def get_active_arcs(self, user_id: str, limit: int = 10) -> list["NarrativeArc"]:
+        """Get active narrative arcs for a user."""
+        try:
+            results = self.client.scroll(
+                collection_name=EPISODES_COLLECTION,
+                scroll_filter=Filter(
+                    must=[
+                        FieldCondition(key="user_id", match=MatchValue(value=user_id)),
+                        FieldCondition(key="type", match=MatchValue(value="narrative_arc")),
+                        FieldCondition(key="status", match=MatchValue(value="active")),
+                    ]
+                ),
+                limit=limit,
+            )
+            points = results[0] if results else []
+            return [NarrativeArc.from_payload(p.payload) for p in points]
+        except Exception as e:
+            logger.warning(f"Failed to get active arcs: {e}")
+            return []
 
 
 # ---------------------------------------------------------------------------

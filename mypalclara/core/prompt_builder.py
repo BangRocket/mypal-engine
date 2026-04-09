@@ -407,6 +407,17 @@ class PromptBuilder:
             except Exception as e:
                 logger.debug(f"Graph search failed: {e}")
 
+        # L1: Active narrative arcs
+        active_arcs = []
+        if memory_manager and memory_manager.episode_store:
+            try:
+                active_arcs = [
+                    arc.__dict__ if hasattr(arc, "__dict__") else arc
+                    for arc in memory_manager.episode_store.get_active_arcs(user_id)
+                ]
+            except Exception as e:
+                logger.debug(f"Active arc fetch failed: {e}")
+
         # L2: Relevant episodes (semantic search on current message)
         relevant_episodes = []
         if memory_manager and memory_manager.episode_store:
@@ -425,6 +436,7 @@ class PromptBuilder:
             user_id=user_id,
             semantic_memories=semantic_memories,
             recent_episodes=recent_episodes,
+            active_arcs=active_arcs,
             graph_context=graph_context,
             relevant_episodes=relevant_episodes,
             relevant_memories=semantic_memories,  # Same data, filtered differently by L2

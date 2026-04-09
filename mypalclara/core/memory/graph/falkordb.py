@@ -83,9 +83,37 @@ class MemoryGraph:
             llm_config = UnifiedLLMConfig(**llm_config)
         self.llm = UnifiedLLM(llm_config)
 
+        # Entity resolver (lazy)
+        self._entity_resolver = None
+
         # Cache (lazy)
         self._cache: "GraphCache | None" = None
         self._cache_enabled = os.getenv("GRAPH_CACHE_ENABLED", "true").lower() == "true"
+
+    @property
+    def entity_resolver(self):
+        """Lazy-loaded entity resolver for name resolution."""
+        if self._entity_resolver is None:
+            try:
+                from mypalclara.core.memory.entity_resolver import EntityResolver
+
+                self._entity_resolver = EntityResolver()
+            except Exception:
+                pass
+        return self._entity_resolver
+
+    def _resolve_name(self, name: str) -> str:
+        """Resolve a name through the entity resolver.
+
+        If the name looks like a platform ID (discord-123), try to resolve
+        it to a human name. Otherwise return as-is.
+        """
+        if self.entity_resolver is None:
+            return name
+        resolved = self.entity_resolver.resolve(name)
+        if resolved != name:
+            return resolved.lower().replace(" ", "_")
+        return name
 
     @property
     def cache(self) -> "GraphCache | None":
@@ -167,11 +195,14 @@ class MemoryGraph:
                 pred = triple.get("predicate", "").strip()
                 obj = triple.get("object", "").strip()
                 if subj and pred and obj:
+                    # Resolve platform IDs to human names
+                    subj = self._resolve_name(subj.lower().replace(" ", "_"))
+                    obj = self._resolve_name(obj.lower().replace(" ", "_"))
                     triples.append({
-                        "source": subj.lower().replace(" ", "_"),
+                        "source": subj,
                         "source_type": triple.get("subject_type", "concept"),
                         "relationship": sanitize_relationship_for_cypher(pred.lower().replace(" ", "_")),
-                        "destination": obj.lower().replace(" ", "_"),
+                        "destination": obj,
                         "destination_type": triple.get("object_type", "concept"),
                         "temporal_note": triple.get("temporal_note", ""),
                     })
