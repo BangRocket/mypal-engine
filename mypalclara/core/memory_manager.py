@@ -561,6 +561,8 @@ class MemoryManager:
             return None
 
         # Store episodes
+        if not self.episode_store:
+            memory_logger.warning("Episode store not available — episodes will not be stored")
         if self.episode_store:
             episode_dicts = build_episodes_from_reflection(
                 reflection, messages, user_id, session_id

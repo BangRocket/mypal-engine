@@ -128,7 +128,7 @@ class MessageProcessor:
         self._vm_manager: Any = None
         self._background_tasks: set[asyncio.Task] = set()
         self._message_counts: dict[str, int] = {}  # user_id -> messages since last reflection
-        self._reflection_threshold = 10  # Reflect every N message pairs
+        self._reflection_threshold = int(os.getenv("REFLECTION_THRESHOLD", "5"))
 
     def set_vm_manager(self, vm_manager: Any) -> None:
         """Set the VM manager for per-user VM access."""
