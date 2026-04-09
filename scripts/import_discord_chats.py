@@ -23,6 +23,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import sys
@@ -208,6 +209,17 @@ def get_session_user_id(session: list[dict]) -> str:
     return f"discord-{most_active_id}"
 
 
+def session_fingerprint(session: list[dict], user_id: str) -> str:
+    """Create a dedup fingerprint for a session.
+
+    Hash of user_id + first/last timestamps + message count.
+    """
+    first_ts = session[0].get("timestamp", "") if session else ""
+    last_ts = session[-1].get("timestamp", "") if session else ""
+    key = f"{user_id}|{first_ts}|{last_ts}|{len(session)}"
+    return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -218,6 +230,7 @@ def main():
     parser.add_argument("--file", type=str, help="Specific chat file to import")
     parser.add_argument("--max-session-messages", type=int, default=40, help="Max messages per session (default: 40)")
     parser.add_argument("--gap-minutes", type=int, default=30, help="Gap for session splitting (default: 30)")
+    parser.add_argument("--reset", action="store_true", help="Clear all memory data before importing")
     args = parser.parse_args()
 
     from mypalclara.core.memory.config import PALACE
@@ -235,6 +248,55 @@ def main():
     if not mm.episode_store:
         logger.error("Episode store not available")
         sys.exit(1)
+
+    # Reset all memory data if requested
+    if args.reset:
+        logger.warning("Resetting ALL memory data...")
+
+        # Clear episodes collection
+        try:
+            from mypalclara.core.memory.episodes import EPISODES_COLLECTION
+
+            ep_client = mm.episode_store.client
+            existing = [c.name for c in ep_client.get_collections().collections]
+            if EPISODES_COLLECTION in existing:
+                ep_client.delete_collection(EPISODES_COLLECTION)
+                logger.info(f"  Deleted {EPISODES_COLLECTION} collection")
+            mm.episode_store._ensure_collection()
+            logger.info(f"  Recreated {EPISODES_COLLECTION} collection")
+        except Exception as e:
+            logger.warning(f"  Failed to reset episodes: {e}")
+
+        # Clear semantic memories collection
+        try:
+            vs = PALACE.vector_store
+            if hasattr(vs, "delete_col"):
+                vs.delete_col()
+            from mypalclara.core.memory.config import EMBEDDING_MODEL_DIMS
+            if hasattr(vs, "create_col"):
+                vs.create_col(vector_size=EMBEDDING_MODEL_DIMS, distance="Cosine")
+            logger.info("  Reset semantic memories collection")
+        except Exception as e:
+            logger.warning(f"  Failed to reset semantic memories: {e}")
+
+        # Clear graph
+        try:
+            if hasattr(PALACE, "graph") and PALACE.graph is not None:
+                PALACE.graph.reset()
+                PALACE.graph._create_indexes()
+                logger.info("  Reset graph")
+        except Exception as e:
+            logger.warning(f"  Failed to reset graph: {e}")
+
+        # Clear memory history
+        try:
+            if hasattr(PALACE, "db"):
+                PALACE.db.reset()
+                logger.info("  Reset memory history")
+        except Exception as e:
+            logger.warning(f"  Failed to reset memory history: {e}")
+
+        logger.info("Reset complete")
 
     # Register known users with entity resolver
     if mm.entity_resolver:
@@ -300,11 +362,20 @@ def main():
 
         # Process each session
         start = time.time()
+        seen_fingerprints: set[str] = set()
+        skipped_dupes = 0
 
         for i, session in enumerate(sessions):
             user_id = get_session_user_id(session)
             users = get_session_users(session)
             ts_start = session[0].get("timestamp", "")[:16]
+
+            # Dedup check
+            fp = session_fingerprint(session, user_id)
+            if fp in seen_fingerprints:
+                skipped_dupes += 1
+                continue
+            seen_fingerprints.add(fp)
 
             logger.info(
                 f"  [{i+1}/{len(sessions)}] Session: {len(session)} msgs, "
