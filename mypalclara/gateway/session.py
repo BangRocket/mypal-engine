@@ -335,6 +335,9 @@ class SessionManager:
                 if finalize_emotional:
                     await self._finalize_session_emotional_context(session)
 
+                # Run episodic reflection (extract episodes, entities, self-notes)
+                await self._run_session_reflection(session)
+
                 del self._sessions[key]
                 removed += 1
 
@@ -434,6 +437,99 @@ class SessionManager:
             logger.debug("Topic extraction module not available")
         except Exception as e:
             logger.debug(f"Failed to extract topics: {e}")
+
+    async def _run_session_reflection(self, session: UserSession) -> None:
+        """Run episodic reflection on a completed session.
+
+        Extracts meaningful episodes, updates entities in the knowledge graph,
+        and records self-awareness notes.
+        """
+        try:
+            from mypalclara.core.memory_manager import MemoryManager
+
+            mm = MemoryManager.get_instance()
+        except (RuntimeError, ImportError):
+            return
+
+        try:
+            conversation_messages = await self._fetch_session_messages(session)
+            if not conversation_messages or len(conversation_messages) < 4:
+                return  # Too short to reflect on
+
+            import asyncio
+            import concurrent.futures
+
+            loop = asyncio.get_event_loop()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                result = await loop.run_in_executor(
+                    pool,
+                    lambda: mm.reflect_on_session(
+                        conversation_messages,
+                        session.user_id,
+                        session_id=session.channel_id,
+                    ),
+                )
+
+            if result:
+                ep_count = len(result.get("episodes", []))
+                ent_count = len(result.get("entities", []))
+                logger.info(
+                    f"Session reflection for {session.user_id}: "
+                    f"{ep_count} episodes, {ent_count} entities"
+                )
+
+        except Exception as e:
+            logger.warning(f"Session reflection failed: {e}")
+
+    async def _fetch_session_messages(self, session: UserSession) -> list[dict]:
+        """Fetch conversation messages for a session from the database.
+
+        Returns list of dicts with role, content, timestamp keys.
+        """
+        try:
+            from mypalclara.db import SessionLocal
+            from mypalclara.db.models import Message
+
+            db = SessionLocal()
+            try:
+                # Get the most recent thread for this user/channel
+                from mypalclara.db.models import Session
+
+                thread = (
+                    db.query(Session)
+                    .filter(
+                        Session.user_id == session.user_id,
+                        Session.context_id == session.channel_id,
+                    )
+                    .order_by(Session.updated_at.desc())
+                    .first()
+                )
+                if not thread:
+                    return []
+
+                messages = (
+                    db.query(Message)
+                    .filter(Message.thread_id == thread.id)
+                    .order_by(Message.created_at.asc())
+                    .limit(50)
+                    .all()
+                )
+
+                return [
+                    {
+                        "role": msg.role,
+                        "content": msg.content,
+                        "name": msg.user_id if msg.role == "user" else "Clara",
+                        "timestamp": msg.created_at.isoformat() if msg.created_at else "",
+                    }
+                    for msg in messages
+                ]
+            finally:
+                db.close()
+
+        except Exception as e:
+            logger.debug(f"Failed to fetch session messages: {e}")
+            return []
 
     async def _fetch_session_conversation(self, session: UserSession) -> str:
         """Fetch recent conversation text for a session from the database.

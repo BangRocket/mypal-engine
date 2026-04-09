@@ -49,6 +49,11 @@ MEMORY_CONTEXT_SLICE = 4  # Recent messages for memory extraction context
 MEMORY_ACCESS_LOG_RETENTION_DAYS = 90
 PRUNE_CHECK_FREQUENCY = 100  # Check every N promote_memory calls
 
+# Episodic memory
+EPISODE_MIN_SIGNIFICANCE = float(os.getenv("EPISODE_MIN_SIGNIFICANCE", "0.3"))
+EPISODE_SEARCH_LIMIT = int(os.getenv("EPISODE_SEARCH_LIMIT", "5"))
+EPISODE_RECENT_LIMIT = int(os.getenv("EPISODE_RECENT_LIMIT", "5"))
+
 # Timezone for message timestamps (defaults to America/New_York)
 DEFAULT_TIMEZONE = os.getenv("DEFAULT_TIMEZONE", "America/New_York")
 

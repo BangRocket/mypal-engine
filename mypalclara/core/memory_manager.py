@@ -98,7 +98,7 @@ class MemoryManager:
         self.agent_id = agent_id
         self._on_memory_event = on_memory_event
 
-        # Sub-managers
+        # Sub-managers (existing)
         self._session_manager = SessionManager(llm_callable=llm_callable)
         self._dynamics_manager = MemoryDynamicsManager()
         self._intention_manager = IntentionManager(agent_id=agent_id)
@@ -116,6 +116,11 @@ class MemoryManager:
             dynamics_manager=self._dynamics_manager,
             on_memories_changed=self._memory_retriever._invalidate_memory_cache,
         )
+
+        # New subsystems (episodic memory, entity resolution, layered retrieval)
+        self._episode_store = None  # Lazy — initialized on first use
+        self._entity_resolver = None  # Lazy
+        self._layered_retrieval = None  # Lazy
 
     @classmethod
     def get_instance(cls) -> "MemoryManager":
@@ -451,3 +456,104 @@ class MemoryManager:
     def format_intentions_for_prompt(self, fired_intentions: list[dict]) -> str:
         """Format fired intentions for the system prompt."""
         return self._intention_manager.format_intentions_for_prompt(fired_intentions)
+
+    # ---------- Episode Store ----------
+
+    @property
+    def episode_store(self):
+        """Lazy-initialized episode store."""
+        if self._episode_store is None:
+            try:
+                from mypalclara.core.memory.config import ROOK
+                from mypalclara.core.memory.episodes import EpisodeStore
+
+                if ROOK is not None:
+                    self._episode_store = EpisodeStore(
+                        embedding_model=ROOK.embedding_model,
+                    )
+                    memory_logger.info("Episode store initialized")
+            except Exception as e:
+                memory_logger.warning(f"Episode store unavailable: {e}")
+        return self._episode_store
+
+    @property
+    def entity_resolver(self):
+        """Lazy-initialized entity resolver."""
+        if self._entity_resolver is None:
+            try:
+                from mypalclara.core.memory.entity_resolver import EntityResolver
+
+                self._entity_resolver = EntityResolver()
+                memory_logger.info("Entity resolver initialized")
+            except Exception as e:
+                memory_logger.warning(f"Entity resolver unavailable: {e}")
+        return self._entity_resolver
+
+    @property
+    def layered_retrieval(self):
+        """Lazy-initialized layered retrieval."""
+        if self._layered_retrieval is None:
+            try:
+                from mypalclara.core.memory.retrieval_layers import LayeredRetrieval
+
+                self._layered_retrieval = LayeredRetrieval()
+                memory_logger.info("Layered retrieval initialized")
+            except Exception as e:
+                memory_logger.warning(f"Layered retrieval unavailable: {e}")
+        return self._layered_retrieval
+
+    # ---------- Session Reflection ----------
+
+    def reflect_on_session(
+        self,
+        messages: list[dict],
+        user_id: str,
+        session_id: str | None = None,
+    ) -> dict | None:
+        """Run session reflection — extract episodes, entities, self-notes.
+
+        Call this after a conversation session ends. Stores episodes,
+        updates the knowledge graph, and returns the reflection result.
+        """
+        from mypalclara.core.memory.reflection import (
+            build_episodes_from_reflection,
+            extract_self_notes,
+            reflect_on_session,
+        )
+
+        reflection = reflect_on_session(messages, self.llm)
+        if not reflection:
+            return None
+
+        # Store episodes
+        if self.episode_store:
+            episode_dicts = build_episodes_from_reflection(
+                reflection, messages, user_id, session_id
+            )
+            for ep_dict in episode_dicts:
+                try:
+                    from mypalclara.core.memory.episodes import Episode
+
+                    episode = Episode(
+                        id=str(__import__("uuid").uuid4()),
+                        **ep_dict,
+                    )
+                    self.episode_store.store(episode)
+                except Exception as e:
+                    memory_logger.warning(f"Failed to store episode: {e}")
+
+        # Update entity resolver from conversation
+        if self.entity_resolver:
+            try:
+                self.entity_resolver.register_from_conversation(
+                    messages, user_id, llm_callable=self.llm
+                )
+            except Exception as e:
+                memory_logger.warning(f"Entity resolution failed: {e}")
+
+        # Log self-notes
+        self_notes = extract_self_notes(reflection)
+        for note in self_notes:
+            memory_logger.info(f"Self-note: {note}")
+
+        return reflection

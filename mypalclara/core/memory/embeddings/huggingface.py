@@ -30,11 +30,12 @@ class HuggingFaceEmbedding(EmbeddingBase):
 
         from huggingface_hub import InferenceClient
 
-        self._client = InferenceClient(
-            provider="hf-inference",
-            model=self.config.model,
-            token=token,
-        )
+        kwargs = {"model": self.config.model, "token": token}
+        try:
+            self._client = InferenceClient(provider="hf-inference", **kwargs)
+        except TypeError:
+            # Older huggingface_hub without provider support
+            self._client = InferenceClient(**kwargs)
         model_lower = (self.config.model or "").lower()
         self._is_e5 = "e5" in model_lower
         self._is_bge = "bge" in model_lower

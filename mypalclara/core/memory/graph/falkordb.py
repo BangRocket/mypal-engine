@@ -1,9 +1,14 @@
-"""FalkorDB graph store implementation for Clara Memory System.
+"""FalkorDB graph store — typed entities with temporal relationships.
 
-Simplified graph memory using:
-- 1 LLM call on write (extract triples)
+Architecture:
+- 1 LLM call on write (extract typed triples with temporal info)
 - 0 LLM calls on read (vector KNN search)
 - FalkorDB native vector indexing
+
+Entity types: person, project, place, concept, event
+Relationships carry temporal metadata (valid_from, valid_to) and
+source_episode_id linking back to the conversation where the fact
+was learned.
 """
 
 import logging
@@ -29,13 +34,13 @@ logger = logging.getLogger(__name__)
 
 
 class MemoryGraph:
-    """FalkorDB-based graph memory for entity and relationship tracking.
+    """FalkorDB-based graph memory with typed entities and temporal relationships.
 
-    Write path: 1 LLM call to extract (subject, predicate, object) triples,
-    then MERGE nodes with embeddings and MERGE relationships.
+    Write path: 1 LLM call to extract typed triples with temporal info,
+    then MERGE nodes (with type, aliases) and relationships (with temporal fields).
 
-    Read path: Embed query, use vec.cosineDistance for similarity search,
-    traverse relationships from matched nodes.
+    Read path: Embed query, vector KNN search, traverse relationships.
+    Returns entity types and temporal metadata.
     """
 
     def __init__(self, config):
@@ -106,6 +111,7 @@ class MemoryGraph:
         for stmt in [
             "CREATE INDEX FOR (n:__Entity__) ON (n.user_id)",
             "CREATE INDEX FOR (n:__Entity__) ON (n.name)",
+            "CREATE INDEX FOR (n:__Entity__) ON (n.type)",
             f"CREATE VECTOR INDEX FOR (n:__Entity__) ON (n.embedding) OPTIONS {{dim: {EMBEDDING_MODEL_DIMS}, similarityFunction: 'cosine'}}",
         ]:
             try:
@@ -115,14 +121,16 @@ class MemoryGraph:
 
     # ---- Write path ----
 
-    def add(self, data: str, filters: dict) -> dict:
-        """Extract triples from text and add to graph.
+    def add(self, data: str, filters: dict, source_episode_id: str | None = None) -> dict:
+        """Extract typed triples from text and add to graph.
 
-        Makes exactly 1 LLM call to extract triples, then MERGEs nodes
-        and relationships into FalkorDB.
+        Args:
+            data: Text to extract triples from.
+            filters: Must contain user_id.
+            source_episode_id: Optional episode ID linking to the source conversation.
         """
         triples = self._extract_triples(data, filters)
-        added = self._merge_triples(triples, filters)
+        added = self._merge_triples(triples, filters, source_episode_id)
 
         if self.cache and added:
             self.cache.invalidate_user(filters["user_id"])
@@ -133,7 +141,7 @@ class MemoryGraph:
         return {"deleted_entities": [], "added_entities": added}
 
     def _extract_triples(self, data: str, filters: dict) -> list[dict]:
-        """Extract (subject, predicate, object) triples via single LLM call."""
+        """Extract typed triples with temporal info via single LLM call."""
         user_id = filters.get("user_id", "user")
         prompt = EXTRACT_TRIPLES_PROMPT.replace("USER_ID", user_id)
 
@@ -159,19 +167,22 @@ class MemoryGraph:
                 pred = triple.get("predicate", "").strip()
                 obj = triple.get("object", "").strip()
                 if subj and pred and obj:
-                    triples.append(
-                        {
-                            "source": subj.lower().replace(" ", "_"),
-                            "relationship": sanitize_relationship_for_cypher(pred.lower().replace(" ", "_")),
-                            "destination": obj.lower().replace(" ", "_"),
-                        }
-                    )
+                    triples.append({
+                        "source": subj.lower().replace(" ", "_"),
+                        "source_type": triple.get("subject_type", "concept"),
+                        "relationship": sanitize_relationship_for_cypher(pred.lower().replace(" ", "_")),
+                        "destination": obj.lower().replace(" ", "_"),
+                        "destination_type": triple.get("object_type", "concept"),
+                        "temporal_note": triple.get("temporal_note", ""),
+                    })
 
         logger.debug("Extracted %d triples", len(triples))
         return triples
 
-    def _merge_triples(self, triples: list[dict], filters: dict) -> list:
-        """MERGE nodes and relationships for each triple."""
+    def _merge_triples(
+        self, triples: list[dict], filters: dict, source_episode_id: str | None = None
+    ) -> list:
+        """MERGE typed nodes and temporal relationships for each triple."""
         user_id = filters["user_id"]
         results = []
 
@@ -179,6 +190,9 @@ class MemoryGraph:
             source = triple["source"]
             destination = triple["destination"]
             relationship = triple["relationship"]
+            source_type = triple.get("source_type", "concept")
+            dest_type = triple.get("destination_type", "concept")
+            temporal_note = triple.get("temporal_note", "")
 
             if not source or not destination or not relationship:
                 continue
@@ -188,19 +202,32 @@ class MemoryGraph:
 
             cypher = f"""
             MERGE (s:__Entity__ {{name: $source_name, user_id: $user_id}})
-            ON CREATE SET s.created_at = timestamp(), s.mentions = 1
-            ON MATCH SET s.mentions = coalesce(s.mentions, 0) + 1, s.updated_at = timestamp()
-            SET s.embedding = vecf32($source_embedding)
+            ON CREATE SET s.created_at = timestamp(), s.mentions = 1,
+                          s.type = $source_type, s.first_seen = timestamp()
+            ON MATCH SET s.mentions = coalesce(s.mentions, 0) + 1,
+                         s.updated_at = timestamp(), s.last_seen = timestamp()
+            SET s.embedding = vecf32($source_embedding),
+                s.type = CASE WHEN s.type = 'concept' AND $source_type <> 'concept'
+                              THEN $source_type ELSE coalesce(s.type, $source_type) END
             WITH s
             MERGE (d:__Entity__ {{name: $dest_name, user_id: $user_id}})
-            ON CREATE SET d.created_at = timestamp(), d.mentions = 1
-            ON MATCH SET d.mentions = coalesce(d.mentions, 0) + 1, d.updated_at = timestamp()
-            SET d.embedding = vecf32($dest_embedding)
+            ON CREATE SET d.created_at = timestamp(), d.mentions = 1,
+                          d.type = $dest_type, d.first_seen = timestamp()
+            ON MATCH SET d.mentions = coalesce(d.mentions, 0) + 1,
+                         d.updated_at = timestamp(), d.last_seen = timestamp()
+            SET d.embedding = vecf32($dest_embedding),
+                d.type = CASE WHEN d.type = 'concept' AND $dest_type <> 'concept'
+                              THEN $dest_type ELSE coalesce(d.type, $dest_type) END
             WITH s, d
             MERGE (s)-[r:{relationship}]->(d)
-            ON CREATE SET r.created_at = timestamp(), r.mentions = 1
-            ON MATCH SET r.mentions = coalesce(r.mentions, 0) + 1, r.updated_at = timestamp()
-            RETURN s.name AS source, type(r) AS relationship, d.name AS target
+            ON CREATE SET r.created_at = timestamp(), r.mentions = 1,
+                          r.valid_from = $temporal_note,
+                          r.source_episode_id = $source_episode_id
+            ON MATCH SET r.mentions = coalesce(r.mentions, 0) + 1,
+                         r.updated_at = timestamp()
+            RETURN s.name AS source, s.type AS source_type,
+                   type(r) AS relationship,
+                   d.name AS target, d.type AS target_type
             """
 
             try:
@@ -212,6 +239,10 @@ class MemoryGraph:
                         "user_id": user_id,
                         "source_embedding": source_embedding,
                         "dest_embedding": dest_embedding,
+                        "source_type": source_type,
+                        "dest_type": dest_type,
+                        "temporal_note": temporal_note,
+                        "source_episode_id": source_episode_id or "",
                     },
                 )
                 results.extend(result)
@@ -225,8 +256,7 @@ class MemoryGraph:
     def search(self, query: str, filters: dict, limit: int = 10) -> list:
         """Search for related entities using vector KNN search.
 
-        No LLM calls -- embeds the query, finds similar entity nodes via
-        FalkorDB's native vector index, then traverses their relationships.
+        Returns entity types and relationship metadata.
         """
         user_id = filters["user_id"]
 
@@ -238,11 +268,6 @@ class MemoryGraph:
 
         query_embedding = self.embedding_model.embed(query)
 
-        # Vector similarity search using vec.cosineDistance (proven pattern from main).
-        # cosineDistance returns [0, 2] where 0 = identical; convert to similarity.
-        # The vector index accelerates the distance calculation automatically.
-        # Note: score is computed after the CALL subquery to avoid FalkorDB's
-        # "Variable already declared in outer scope" error with UNION subqueries.
         cypher = """
         MATCH (node:__Entity__ {user_id: $user_id})
         WHERE node.embedding IS NOT NULL
@@ -251,14 +276,22 @@ class MemoryGraph:
         CALL {
             WITH node
             MATCH (node)-[r]->(other:__Entity__ {user_id: $user_id})
-            RETURN node.name AS source, type(r) AS relationship, other.name AS destination
+            RETURN node.name AS source, node.type AS source_type,
+                   type(r) AS relationship,
+                   r.valid_from AS valid_from, r.valid_to AS valid_to,
+                   other.name AS destination, other.type AS dest_type
             UNION
             WITH node
             MATCH (other:__Entity__ {user_id: $user_id})-[r]->(node)
-            RETURN other.name AS source, type(r) AS relationship, node.name AS destination
+            RETURN other.name AS source, other.type AS source_type,
+                   type(r) AS relationship,
+                   r.valid_from AS valid_from, r.valid_to AS valid_to,
+                   node.name AS destination, node.type AS dest_type
         }
-        WITH DISTINCT source, relationship, destination, similarity
-        RETURN source, relationship, destination, similarity AS score
+        WITH DISTINCT source, source_type, relationship, destination, dest_type,
+                      valid_from, valid_to, similarity
+        RETURN source, source_type, relationship, destination, dest_type,
+               valid_from, valid_to, similarity AS score
         ORDER BY score DESC
         LIMIT $limit
         """
@@ -279,13 +312,15 @@ class MemoryGraph:
             key = (r["source"], r["relationship"], r["destination"])
             if key not in seen:
                 seen.add(key)
-                deduped.append(
-                    {
-                        "source": r["source"],
-                        "relationship": r["relationship"],
-                        "destination": r["destination"],
-                    }
-                )
+                deduped.append({
+                    "source": r["source"],
+                    "source_type": r.get("source_type", ""),
+                    "relationship": r["relationship"],
+                    "destination": r["destination"],
+                    "dest_type": r.get("dest_type", ""),
+                    "valid_from": r.get("valid_from", ""),
+                    "valid_to": r.get("valid_to", ""),
+                })
             if len(deduped) >= limit:
                 break
 
@@ -298,7 +333,7 @@ class MemoryGraph:
     # ---- Other operations ----
 
     def get_all(self, filters: dict, limit: int = 100) -> list:
-        """Get all relationships for a user."""
+        """Get all relationships for a user with type and temporal info."""
         user_id = filters["user_id"]
 
         if self.cache:
@@ -309,18 +344,46 @@ class MemoryGraph:
         results = self._query(
             """
             MATCH (n:__Entity__ {user_id: $user_id})-[r]->(m:__Entity__ {user_id: $user_id})
-            RETURN n.name AS source, type(r) AS relationship, m.name AS target
+            RETURN n.name AS source, n.type AS source_type,
+                   type(r) AS relationship,
+                   r.valid_from AS valid_from, r.valid_to AS valid_to,
+                   m.name AS target, m.type AS target_type
             LIMIT $limit
             """,
             params={"user_id": user_id, "limit": limit},
         )
 
-        final = [{"source": r["source"], "relationship": r["relationship"], "target": r["target"]} for r in results]
+        final = [
+            {
+                "source": r["source"],
+                "source_type": r.get("source_type", ""),
+                "relationship": r["relationship"],
+                "destination": r["target"],
+                "dest_type": r.get("target_type", ""),
+                "valid_from": r.get("valid_from", ""),
+                "valid_to": r.get("valid_to", ""),
+            }
+            for r in results
+        ]
 
         if self.cache and final:
             self.cache.set_all_relationships(user_id, final, filters.get("agent_id"))
 
         return final
+
+    def get_entities_by_type(self, user_id: str, entity_type: str, limit: int = 50) -> list[dict]:
+        """Get all entities of a specific type for a user."""
+        return self._query(
+            """
+            MATCH (n:__Entity__ {user_id: $user_id, type: $entity_type})
+            RETURN n.name AS name, n.type AS type,
+                   n.mentions AS mentions, n.first_seen AS first_seen,
+                   n.last_seen AS last_seen
+            ORDER BY n.mentions DESC
+            LIMIT $limit
+            """,
+            params={"user_id": user_id, "entity_type": entity_type, "limit": limit},
+        )
 
     def delete_all(self, filters: dict):
         """Delete all graph data for a user."""
