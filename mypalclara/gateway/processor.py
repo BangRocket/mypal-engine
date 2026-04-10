@@ -181,7 +181,7 @@ class MessageProcessor:
             from mypalclara.core import MemoryManager, init_platform, make_llm
 
             init_platform()
-            self._memory_manager = MemoryManager(make_llm)
+            self._memory_manager = MemoryManager(make_llm())
             logger.info("MemoryManager initialized")
         except Exception as e:
             logger.error(f"Failed to initialize MemoryManager: {e}")
