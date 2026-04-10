@@ -23,6 +23,20 @@ WP_USER = os.getenv("WP_USER", "clara")
 WP_APP_PASS = os.getenv("WP_APP_PASS", "")
 
 
+def md_to_html(content: str) -> str:
+    """Convert markdown to HTML for WordPress."""
+    try:
+        import markdown
+
+        return markdown.markdown(
+            content,
+            extensions=["fenced_code", "tables", "codehilite"],
+        )
+    except ImportError:
+        paragraphs = content.split("\n\n")
+        return "\n".join(f"<p>{p.strip()}</p>" for p in paragraphs if p.strip())
+
+
 def publish_post(
     title: str,
     content_html: str,

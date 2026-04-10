@@ -2,6 +2,7 @@
 
 When a user asks Clara to write a blog post, she can use this tool to
 research a topic, write the post, and publish it to WordPress.
+She can also publish pre-written content directly.
 """
 
 from __future__ import annotations
@@ -12,30 +13,82 @@ from typing import Any
 from mypalclara.tools._base import ToolContext, ToolDef
 
 MODULE_NAME = "blog"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.1.0"
 
 logger = logging.getLogger("clara.tools.blog")
 
 
 async def _handle_write_blog(args: dict[str, Any], ctx: ToolContext) -> str:
-    """Research and write a blog post, optionally publishing it."""
+    """Research and write a blog post, or publish pre-written content."""
     topic = args.get("topic", "")
+    content = args.get("content", "")
+    title = args.get("title", "")
     publish = args.get("publish", True)
+    tags = [t.strip() for t in args.get("tags", "").split(",") if t.strip()] if args.get("tags") else []
 
-    if not topic:
-        return "Error: Please provide a topic for the blog post."
+    if not topic and not content:
+        return "Error: Please provide a topic to research, or content to publish directly."
 
     try:
+        import os
+
+        # Direct publish mode — content already written
+        if content:
+            if not title:
+                # Try to extract title from first line
+                for line in content.splitlines():
+                    stripped = line.strip()
+                    if stripped:
+                        title = stripped.lstrip("#").strip()
+                        break
+                if not title:
+                    title = topic or "Untitled"
+
+            if not publish:
+                return (
+                    f"Draft ready (not published):\n\n"
+                    f"**{title}**\n\n"
+                    f"{content[:3000]}"
+                )
+
+            if not os.getenv("WP_APP_PASS"):
+                return (
+                    f"Content ready but can't publish (WP_APP_PASS not configured).\n\n"
+                    f"**{title}**\n\n"
+                    f"{content[:2000]}..."
+                )
+
+            from mypalclara.services.blog.publisher import publish_post
+
+            # Content might be markdown or HTML — convert if needed
+            if not any(tag in content for tag in ("<p>", "<h2>", "<div>", "<blockquote>")):
+                from mypalclara.services.blog.publisher import md_to_html
+                html = md_to_html(content)
+            else:
+                html = content
+
+            result = publish_post(
+                title=title,
+                content_html=html,
+                tags=tags or None,
+                excerpt=topic or "",
+            )
+
+            return (
+                f"Blog post published!\n\n"
+                f"**{title}**\n"
+                f"{result.get('link', '')}\n\n"
+                f"Tags: {', '.join(tags) if tags else 'none'}"
+            )
+
+        # Research + write mode
         from mypalclara.core import make_llm
         from mypalclara.services.blog.writer import research_and_write, write_and_publish
 
         llm = make_llm()
 
         if publish:
-            import os
-
             if not os.getenv("WP_APP_PASS"):
-                # Research and write but can't publish
                 result = research_and_write(llm, topic=topic)
                 if not result:
                     return "I wasn't able to put together a blog post on that topic. The research didn't turn up enough to work with."
@@ -48,7 +101,7 @@ async def _handle_write_blog(args: dict[str, Any], ctx: ToolContext) -> str:
 
             result = write_and_publish(llm_callable=llm, topic=topic)
             if not result:
-                return "I tried to write a blog post but the workflow didn't produce anything. The research might not have turned up enough interesting material."
+                return "I tried to write a blog post but the workflow didn't produce anything."
 
             wp = result.get("wordpress", {})
             link = wp.get("link", "")
@@ -89,13 +142,16 @@ SYSTEM_PROMPT = """
 ## Blog Writing
 You can research and write blog posts for mypalclara.com.
 
-When someone asks you to write a blog post:
-- Use the `write_blog_post` tool
-- You'll automatically research the topic via web search, write the post in your voice, and publish it
-- Set publish=false if they just want a draft
-- The topic parameter guides your research — you'll search for current material and write about what you find interesting
+**Two modes:**
 
-You can write about anything — tech, AI, current events, philosophy, whatever catches your attention.
+1. **Research + write**: Give a topic, and you'll research it via web search, write the post, and publish.
+   Use `write_blog_post` with just a `topic`.
+
+2. **Direct publish**: If you've already written the content (in conversation or otherwise),
+   pass it via the `content` parameter to publish directly — no research needed.
+   Use `write_blog_post` with `content` (and optionally `title` and `tags`).
+
+Set publish=false for either mode to get a draft without publishing.
 """.strip()
 
 
@@ -103,9 +159,10 @@ TOOLS = [
     ToolDef(
         name="write_blog_post",
         description=(
-            "Research a topic and write a blog post for mypalclara.com. "
-            "Searches current news/articles, writes in Clara's voice, and publishes to WordPress. "
-            "Use when someone asks you to write or publish a blog post."
+            "Write and publish a blog post to mypalclara.com. "
+            "Two modes: (1) provide a 'topic' to research and write from scratch, "
+            "or (2) provide 'content' (HTML or markdown) to publish directly. "
+            "Use content mode when you've already written the post."
         ),
         parameters={
             "type": "object",
@@ -113,22 +170,36 @@ TOOLS = [
                 "topic": {
                     "type": "string",
                     "description": (
-                        "The topic or angle to write about. Can be broad "
-                        "(e.g., 'AI ethics') or specific (e.g., 'the new GPT-5 announcement'). "
-                        "You'll research and find your own angle."
+                        "Topic to research and write about. Used when you want to "
+                        "research a subject and write a new post. Not needed if providing content directly."
                     ),
+                },
+                "content": {
+                    "type": "string",
+                    "description": (
+                        "Pre-written blog post content (HTML or markdown) to publish directly. "
+                        "Skip research — just publish this content. Use when you've already "
+                        "written the post in conversation."
+                    ),
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Post title. Auto-detected from content if not provided.",
+                },
+                "tags": {
+                    "type": "string",
+                    "description": "Comma-separated tags (e.g., 'AI, technology, ethics').",
                 },
                 "publish": {
                     "type": "boolean",
                     "description": "Whether to publish to WordPress (true) or just return a draft (false). Default: true.",
                 },
             },
-            "required": ["topic"],
         },
         handler=_handle_write_blog,
         emoji="\u270d\ufe0f",
         label="Write Blog Post",
-        detail_keys=["topic", "publish"],
+        detail_keys=["topic", "title", "publish"],
         risk_level="moderate",
         intent="write",
     ),
