@@ -47,9 +47,13 @@ Return JSON:
 {
   "topic": "the specific topic/angle you want to write about",
   "why": "1-2 sentences on why this caught your attention",
-  "search_queries": ["2-3 follow-up search queries for deeper research"],
+  "search_queries": ["short search query 1", "short search query 2"],
   "tags": ["3-5 relevant tags for the blog post"]
 }
+
+IMPORTANT: search_queries must be SHORT (3-8 words each, like actual Google searches).
+Good: "AI persistent memory systems"
+Bad: "What makes an AI different from a standard model - the persistent memory, the workspace..."
 """
 
 BLOG_WRITING_PROMPT = """\
@@ -118,6 +122,9 @@ def _web_search(query: str, max_results: int = 5) -> list[dict]:
 
 def _search_brave(query: str, max_results: int, api_key: str) -> list[dict]:
     """Search via Brave Search API."""
+    # Brave rejects queries over ~400 chars — truncate to first ~10 words
+    if len(query) > 200:
+        query = " ".join(query.split()[:10])
     try:
         import requests
 
