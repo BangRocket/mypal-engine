@@ -86,7 +86,7 @@ Write the full blog post in HTML.
 
 IMAGE_SEARCH_PROMPT = """\
 Given this blog post topic, suggest ONE search query for finding a
-relevant Creative Commons / free stock photo on Unsplash.
+relevant free stock photo.
 
 The image should be evocative and thematic, not literal.
 For a post about AI ethics, don't search "robot" — search something
@@ -102,13 +102,52 @@ Return ONLY the search query, nothing else.
 # Research
 # ---------------------------------------------------------------------------
 
-def _search_tavily(query: str, max_results: int = 5) -> list[dict]:
-    """Search via Tavily API."""
-    api_key = os.getenv("TAVILY_API_KEY")
-    if not api_key:
-        logger.warning("TAVILY_API_KEY not set — cannot search")
+def _web_search(query: str, max_results: int = 5) -> list[dict]:
+    """Search via Brave Search API (preferred) or Tavily (fallback)."""
+    brave_key = os.getenv("BRAVE_API_KEY")
+    if brave_key:
+        return _search_brave(query, max_results, brave_key)
+
+    tavily_key = os.getenv("TAVILY_API_KEY")
+    if tavily_key:
+        return _search_tavily(query, max_results, tavily_key)
+
+    logger.warning("No search API key set (BRAVE_API_KEY or TAVILY_API_KEY)")
+    return []
+
+
+def _search_brave(query: str, max_results: int, api_key: str) -> list[dict]:
+    """Search via Brave Search API."""
+    try:
+        import requests
+
+        resp = requests.get(
+            "https://api.search.brave.com/res/v1/web/search",
+            params={"q": query, "count": max_results},
+            headers={
+                "X-Subscription-Token": api_key,
+                "Accept": "application/json",
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        results = data.get("web", {}).get("results", [])
+        return [
+            {
+                "title": r.get("title", ""),
+                "url": r.get("url", ""),
+                "content": r.get("description", "")[:500],
+            }
+            for r in results
+        ]
+    except Exception as e:
+        logger.error(f"Brave search failed: {e}")
         return []
 
+
+def _search_tavily(query: str, max_results: int, api_key: str) -> list[dict]:
+    """Search via Tavily API (fallback)."""
     try:
         import requests
 
@@ -139,23 +178,56 @@ def _search_tavily(query: str, max_results: int = 5) -> list[dict]:
         return []
 
 
-def _search_unsplash(query: str) -> dict | None:
-    """Search Unsplash for a free image.
+def _search_image(query: str) -> dict | None:
+    """Search for a free/CC image via Brave Image Search or Unsplash API.
 
     Returns dict with url, alt, credit, credit_url or None.
-    Uses Unsplash Source (no API key needed) for direct image URL,
-    or the API if UNSPLASH_ACCESS_KEY is set.
     """
-    access_key = os.getenv("UNSPLASH_ACCESS_KEY")
+    # Try Brave Image Search first
+    brave_key = os.getenv("BRAVE_API_KEY")
+    if brave_key:
+        try:
+            import requests
 
-    if access_key:
+            resp = requests.get(
+                "https://api.search.brave.com/res/v1/images/search",
+                params={
+                    "q": f"{query} free stock photo",
+                    "count": 5,
+                    "safesearch": "moderate",
+                },
+                headers={
+                    "X-Subscription-Token": brave_key,
+                    "Accept": "application/json",
+                },
+                timeout=10,
+            )
+            resp.raise_for_status()
+            results = resp.json().get("results", [])
+
+            # Pick first result with a reasonable image
+            for r in results:
+                img_url = r.get("properties", {}).get("url") or r.get("thumbnail", {}).get("src")
+                if img_url:
+                    return {
+                        "url": img_url,
+                        "alt": r.get("title", query),
+                        "credit": r.get("source", ""),
+                        "credit_url": r.get("url", ""),
+                    }
+        except Exception as e:
+            logger.warning(f"Brave image search failed: {e}")
+
+    # Fallback: Unsplash API (if key available)
+    unsplash_key = os.getenv("UNSPLASH_ACCESS_KEY")
+    if unsplash_key:
         try:
             import requests
 
             resp = requests.get(
                 "https://api.unsplash.com/search/photos",
                 params={"query": query, "per_page": 1, "orientation": "landscape"},
-                headers={"Authorization": f"Client-ID {access_key}"},
+                headers={"Authorization": f"Client-ID {unsplash_key}"},
                 timeout=10,
             )
             resp.raise_for_status()
@@ -169,16 +241,10 @@ def _search_unsplash(query: str) -> dict | None:
                     "credit_url": photo["user"]["links"]["html"],
                 }
         except Exception as e:
-            logger.warning(f"Unsplash API search failed: {e}")
+            logger.warning(f"Unsplash search failed: {e}")
 
-    # Fallback: Unsplash Source (no API key, returns random matching image)
-    clean_query = query.replace(" ", ",")
-    return {
-        "url": f"https://source.unsplash.com/1200x630/?{clean_query}",
-        "alt": query,
-        "credit": "Unsplash",
-        "credit_url": "https://unsplash.com",
-    }
+    logger.info("No image search API available — skipping featured image")
+    return None
 
 
 def _parse_json_response(text: str) -> dict | None:
@@ -216,7 +282,7 @@ def research_and_write(
     if topic:
         # User provided a topic — research it directly
         logger.info(f"Step 1: Researching provided topic: {topic}")
-        initial_results = _search_tavily(topic, max_results=5)
+        initial_results = _web_search(topic, max_results=5)
         follow_up_queries = [topic]  # Will search deeper with the same topic
     else:
         # Clara discovers her own topic
@@ -229,7 +295,7 @@ def research_and_write(
 
         initial_results = []
         for query in initial_queries:
-            results = _search_tavily(query, max_results=3)
+            results = _web_search(query, max_results=3)
             initial_results.extend(results)
 
         if not initial_results:
@@ -267,7 +333,7 @@ def research_and_write(
     logger.info("Step 3: Deep research...")
     research_results = []
     for query in follow_up_queries[:3]:
-        results = _search_tavily(query, max_results=3)
+        results = _web_search(query, max_results=3)
         research_results.extend(results)
 
     all_results = initial_results + research_results if not topic else research_results
@@ -360,7 +426,7 @@ def _find_image(topic: str, llm_callable: Any) -> dict | None:
     except Exception:
         search_query = topic
 
-    image = _search_unsplash(search_query)
+    image = _search_image(search_query)
     if image:
         logger.info(f"Found image: {image['url'][:80]}...")
     return image
