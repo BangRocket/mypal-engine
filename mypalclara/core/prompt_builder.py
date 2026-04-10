@@ -370,8 +370,8 @@ class PromptBuilder:
 
         retrieval = LayeredRetrieval()
 
-        # --- Gather data for each layer (parallel where possible) ---
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+        # --- Gather data for each layer ---
+        from concurrent.futures import ThreadPoolExecutor
 
         semantic_memories = []
         graph_context = []
@@ -379,11 +379,18 @@ class PromptBuilder:
         recent_episodes = []
         active_arcs = []
 
-        # Run embedding-heavy searches in parallel to avoid 3x latency
+        # Pre-embed the query once to warm the cache, so all parallel
+        # searches get cache hits instead of each calling the HF API
+        if PALACE is not None:
+            try:
+                PALACE.embedding_model.embed(user_message, "search")
+            except Exception:
+                pass
+
+        # Run searches in parallel (all hit embedding cache now)
         with ThreadPoolExecutor(max_workers=3, thread_name_prefix="memory") as pool:
             futures = {}
 
-            # Semantic memory search (embeds query)
             if PALACE is not None:
                 futures["semantic"] = pool.submit(
                     lambda: PALACE.search(
@@ -391,13 +398,11 @@ class PromptBuilder:
                     )
                 )
 
-            # Graph search (embeds query)
             if PALACE is not None and hasattr(PALACE, "graph") and PALACE.graph is not None:
                 futures["graph"] = pool.submit(
                     lambda: PALACE.graph.search(user_message, {"user_id": user_id}, limit=20)
                 )
 
-            # Episode search (embeds query)
             if memory_manager and memory_manager.episode_store:
                 futures["episodes"] = pool.submit(
                     lambda: memory_manager.episode_store.search(
