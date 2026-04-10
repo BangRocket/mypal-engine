@@ -103,6 +103,7 @@ async def register_core_tools(registry: "ToolRegistry") -> int:
         Number of tools registered
     """
     from . import (
+        blog_tool,
         browser_tool,
         chat_history,
         files_tool,
@@ -210,6 +211,18 @@ async def register_core_tools(registry: "ToolRegistry") -> int:
         logger.info(f"[core_tools] Registered {len(terminal_tool.TOOLS)} terminal tools")
     except Exception as e:
         logger.warning(f"[core_tools] Failed to register terminal_tool: {e}")
+
+    # Initialize and register blog_tool
+    try:
+        await blog_tool.initialize()
+        for tool_def in blog_tool.TOOLS:
+            registry.register(tool_def)
+            count += 1
+        if blog_tool.SYSTEM_PROMPT:
+            registry.register_system_prompt("blog", blog_tool.SYSTEM_PROMPT)
+        logger.info(f"[core_tools] Registered {len(blog_tool.TOOLS)} blog tools")
+    except Exception as e:
+        logger.warning(f"[core_tools] Failed to register blog_tool: {e}")
 
     return count
 
