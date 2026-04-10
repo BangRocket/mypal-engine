@@ -1094,7 +1094,7 @@ class MessageProcessor:
                 thread = (
                     db.query(Session)
                     .filter(Session.user_id == user_id, Session.context_id == channel_id)
-                    .order_by(Session.updated_at.desc())
+                    .order_by(Session.last_activity_at.desc())
                     .first()
                 )
                 if not thread:

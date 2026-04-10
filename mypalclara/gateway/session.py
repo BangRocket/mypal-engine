@@ -501,7 +501,7 @@ class SessionManager:
                         Session.user_id == session.user_id,
                         Session.context_id == session.channel_id,
                     )
-                    .order_by(Session.updated_at.desc())
+                    .order_by(Session.last_activity_at.desc())
                     .first()
                 )
                 if not thread:
