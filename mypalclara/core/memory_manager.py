@@ -556,7 +556,12 @@ class MemoryManager:
             reflect_on_session,
         )
 
-        reflection = reflect_on_session(messages, self.llm)
+        # Create a fresh LLM callable (self.llm may be a factory like make_llm)
+        from mypalclara.core import make_llm
+
+        llm = make_llm()
+
+        reflection = reflect_on_session(messages, llm)
         if not reflection:
             return None
 

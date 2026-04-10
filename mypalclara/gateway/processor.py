@@ -957,20 +957,11 @@ class MessageProcessor:
             # Track sentiment for emotional context
             await self._track_sentiment(request, context)
 
-            # Store in Palace for semantic memory
+            # Memory extraction is now handled by periodic reflection
+            # (every REFLECTION_THRESHOLD messages) which creates episodes,
+            # extracts entities, and stores self-notes. The old per-message
+            # add_to_memory path caused insert bursts + dedup timeouts.
             loop = asyncio.get_event_loop()
-            try:
-                await loop.run_in_executor(
-                    BLOCKING_EXECUTOR,
-                    lambda: self._memory_manager.add_to_memory(
-                        context["user_id"],
-                        request.content,
-                        response,
-                        is_dm=context["is_dm"],
-                    ),
-                )
-            except Exception as e:
-                logger.warning(f"Failed to store in Palace: {e}")
 
             # Promote memories that were used in this response (FSRS feedback)
             await self._promote_retrieved_memories(context)
