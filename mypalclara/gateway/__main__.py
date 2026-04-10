@@ -488,6 +488,14 @@ async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] 
     else:
         logger.info("Per-user VMs disabled (set USER_VM_ENABLED=true to enable)")
 
+    # Register blog task if configured
+    try:
+        from mypalclara.services.blog.scheduled import register_blog_task
+
+        register_blog_task(scheduler)
+    except Exception as e:
+        logger.debug(f"Blog task not registered: {e}")
+
     # Start scheduler
     await scheduler.start()
 
