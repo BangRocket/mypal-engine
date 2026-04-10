@@ -36,7 +36,7 @@ async def _handle_write_blog(args: dict[str, Any], ctx: ToolContext) -> str:
 
             if not os.getenv("WP_APP_PASS"):
                 # Research and write but can't publish
-                result = research_and_write(llm)
+                result = research_and_write(llm, topic=topic)
                 if not result:
                     return "I wasn't able to put together a blog post on that topic. The research didn't turn up enough to work with."
 
@@ -46,7 +46,7 @@ async def _handle_write_blog(args: dict[str, Any], ctx: ToolContext) -> str:
                     f"{result['content'][:2000]}..."
                 )
 
-            result = write_and_publish(llm_callable=llm)
+            result = write_and_publish(llm_callable=llm, topic=topic)
             if not result:
                 return "I tried to write a blog post but the workflow didn't produce anything. The research might not have turned up enough interesting material."
 
@@ -68,7 +68,7 @@ async def _handle_write_blog(args: dict[str, Any], ctx: ToolContext) -> str:
                     f"{result['content'][:1500]}..."
                 )
         else:
-            result = research_and_write(llm)
+            result = research_and_write(llm, topic=topic)
             if not result:
                 return "I wasn't able to put together a blog post on that topic."
 
