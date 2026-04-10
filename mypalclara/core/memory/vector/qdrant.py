@@ -77,7 +77,7 @@ class Qdrant(VectorStoreBase):
             else:
                 self.is_local = False
 
-            timeout = int(os.getenv("QDRANT_TIMEOUT", "15"))
+            timeout = int(os.getenv("QDRANT_TIMEOUT", "30"))
             self.client = QdrantClient(**params, timeout=timeout)
 
         self.collection_name = collection_name
