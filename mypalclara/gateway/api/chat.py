@@ -231,7 +231,7 @@ async def _process_message(
         ]
 
     # Convert to dict format for LLM
-    from mypalclara.core.llm.messages import messages_to_openai
+    from mypalclara.core.llm.tools.formats import messages_to_openai
 
     msg_dicts = messages_to_openai(prompt_messages)
 
