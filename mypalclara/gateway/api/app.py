@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from mypalclara.gateway.api.admin import router as admin_router
+from mypalclara.gateway.api.chat import router as chat_router
 from mypalclara.gateway.api.game import router as game_router
 from mypalclara.gateway.api.graph import router as graph_router
 from mypalclara.gateway.api.intentions import router as intentions_router
@@ -28,7 +29,10 @@ def create_app() -> FastAPI:
     )
 
     # CORS — allow the Rails app and any configured origins
-    cors_origins = os.getenv("GATEWAY_API_CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
+    cors_origins = os.getenv(
+        "GATEWAY_API_CORS_ORIGINS",
+        "http://localhost:3000,http://localhost:5173,http://localhost:1420,tauri://localhost,https://tauri.localhost"
+    ).split(",")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[o.strip() for o in cors_origins],
@@ -36,6 +40,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # OpenAI-compatible chat completions (for Clara desktop/web app)
+    app.include_router(chat_router, prefix="/v1", tags=["chat"])
 
     # Mount all API routers under /api/v1/
     app.include_router(sessions_router, prefix="/api/v1/sessions", tags=["sessions"])
