@@ -291,16 +291,16 @@ async def _process_message(
 
         db = SessionLocal()
         try:
-            # Get or create a session for this user
-            from mypalclara.core.memory.session import SessionManager
-
+            # Get or create a session for this user (for storing new messages)
             session_mgr = mm._session_manager
             db_session = session_mgr.get_or_create_session(db, user_id, "app", title="Clara App")
 
-            # Get recent messages for context
+            # Get recent messages across ALL sessions for this user
+            # (not just the app session — includes Discord, etc.)
             recent = (
                 db.query(DbMessage)
-                .filter(DbMessage.session_id == db_session.id)
+                .join(Session, Session.id == DbMessage.session_id)
+                .filter(Session.user_id == user_id)
                 .order_by(DbMessage.created_at.desc())
                 .limit(30)
                 .all()
