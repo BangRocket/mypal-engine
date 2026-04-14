@@ -5,51 +5,54 @@ A personal AI assistant with persistent memory and tool capabilities. The assist
 ## Features
 
 ### Core Capabilities
-- **Multi-Platform Support** - Discord, Microsoft Teams, and CLI adapters
-- **Persistent Memory** - User and project memories via [mem0](https://github.com/mem0ai/mem0) with graph relationship tracking
-- **MCP Plugin System** - Install and use tools from external MCP servers (similar to Claude Code's `/plugins`)
+- **Multi-Platform Support** - Discord, Teams, Slack, Telegram, Matrix, Signal, WhatsApp, and CLI adapters via gateway architecture
+- **Persistent Memory (Palace)** - Episodic memory, semantic extraction, knowledge graph, and layered retrieval with HuggingFace embeddings
+- **Clara Voice** - Browser-based voice chat via Pipecat + WebRTC with local STT/TTS
+- **Web UI** - React SPA with Rails backend for browser-based chat
+- **MCP Plugin System** - Install and use tools from external MCP servers
 - **Code Execution** - Sandboxed Python/Bash via Docker containers
-- **Web Search** - Real-time web search via Tavily
+- **Web Search** - Real-time web search via Tavily/Brave
 
 ### Integrations
 - **GitHub** - Repository, issue, PR, and workflow management
 - **Azure DevOps** - Repos, pipelines, work items
 - **Google Workspace** - Sheets, Drive, Docs, and Calendar via OAuth
 - **Email Monitoring** - Watch for important emails and send Discord alerts
-- **Claude Code** - Delegate complex coding tasks to Claude Code agent
 
 ### LLM Support
-- **Multiple Backends** - OpenRouter, NanoGPT, Anthropic, or custom OpenAI-compatible endpoints
+- **Multiple Backends** - OpenRouter, NanoGPT, Anthropic, OpenAI, Amazon Bedrock, Azure OpenAI
 - **Model Tiers** - Dynamic model selection via message prefixes (`!high`, `!mid`, `!low`)
 - **Auto-Tier Selection** - Automatic complexity-based model selection
+- **Unified Tool Calling** - Standardized tool interface across all providers (LangChain, native, or XML mode)
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         Gateway Server                           │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
-│  │   Router    │  │  Processor  │  │    LLM Orchestrator     │  │
-│  │  (queuing)  │──│  (context)  │──│  (streaming, tools)     │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
-│         │                                        │               │
-│         ▼                                        ▼               │
-│  ┌─────────────┐                        ┌─────────────────────┐  │
-│  │   Session   │                        │   Tool Executor     │  │
-│  │   Manager   │                        │   (MCP, built-in)   │  │
-│  └─────────────┘                        └─────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                         Gateway Server                               │
+│  ┌─────────────┐  ┌─────────────┐  ┌──────────────────────────────┐ │
+│  │   Router    │  │  Processor  │  │     LLM Orchestrator         │ │
+│  │  (queuing)  │──│  (context)  │──│  (streaming, tools, tiers)   │ │
+│  └─────────────┘  └─────────────┘  └──────────────────────────────┘ │
+│         │                                         │                  │
+│         ▼                                         ▼                  │
+│  ┌─────────────┐  ┌─────────────┐        ┌──────────────────────┐  │
+│  │   Session   │  │   Palace    │        │   Tool Executor      │  │
+│  │   Manager   │  │   Memory    │        │   (MCP, built-in)    │  │
+│  └─────────────┘  └─────────────┘        └──────────────────────┘  │
+│         │                                         │                  │
+│  WebSocket :18789                          HTTP API :18790           │
+└──────────────────────────────────────────────────────────────────────┘
          │                                         │
-         │ WebSocket                               │
          ▼                                         ▼
-┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐
-│ Discord Adapter │  │  Teams Adapter  │  │   MCP Servers       │
-│  (py-cord)      │  │  (Bot Framework)│  │  (stdio/HTTP)       │
-└─────────────────┘  └─────────────────┘  └─────────────────────┘
-┌─────────────────┐
-│   CLI Adapter   │
-│  (Terminal)     │
-└─────────────────┘
+┌─────────────────┐  ┌─────────────────┐  ┌──────────────────────┐
+│ Discord Adapter │  │  Teams Adapter  │  │   MCP Servers        │
+│  (py-cord)      │  │  (Bot Framework)│  │   (stdio/HTTP)       │
+└─────────────────┘  └─────────────────┘  └──────────────────────┘
+┌─────────────────┐  ┌─────────────────┐  ┌──────────────────────┐
+│   CLI Adapter   │  │  Voice Server   │  │   Web UI             │
+│   (Terminal)    │  │  (Pipecat/RTC)  │  │   (Rails + React)    │
+└─────────────────┘  └─────────────────┘  └──────────────────────┘
 ```
 
 ## Quick Start
@@ -59,7 +62,6 @@ A personal AI assistant with persistent memory and tool capabilities. The assist
 - Python 3.11+
 - [Poetry](https://python-poetry.org/)
 - Docker (optional, for code execution sandbox)
-- Discord bot token
 
 ### Installation
 
@@ -93,9 +95,20 @@ docker-compose --profile discord up
 
 | Variable | Description |
 |----------|-------------|
-| `DISCORD_BOT_TOKEN` | Discord bot token |
-| `OPENAI_API_KEY` | Required for mem0 embeddings |
-| `LLM_PROVIDER` | `openrouter`, `nanogpt`, `anthropic`, or `openai` |
+| `LLM_PROVIDER` | `openrouter`, `nanogpt`, `anthropic`, `openai`, `bedrock`, or `azure` |
+| `HF_TOKEN` | Required for HuggingFace embeddings (default provider) |
+
+Plus at least one platform token (e.g. `DISCORD_BOT_TOKEN`).
+
+### Embedding Provider
+
+HuggingFace is the default. OpenAI embeddings are optional.
+
+```bash
+EMBEDDING_PROVIDER=huggingface          # Default; or "openai"
+HF_TOKEN=your-token                     # Required for HuggingFace
+EMBEDDING_MODEL=BAAI/bge-large-en-v1.5  # Default model (1024 dims)
+```
 
 ### LLM Providers
 
@@ -129,6 +142,24 @@ CUSTOM_OPENAI_BASE_URL=https://api.openai.com/v1
 CUSTOM_OPENAI_MODEL=gpt-4o
 ```
 
+**Amazon Bedrock**:
+```bash
+LLM_PROVIDER=bedrock
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=your-key
+AWS_SECRET_ACCESS_KEY=your-secret
+BEDROCK_MODEL=anthropic.claude-3-5-sonnet-20241022-v2:0
+```
+
+**Azure OpenAI**:
+```bash
+LLM_PROVIDER=azure
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
+AZURE_OPENAI_API_KEY=your-key
+AZURE_DEPLOYMENT_NAME=your-deployment
+AZURE_API_VERSION=2024-02-15-preview
+```
+
 ### Model Tiers
 
 Clara supports dynamic model selection via message prefixes:
@@ -156,9 +187,8 @@ AUTO_TIER_SELECTION=true
 | `GITHUB_TOKEN` | Enable GitHub integration |
 | `AZURE_DEVOPS_ORG` / `AZURE_DEVOPS_PAT` | Enable Azure DevOps integration |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Enable Google Workspace integration |
-| `ANTHROPIC_API_KEY` | Enable Claude Code agent |
 | `ENABLE_GRAPH_MEMORY=true` | Enable relationship tracking (FalkorDB) |
-| `SMITHERY_API_TOKEN` | Enable Smithery MCP server registry |
+| `SMITHERY_API_KEY` | Enable Smithery MCP server registry |
 
 ## MCP Plugin System
 
@@ -216,7 +246,7 @@ Admin operations (install, uninstall, enable, disable, restart) require one of:
 
 ## Gateway System
 
-The gateway provides a central message processing hub for platform adapters.
+The gateway provides a central message processing hub for platform adapters. It serves both WebSocket (port 18789) and HTTP API (port 18790).
 
 ### Running the Gateway
 
@@ -269,24 +299,41 @@ tasks:
     command: ./scripts/backup.sh
 ```
 
-## Memory System
+## Memory System (Palace)
 
-Clara uses mem0 for persistent memory with vector search (pgvector/Qdrant) and optional graph storage (FalkorDB).
+Clara uses the Palace memory system for persistent memory with episodic storage, semantic extraction, layered retrieval, and optional graph relationships.
 
-### Memory Types
-- **User Memories** - Personal facts, preferences, and context
-- **Project Memories** - Topic-specific knowledge
-- **Key Memories** - Important facts always included in context
-- **Emotional Context** - Recent conversation emotional patterns
+### Memory Architecture
+- **Episodes** - Verbatim conversation chunks stored in Qdrant with topics, emotional tone, significance
+- **Semantic Memories** - Extracted facts and preferences in Qdrant
+- **Knowledge Graph** - Typed entities with temporal relationships (optional, FalkorDB)
+- **Layered Retrieval** - L0 identity -> L1 user profile -> L2 relevant context (episodes + memories + graph)
+- **Reflection** - Session-end extraction of episodes, entities, and self-awareness notes
+
+### Configuration
+
+```bash
+# Palace LLM (for memory extraction, independent from chat LLM)
+PALACE_PROVIDER=openrouter
+PALACE_MODEL=openai/gpt-4o-mini
+
+# Vector store (default: Qdrant, or PostgreSQL+pgvector)
+PALACE_DATABASE_URL=postgresql://user:pass@host:5432/clara_vectors
+
+# Graph memory (optional)
+ENABLE_GRAPH_MEMORY=true
+FALKORDB_HOST=localhost
+FALKORDB_PORT=6379
+```
 
 ### Bootstrap Profile Data
 
 ```bash
 # Generate memory JSON (dry run)
-poetry run python -m src.bootstrap_memory
+poetry run python scripts/bootstrap_memory.py
 
-# Apply to mem0
-poetry run python -m src.bootstrap_memory --apply
+# Apply to Palace
+poetry run python scripts/bootstrap_memory.py --apply
 ```
 
 ### Clear Memory
@@ -295,6 +342,47 @@ poetry run python -m src.bootstrap_memory --apply
 poetry run python scripts/clear_dbs.py              # With prompt
 poetry run python scripts/clear_dbs.py --yes        # Skip prompt
 poetry run python scripts/clear_dbs.py --user <id>  # Specific user
+```
+
+## Web UI
+
+Clara includes a browser-based chat interface.
+
+```bash
+# Rails API backend
+cd web-ui/backend && rails s -p 3000
+
+# React frontend (Vite dev server)
+cd web-ui/frontend && npm run dev  # port 5173
+
+# Docker (unified image)
+cd web-ui && docker build -t clara-web .
+```
+
+Rails handles game logic directly and proxies API requests to the gateway HTTP API (port 18790).
+
+## Clara Voice
+
+Browser-based voice chat using Pipecat with WebRTC. Uses local STT/TTS by default (no API costs):
+
+- **Silero VAD** - Voice activity detection
+- **faster-whisper** - Local speech-to-text
+- **Kokoro** - Natural local text-to-speech
+- Routes through Clara gateway for full Palace memory context
+
+```bash
+# Requires separate installation
+pip install pipecat-ai[silero,whisper,kokoro,smallwebrtc] pipecat-ai-small-webrtc-prebuilt
+
+# Run voice server
+python -m mypalclara.services.voice.server --host 0.0.0.0 --port 7860
+```
+
+Configuration:
+```bash
+CLARA_GATEWAY_API_URL=http://localhost:18790  # Gateway for LLM
+VOICE_TTS_SPEAKER=af_heart                    # Kokoro voice
+VOICE_STT_MODEL=small                         # Whisper model size
 ```
 
 ## Discord Features
@@ -328,40 +416,40 @@ Clara supports Microsoft Teams via the Bot Framework SDK. Setup requires several
 ### Step 1: Create an Azure Bot Resource
 
 1. Go to [Azure Portal](https://portal.azure.com)
-2. Click **Create a resource** → search for **Azure Bot**
+2. Click **Create a resource** -> search for **Azure Bot**
 3. Click **Create** and configure:
    - **Bot handle**: A unique name like `MyPalClara`
    - **Subscription**: Your Azure subscription
    - **Resource group**: Create new or use existing
    - **Pricing tier**: F0 (Free) for development
-   - **Type of App**: **Multi Tenant** ⚠️ **This is critical!**
+   - **Type of App**: **Multi Tenant** -- This is critical!
    - **Creation type**: **Create new Microsoft App ID**
-4. Click **Review + create** → **Create**
+4. Click **Review + create** -> **Create**
 
 ### Step 2: Get Your App Credentials
 
 1. Go to your new Azure Bot resource
 2. Click **Configuration** in the left sidebar
-3. Copy the **Microsoft App ID** → this is your `TEAMS_APP_ID`
+3. Copy the **Microsoft App ID** -> this is your `TEAMS_APP_ID`
 4. Click **Manage Password** (next to the App ID) to open the App Registration
-5. Go to **Certificates & secrets** → **+ New client secret**
+5. Go to **Certificates & secrets** -> **+ New client secret**
    - Description: "Clara Bot"
    - Expiration: Choose up to 24 months
 6. Click **Add** and **immediately copy the Value** (not the Secret ID!)
    - This is your `TEAMS_APP_PASSWORD`
-   - ⚠️ You won't be able to see it again
+   - You won't be able to see it again
 
 ### Step 3: Verify Multi-Tenant Configuration
 
 This is the most common source of errors. The Bot Framework authenticates against its own tenant, not yours.
 
-1. In Azure Portal, go to **Microsoft Entra ID** → **App registrations**
+1. In Azure Portal, go to **Microsoft Entra ID** -> **App registrations**
 2. Find your app (search by App ID)
 3. Click **Authentication**
 4. Under **Supported account types**, ensure it's set to:
-   
+
    **"Accounts in any organizational directory (Any Microsoft Entra ID tenant - Multitenant)"**
-   
+
 5. If it says "Single tenant", change it and click **Save**
 
 ### Step 4: Enable the Teams Channel
@@ -386,7 +474,7 @@ Use the URL: `https://your-subdomain.ngrok.io/api/messages`
 Use your deployed URL: `https://your-app.railway.app/api/messages`
 
 Then in Azure Portal:
-1. Go to your Azure Bot → **Configuration**
+1. Go to your Azure Bot -> **Configuration**
 2. Set **Messaging endpoint** to your URL + `/api/messages`
 3. Click **Apply**
 
@@ -400,7 +488,7 @@ TEAMS_APP_PASSWORD="your-client-secret-value"  # Quote if it contains special ch
 TEAMS_TENANT_ID=your-tenant-id  # Optional - only if restricting to one org
 ```
 
-⚠️ **Important**: If your client secret contains special characters (like `~`), wrap it in quotes.
+**Important**: If your client secret contains special characters (like `~`), wrap it in quotes.
 
 ### Step 7: Create and Install the Teams App Package
 
@@ -451,8 +539,8 @@ The Azure Portal's "Open in Teams" button often fails with permission errors. Cr
 Replace both `YOUR_APP_ID_HERE` with your `TEAMS_APP_ID`.
 
 2. Add icon files (any PNGs will work for testing):
-   - `color.png` — 192x192 pixels
-   - `outline.png` — 32x32 pixels
+   - `color.png` -- 192x192 pixels
+   - `outline.png` -- 32x32 pixels
 
 3. Create the zip package:
 ```bash
@@ -461,8 +549,8 @@ zip -r ../clara-teams-app.zip *
 ```
 
 4. Sideload in Teams:
-   - Open Teams → **Apps** → **Manage your apps**
-   - Click **Upload an app** → **Upload a custom app**
+   - Open Teams -> **Apps** -> **Manage your apps**
+   - Click **Upload an app** -> **Upload a custom app**
    - Select `clara-teams-app.zip`
    - Click **Add**
 
@@ -482,14 +570,14 @@ poetry run python -m mypalclara.gateway start --adapter teams
 The app needs to be installed first. Create and sideload the app manifest (Step 7).
 
 #### "Upload a custom app" is grayed out
-Your Teams admin has disabled sideloading. Ask them to enable it in Teams Admin Center → Teams apps → Setup policies → Upload custom apps.
+Your Teams admin has disabled sideloading. Ask them to enable it in Teams Admin Center -> Teams apps -> Setup policies -> Upload custom apps.
 
 #### AADSTS700016: Application not found in directory 'Bot Framework'
 Your App Registration is set to Single Tenant. Change it to Multi-Tenant (Step 3).
 
 #### "Unauthorized" when bot tries to reply
 1. Verify you copied the client secret **Value**, not the Secret ID
-2. Check for special characters in the secret — wrap in quotes in `.env`
+2. Check for special characters in the secret -- wrap in quotes in `.env`
 3. Verify the secret hasn't expired
 4. Test credentials manually:
 ```bash
@@ -576,7 +664,7 @@ docker-compose --profile discord --profile postgres up
 Set these for PostgreSQL:
 ```bash
 DATABASE_URL=postgresql://user:pass@host:5432/clara_main
-MEM0_DATABASE_URL=postgresql://user:pass@host:5432/clara_vectors
+PALACE_DATABASE_URL=postgresql://user:pass@host:5432/clara_vectors
 ```
 
 ### Database Migrations
@@ -619,12 +707,20 @@ See [CLAUDE.md](CLAUDE.md) for detailed development documentation.
   - [Quick Start](wiki/Quick-Start.md)
   - [Installation](wiki/Installation.md)
   - [Configuration](wiki/Configuration.md)
+  - [Architecture](wiki/Architecture.md)
   - [Discord Features](wiki/Discord-Features.md)
   - [Teams Adapter](wiki/Teams-Adapter.md)
+  - [CLI Adapter](wiki/CLI-Adapter.md)
   - [MCP Plugin System](wiki/MCP-Plugin-System.md)
   - [Memory System](wiki/Memory-System.md)
   - [Gateway](wiki/Gateway.md)
+  - [Proactive Messaging](wiki/Proactive-Messaging.md)
+  - [Email Monitoring](wiki/Email-Monitoring.md)
+  - [Sandbox System](wiki/Sandbox-System.md)
+  - [Backup Service](wiki/Backup-Service.md)
+  - [Tool Development](wiki/Tool-Development.md)
   - [Deployment](wiki/Deployment.md)
+  - [Troubleshooting](wiki/Troubleshooting.md)
 - [CLAUDE.md](CLAUDE.md) - Development guide and API reference
 
 ## License
