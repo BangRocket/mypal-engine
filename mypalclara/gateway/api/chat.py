@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 import uuid
 from typing import Any
@@ -22,6 +23,9 @@ from mypalclara.gateway.api.auth import get_db
 logger = logging.getLogger("clara.gateway.api.chat")
 
 router = APIRouter()
+
+# Per-user message counter for periodic reflection
+_api_msg_counts: dict[str, int] = {}
 
 
 @router.get("/models")
@@ -349,22 +353,72 @@ async def _process_message(
         except StopIteration:
             return None
 
+    full_response = ""
     while True:
         chunk = await loop.run_in_executor(None, get_next, stream)
         if chunk is None:
             break
+        full_response += chunk
         yield chunk
 
-    # Store the exchange in DB (background)
+    # Store the full exchange and trigger memory ops
     try:
-        full_response = ""  # We don't have this easily in streaming mode
-        # Store user message
         if db_session:
-            db = SessionLocal()
+            from mypalclara.db import SessionLocal as _SL
+
+            store_db = _SL()
             try:
-                mm._session_manager.store_message(db, db_session.id, user_id, "user", user_message)
-                db.commit()
+                # Store both user message and assistant response
+                mm._session_manager.store_message(store_db, db_session.id, user_id, "user", user_message)
+                mm._session_manager.store_message(store_db, db_session.id, user_id, "assistant", full_response)
+                store_db.commit()
+                logger.debug(f"Stored exchange: {len(user_message)} + {len(full_response)} chars")
             finally:
-                db.close()
+                store_db.close()
+
+        # Trigger reflection if enough messages have accumulated
+        # Uses a simple counter per user (same pattern as the WS processor)
+        _api_msg_counts[user_id] = _api_msg_counts.get(user_id, 0) + 1
+        reflection_threshold = int(os.getenv("REFLECTION_THRESHOLD", "5"))
+
+        if _api_msg_counts[user_id] >= reflection_threshold:
+            _api_msg_counts[user_id] = 0
+            logger.info(f"Triggering reflection for {user_id} (API chat)")
+
+            try:
+                from mypalclara.db import SessionLocal as _SL2
+                from mypalclara.db.models import Message as DbMsg
+
+                ref_db = _SL2()
+                try:
+                    ref_msgs = (
+                        ref_db.query(DbMsg)
+                        .filter(DbMsg.session_id == db_session.id)
+                        .order_by(DbMsg.created_at.asc())
+                        .limit(30)
+                        .all()
+                    )
+                    msg_dicts_for_reflect = [
+                        {
+                            "role": m.role,
+                            "content": m.content,
+                            "name": m.user_id if m.role == "user" else "Clara",
+                            "timestamp": m.created_at.isoformat() if m.created_at else "",
+                        }
+                        for m in ref_msgs
+                    ]
+                finally:
+                    ref_db.close()
+
+                if len(msg_dicts_for_reflect) >= 4:
+                    await loop.run_in_executor(
+                        None,
+                        lambda: mm.reflect_on_session(
+                            msg_dicts_for_reflect, user_id, session_id="app"
+                        ),
+                    )
+            except Exception as e:
+                logger.warning(f"Reflection failed: {e}")
+
     except Exception as e:
-        logger.debug(f"Failed to store message: {e}")
+        logger.debug(f"Failed to store exchange: {e}")
