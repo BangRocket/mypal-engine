@@ -293,25 +293,43 @@ class MessageProcessor:
         self,
         session_id: str,
         limit: int = 30,
+        user_id: str | None = None,
     ) -> list[Message]:
-        """Fetch recent messages from a database session.
+        """Fetch recent messages across all sessions for this user.
+
+        Pulls from all platforms (Discord, Jan, etc.) for unified context.
 
         Args:
-            session_id: Database session ID
+            session_id: Database session ID (used as fallback)
             limit: Maximum messages to fetch
+            user_id: If provided, pull across all sessions for this user
 
         Returns:
             List of Message objects in chronological order
         """
+        from mypalclara.db.models import Session
+
         db = SessionLocal()
         try:
-            messages = (
-                db.query(Message)
-                .filter(Message.session_id == session_id)
-                .order_by(Message.created_at.desc())
-                .limit(limit)
-                .all()
-            )
+            if user_id:
+                # Unified: pull recent messages across ALL sessions for this user
+                messages = (
+                    db.query(Message)
+                    .join(Session, Session.id == Message.session_id)
+                    .filter(Session.user_id == user_id)
+                    .order_by(Message.created_at.desc())
+                    .limit(limit)
+                    .all()
+                )
+            else:
+                # Fallback: single session only
+                messages = (
+                    db.query(Message)
+                    .filter(Message.session_id == session_id)
+                    .order_by(Message.created_at.desc())
+                    .limit(limit)
+                    .all()
+                )
             # Return in chronological order
             return list(reversed(messages))
         except Exception as e:
@@ -548,7 +566,7 @@ class MessageProcessor:
         # Fetch recent messages from database
         recent_msgs = await loop.run_in_executor(
             BLOCKING_EXECUTOR,
-            lambda: self._get_recent_messages(db_session.id),
+            lambda: self._get_recent_messages(db_session.id, user_id=user_id),
         )
 
         # Fetch channel-wide context for group channels
