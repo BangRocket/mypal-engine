@@ -388,7 +388,9 @@ class PromptBuilder:
                 pass
 
         # Run searches in parallel (all hit embedding cache now)
-        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="memory") as pool:
+        vch_snippets = []
+
+        with ThreadPoolExecutor(max_workers=4, thread_name_prefix="memory") as pool:
             futures = {}
 
             if PALACE is not None:
@@ -410,6 +412,13 @@ class PromptBuilder:
                     )
                 )
 
+            # VCH: full-text search over raw conversation history (no embedding needed)
+            futures["vch"] = pool.submit(
+                lambda: __import__("mypalclara.core.memory.vch", fromlist=["search_vch"]).search_vch(
+                    user_message, user_id, limit=3, context_window=2
+                )
+            )
+
             # Collect results
             for key, future in futures.items():
                 try:
@@ -423,6 +432,8 @@ class PromptBuilder:
                             ep.__dict__ if hasattr(ep, "__dict__") else ep
                             for ep in (result if isinstance(result, list) else [])
                         ]
+                    elif key == "vch":
+                        vch_snippets = result if isinstance(result, list) else []
                 except Exception as e:
                     logger.debug(f"{key} fetch failed: {e}")
 
@@ -477,6 +488,16 @@ class PromptBuilder:
             elif "## About this user" in layered_context or "## Context" in layered_context:
                 messages.append(SystemMessage(content=layered_context))
 
+        # Add VCH (verbatim past conversations matching current topic)
+        if vch_snippets:
+            from mypalclara.core.memory.vch import format_vch_for_context
+
+            vch_text = format_vch_for_context(vch_snippets, max_chars=2000)
+            if vch_text:
+                messages.append(
+                    SystemMessage(content=f"## Relevant past conversations (verbatim)\n{vch_text}")
+                )
+
         # Add channel context
         if channel_context:
             channel_block = self._format_channel_context(channel_context)
@@ -521,6 +542,8 @@ class PromptBuilder:
             components.append(f"relevant_eps={len(relevant_episodes)}")
         if graph_context:
             components.append(f"graph={len(graph_context)}")
+        if vch_snippets:
+            components.append(f"vch={len(vch_snippets)}")
         if recent_msgs:
             components.append(f"history={len(recent_msgs)}")
         logger.info(f"[prompt] Built (layered) with: {', '.join(components)}")
