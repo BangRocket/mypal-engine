@@ -81,18 +81,55 @@ async def _resolve_user(request: Request, body_user: str | None = None) -> str:
             except Exception as e:
                 logger.warning(f"Identity service unavailable: {e}")
 
-        # Fallback: validate locally via hash
+        # Fallback: validate locally against api_keys table in Clara's own DB
         try:
             import hashlib
 
+            from sqlalchemy import text as sql_text
+
             from mypalclara.db import SessionLocal
-            from mypalclara.db.models import CanonicalUser, PlatformLink
 
             key_hash = hashlib.sha256(api_key.encode()).hexdigest()
-            # Check if we have this key locally (for when identity service is down)
-            logger.debug("API key validation fallback — identity service not available")
-        except Exception:
-            pass
+            db = SessionLocal()
+            try:
+                # Look up the API key hash
+                row = db.execute(
+                    sql_text(
+                        "SELECT ak.canonical_user_id FROM api_keys ak "
+                        "WHERE ak.key_hash = :hash AND ak.is_active = true"
+                    ),
+                    {"hash": key_hash},
+                ).fetchone()
+
+                if row:
+                    canonical_user_id = row[0]
+                    # Find platform links for this user
+                    links = db.execute(
+                        sql_text(
+                            "SELECT prefixed_user_id FROM platform_links "
+                            "WHERE canonical_user_id = :uid"
+                        ),
+                        {"uid": canonical_user_id},
+                    ).fetchall()
+
+                    # Update last_used_at
+                    db.execute(
+                        sql_text("UPDATE api_keys SET last_used_at = NOW() WHERE key_hash = :hash"),
+                        {"hash": key_hash},
+                    )
+                    db.commit()
+
+                    if links:
+                        resolved = links[0][0]
+                        logger.info(f"API key resolved to user: {resolved}")
+                        return resolved
+                    return f"app-{canonical_user_id}"
+                else:
+                    logger.warning(f"API key not found in local DB (prefix: {api_key[:12]})")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.warning(f"Local API key validation failed: {e}")
 
     return body_user or "app-user"
 
