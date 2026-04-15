@@ -2,7 +2,7 @@
 dockerfilePath = "services/gateway/Dockerfile"
 
 [deploy]
-healthcheckPath = "/health"
+healthcheckPath = "/api/v1/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
