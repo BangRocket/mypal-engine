@@ -1,0 +1,5 @@
+# Base image — not deployed directly, built as dependency
+# Build from repo root: docker build -f services/base/Dockerfile -t clara-base .
+
+[build]
+dockerfilePath = "services/base/Dockerfile"
