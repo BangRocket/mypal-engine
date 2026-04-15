@@ -550,6 +550,7 @@ class MemoryManager:
         Call this after a conversation session ends. Stores episodes,
         updates the knowledge graph, and returns the reflection result.
         """
+        from mypalclara.core import make_llm
         from mypalclara.core.memory.reflection import (
             build_episodes_from_reflection,
             extract_self_notes,
@@ -557,7 +558,6 @@ class MemoryManager:
         )
 
         # Create a fresh LLM callable (self.llm may be a factory like make_llm)
-        from mypalclara.core import make_llm
 
         llm = make_llm()
 
