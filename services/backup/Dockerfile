@@ -1,4 +1,4 @@
-FROM clara-base:latest
+FROM ghcr.io/bangrocket/clara-base:latest
 
 # Upgrade to PostgreSQL 18 client for latest pg_dump features
 RUN apt-get update && apt-get install -y \

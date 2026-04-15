@@ -40,7 +40,7 @@ docker-compose --profile discord up
 docker-compose --profile discord --profile postgres up
 
 # Docker (base image — required before building Python services)
-docker build -f services/base/Dockerfile -t clara-base:latest .
+docker build -f services/base/Dockerfile -t ghcr.io/bangrocket/clara-base:latest .
 
 # Docker (individual services)
 docker build -f services/discord/Dockerfile -t clara-discord .
