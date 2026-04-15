@@ -30,17 +30,24 @@ poetry run python scripts/migrate.py status    # Check status
 poetry run python scripts/clear_dbs.py         # Clear memory data
 
 # Web UI (Rails backend)
-cd web-ui/backend && rails s -p 3000   # Start Rails API server
+cd services/web-ui/backend && rails s -p 3000   # Start Rails API server
 
 # Web UI (React frontend)
-cd web-ui/frontend && npm run dev      # Start Vite dev server (port 5173)
+cd services/web-ui/frontend && npm run dev      # Start Vite dev server (port 5173)
 
 # Docker
 docker-compose --profile discord up
 docker-compose --profile discord --profile postgres up
 
-# Docker (unified web UI)
-cd web-ui && docker build -t clara-web .  # Build unified image
+# Docker (base image — required before building Python services)
+docker build -f services/base/Dockerfile -t clara-base:latest .
+
+# Docker (individual services)
+docker build -f services/discord/Dockerfile -t clara-discord .
+docker build -f services/gateway/Dockerfile -t clara-gateway .
+docker build -f services/backup/Dockerfile -t clara-backup .
+docker build -t clara-web services/web-ui/         # Web UI
+docker build -t clara-identity services/identity/  # Identity
 ```
 
 ## Versioning
@@ -71,6 +78,7 @@ git config core.hooksPath .githooks  # Enable hooks (run once)
 |-----------|---------|
 | `mypalclara/` | Top-level Python package (all code lives here) |
 | `mypalclara/gateway/` | WebSocket gateway for platform adapters |
+| `mypalclara/gateway/api/` | HTTP API endpoints (moved from web module) |
 | `mypalclara/adapters/` | Platform adapters (Discord, Teams, Slack, etc.) |
 | `mypalclara/core/memory/` | Memory system: episodes, layered retrieval, reflection, knowledge graph |
 | `mypalclara/core/mcp/` | MCP plugin system (servers, tools, OAuth) |
@@ -81,11 +89,16 @@ git config core.hooksPath .githooks  # Enable hooks (run once)
 | `mypalclara/tools/` | Tool loader infrastructure |
 | `mypalclara/config/` | Configuration modules |
 | `mypalclara/services/email/` | Email monitoring service |
-| `mypalclara/services/backup/` | Automated database backup service |
+| `mypalclara/services/backup/` | Backup service code |
 | `mypalclara/services/proactive/` | Proactive messaging engine |
-| `mypalclara/gateway/api/` | HTTP API endpoints (moved from web module) |
-| `web-ui/backend/` | Rails API-only backend (game logic, gateway proxy) |
-| `web-ui/frontend/` | React SPA (Vite, TypeScript, TailwindCSS) |
+| `services/base/` | Shared base Docker image for Python services |
+| `services/discord/` | Discord bot Railway service |
+| `services/gateway/` | Gateway Railway service |
+| `services/backup/` | Backup Railway service |
+| `services/web-ui/` | Web UI (Rails + React) Railway service |
+| `services/identity/` | Identity Railway service |
+| `services/qdrant/` | Qdrant vector DB Railway service |
+| `services/falkordb/` | FalkorDB graph DB Railway service |
 
 ### Memory System (Clara's Memory Palace)
 - **Episodes**: Verbatim conversation chunks stored in Qdrant (`clara_episodes`) with topics, emotional tone, significance
@@ -404,7 +417,7 @@ poetry run python scripts/migrate_to_postgres.py --all
 ```
 
 ### Backup Service
-Automated PostgreSQL backups to S3 (Wasabi). Located in `mypalclara/services/backup/`.
+Automated PostgreSQL backups to S3 (Wasabi). Code in `mypalclara/services/backup/`, Railway config in `services/backup/`.
 
 ```bash
 S3_BUCKET=clara-backups
