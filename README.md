@@ -350,13 +350,13 @@ Clara includes a browser-based chat interface.
 
 ```bash
 # Rails API backend
-cd web-ui/backend && rails s -p 3000
+cd services/web-ui/backend && rails s -p 3000
 
 # React frontend (Vite dev server)
-cd web-ui/frontend && npm run dev  # port 5173
+cd services/web-ui/frontend && npm run dev  # port 5173
 
 # Docker (unified image)
-cd web-ui && docker build -t clara-web .
+docker build -t clara-web services/web-ui/
 ```
 
 Rails handles game logic directly and proxies API requests to the gateway HTTP API (port 18790).
@@ -648,11 +648,12 @@ Users connect their Google account via Discord:
 
 ### Railway
 
-The repo includes `railway.toml` for one-click deployment:
+Each service has its own `railway.toml` under `services/`. Python services (Discord, Gateway, Backup) use a shared base Docker image built via GitHub Actions and published to `ghcr.io/bangrocket/clara-base`. Qdrant and FalkorDB use official Docker images. PostgreSQL and Redis use Railway managed plugins.
 
 1. Connect your GitHub repo to Railway
-2. Set environment variables in Railway dashboard
-3. Deploy
+2. Add each service pointing to its `services/<name>/` directory
+3. Set environment variables per service in Railway dashboard
+4. Deploy
 
 ### Docker Compose with PostgreSQL
 
@@ -677,7 +678,7 @@ poetry run python scripts/migrate.py create "description"  # New migration
 
 ### Database Backups
 
-The `mypalclara/services/backup/` directory contains an automated backup service for S3-compatible storage:
+The backup service (code in `mypalclara/services/backup/`, Railway config in `services/backup/`) provides automated backups to S3-compatible storage:
 
 ```bash
 docker-compose --profile backup up -d
