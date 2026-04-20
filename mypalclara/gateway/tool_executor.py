@@ -403,16 +403,21 @@ class ToolExecutor:
         except Exception as e:
             logger.error(f"Failed to initialize MCP: {e}")
 
-    def get_all_tools(
+    async def get_all_tools(
         self,
         include_docker: bool = True,
         adapter_capabilities: list[str] | None = None,
+        user_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Get all available tools in OpenAI format.
 
         Args:
             include_docker: Whether to include Docker sandbox tools
             adapter_capabilities: Optional list of adapter capabilities to filter Discord tools
+            user_id: Optional canonical user id. When provided, modular-registry
+                tools whose ``ToolDef.availability`` predicate returns False for
+                this user are filtered out. When None (default), no availability
+                filtering is performed (back-compat).
 
         Returns:
             List of tool definitions
@@ -482,7 +487,55 @@ class ToolExecutor:
                 seen.add(name)
                 unique_tools.append(tool)
 
+        # Per-user availability filtering (only touches tools from the modular
+        # registry — MCP/Discord/subagent tools have no availability predicate
+        # and always pass through).
+        if user_id is not None and self._tool_registry is not None:
+            unique_tools = await self._filter_by_availability(unique_tools, user_id)
+
         return unique_tools
+
+    async def _filter_by_availability(
+        self, tools: list[dict[str, Any]], user_id: str
+    ) -> list[dict[str, Any]]:
+        """Filter tools by their ToolDef.availability predicates.
+
+        Per-invocation memoization by predicate identity: tools sharing the same
+        availability callable (e.g., all obsidian_* tools) trigger exactly one
+        await of the predicate per call to get_all_tools.
+
+        Tools without a matching ToolDef or without an availability predicate
+        are passed through unchanged. If a predicate raises, the tool is hidden
+        and a warning is logged.
+        """
+        memo: dict[int, bool] = {}
+        filtered: list[dict[str, Any]] = []
+        for tool_dict in tools:
+            # Extract tool name from OpenAI-format dict
+            if tool_dict.get("type") == "function":
+                name = tool_dict.get("function", {}).get("name")
+            else:
+                name = tool_dict.get("name")
+
+            tool_def = self._tool_registry.get_tool(name) if name else None
+            pred = getattr(tool_def, "availability", None) if tool_def else None
+            if pred is None:
+                filtered.append(tool_dict)
+                continue
+
+            key = id(pred)
+            if key not in memo:
+                try:
+                    memo[key] = bool(await pred(user_id))
+                except Exception:
+                    logger.warning(
+                        f"availability predicate raised for tool {name}; hiding",
+                        exc_info=True,
+                    )
+                    memo[key] = False
+            if memo[key]:
+                filtered.append(tool_dict)
+        return filtered
 
     async def execute(
         self,
@@ -601,7 +654,7 @@ class ToolExecutor:
                 parent_id=parent_id,
                 registry=self._subagent_registry,
                 runner=self._subagent_runner,
-                available_tools=self.get_all_tools(),
+                available_tools=await self.get_all_tools(),
                 user_id=user_id,
             )
 

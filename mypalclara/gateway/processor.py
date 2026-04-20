@@ -434,7 +434,10 @@ class MessageProcessor:
                 adapter_capabilities = node.capabilities
 
             tools = (
-                self._tool_executor.get_all_tools(adapter_capabilities=adapter_capabilities)
+                await self._tool_executor.get_all_tools(
+                    adapter_capabilities=adapter_capabilities,
+                    user_id=request.user.id,
+                )
                 if self._tool_executor
                 else []
             )

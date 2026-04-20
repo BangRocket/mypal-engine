@@ -284,7 +284,7 @@ class TestTargetClassifierIntegration:
                 yield {"type": "complete", "text": "hi there", "tool_count": 0, "files": []}
 
             mock_orch.generate_with_tools = fake_generate
-            mock_tools.get_all_tools.return_value = []
+            mock_tools.get_all_tools = AsyncMock(return_value=[])
 
             # Mock server.node_registry
             mock_server = MagicMock()
@@ -331,7 +331,7 @@ class TestTargetClassifierIntegration:
                 yield {"type": "complete", "text": "response", "tool_count": 0, "files": []}
 
             mock_orch.generate_with_tools = fake_generate
-            mock_tools.get_all_tools.return_value = []
+            mock_tools.get_all_tools = AsyncMock(return_value=[])
 
             mock_server = MagicMock()
             mock_node = MagicMock()
@@ -380,7 +380,7 @@ class TestTargetClassifierIntegration:
                 yield {"type": "complete", "text": "I think...", "tool_count": 0, "files": []}
 
             mock_orch.generate_with_tools = fake_generate
-            mock_tools.get_all_tools.return_value = []
+            mock_tools.get_all_tools = AsyncMock(return_value=[])
 
             mock_server = MagicMock()
             mock_node = MagicMock()
