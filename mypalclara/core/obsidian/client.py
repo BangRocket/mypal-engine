@@ -111,3 +111,53 @@ class ObsidianClient:
             content=content.encode("utf-8"),
             headers={"Content-Type": "text/markdown; charset=utf-8"},
         )
+
+    async def list_dir(self, path: str) -> list[str]:
+        """List files and directories in a vault sub-directory."""
+        normalized = path.strip("/") + "/"
+        resp = await self._request("GET", f"/vault/{normalized}")
+        return resp.json().get("files", [])
+
+    async def append_file(self, path: str, content: str) -> None:
+        """Append content to an existing note (or create it if missing)."""
+        await self._request(
+            "POST",
+            f"/vault/{path}",
+            content=content.encode("utf-8"),
+            headers={"Content-Type": "text/markdown; charset=utf-8"},
+        )
+
+    async def patch_file(
+        self,
+        path: str,
+        target_type: str,
+        target: str,
+        content: str,
+        operation: str = "append",
+    ) -> None:
+        """Insert content relative to a heading, block reference, or frontmatter field.
+
+        Parameters
+        ----------
+        target_type:
+            One of "heading", "block", "frontmatter".
+        target:
+            The heading path ("H1::H2"), block ID, or frontmatter field name.
+        operation:
+            One of "append", "prepend", "replace".
+        """
+        await self._request(
+            "PATCH",
+            f"/vault/{path}",
+            content=content.encode("utf-8"),
+            headers={
+                "Content-Type": "text/markdown; charset=utf-8",
+                "Target-Type": target_type,
+                "Target": target,
+                "Operation": operation,
+            },
+        )
+
+    async def delete_file(self, path: str) -> None:
+        """Delete a note from the vault."""
+        await self._request("DELETE", f"/vault/{path}")

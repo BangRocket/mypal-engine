@@ -145,3 +145,120 @@ async def test_verify_tls_defaults_true():
 async def test_verify_tls_can_be_disabled():
     client = ObsidianClient("h.example", "t", verify_tls=False)
     assert client.verify_tls is False
+
+
+# ---- B3 tests ----
+
+async def test_list_dir_appends_trailing_slash(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/vault/Projects/",
+        json={"files": ["a.md", "sub/"]},
+    )
+    client = ObsidianClient("h.example", "t")
+    files = await client.list_dir("Projects")
+    assert files == ["a.md", "sub/"]
+
+
+async def test_list_dir_handles_already_trailing_slash(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/vault/Projects/",
+        json={"files": []},
+    )
+    client = ObsidianClient("h.example", "t")
+    await client.list_dir("Projects/")
+
+
+async def test_list_dir_strips_leading_slash(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/vault/Projects/",
+        json={"files": []},
+    )
+    client = ObsidianClient("h.example", "t")
+    await client.list_dir("/Projects")
+
+
+async def test_append_file_uses_post_with_content(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/vault/journal.md",
+        status_code=204,
+    )
+    client = ObsidianClient("h.example", "t")
+    await client.append_file("journal.md", "\n- new line\n")
+
+    request = httpx_mock.get_request()
+    assert request.method == "POST"
+    assert request.content == b"\n- new line\n"
+    assert "text/markdown" in request.headers.get("Content-Type", "")
+
+
+async def test_patch_file_sends_target_headers(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/vault/note.md",
+        status_code=204,
+    )
+    client = ObsidianClient("h.example", "t")
+    await client.patch_file(
+        "note.md",
+        target_type="heading",
+        target="## Daily Log",
+        content="- more",
+        operation="append",
+    )
+
+    request = httpx_mock.get_request()
+    assert request.method == "PATCH"
+    assert request.headers["Target-Type"] == "heading"
+    assert request.headers["Target"] == "## Daily Log"
+    assert request.headers["Operation"] == "append"
+    assert request.content == b"- more"
+
+
+async def test_patch_file_defaults_operation_to_append(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/vault/note.md",
+        status_code=204,
+    )
+    client = ObsidianClient("h.example", "t")
+    await client.patch_file(
+        "note.md", target_type="block", target="abc123", content="x"
+    )
+
+    request = httpx_mock.get_request()
+    assert request.headers["Operation"] == "append"
+
+
+async def test_patch_file_preserves_auth_header(httpx_mock):
+    """Per-call headers must NOT clobber the Authorization header."""
+    httpx_mock.add_response(
+        url="https://h.example/vault/note.md",
+        status_code=204,
+    )
+    client = ObsidianClient("h.example", "secret-token")
+    await client.patch_file(
+        "note.md", target_type="heading", target="H", content="c"
+    )
+
+    request = httpx_mock.get_request()
+    assert request.headers["Authorization"] == "Bearer secret-token"
+
+
+async def test_delete_file_uses_delete_method(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/vault/trash.md",
+        status_code=204,
+    )
+    client = ObsidianClient("h.example", "t")
+    await client.delete_file("trash.md")
+
+    request = httpx_mock.get_request()
+    assert request.method == "DELETE"
+
+
+async def test_delete_file_404_raises(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/vault/missing.md",
+        status_code=404,
+    )
+    client = ObsidianClient("h.example", "t")
+    with pytest.raises(ObsidianNotFoundError):
+        await client.delete_file("missing.md")
