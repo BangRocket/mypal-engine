@@ -553,7 +553,13 @@ TOOLS: list[ToolDef] = [
                     "description": "Which structured-query dialect.",
                 },
                 "query": {
-                    "description": "DQL query string OR a JsonLogic object/JSON string.",
+                    "type": "string",
+                    "description": (
+                        "For query_type=dql, a DQL query string (e.g. "
+                        "'TABLE file.mtime FROM \"\" SORT file.mtime DESC LIMIT 5'). "
+                        "For query_type=jsonlogic, a JSON-encoded JsonLogic object "
+                        "(e.g. '{\"in\": [\"clara\", {\"var\": \"file.tags\"}]}')."
+                    ),
                 },
             },
             "required": ["query_type", "query"],

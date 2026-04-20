@@ -26,6 +26,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("clara.obsidian.snapshot")
 
+# Wall-clock budget for the full snapshot build (all 4 parallel REST calls).
+# Must be strictly less than the gateway's overall prompt-assembly budget so a
+# stalled Obsidian backend can't block Clara's turn.
+SNAPSHOT_BUILD_TIMEOUT: float = 5.0
+
 
 @dataclass
 class VaultSnapshot:
@@ -112,12 +117,27 @@ async def build_snapshot(client: ObsidianClient) -> VaultSnapshot:
                 return line.lstrip("#").strip()[:80]
         return None
 
-    folders_count, tags, recent, periodic = await asyncio.gather(
-        _safe_call(_folders_and_count(), ([], 0)),
-        _safe_call(_top_tags(), []),
-        _safe_call(_recent_notes(), []),
-        _safe_call(_today_periodic(), None),
-    )
+    # Bound the total wall-clock time: even with per-request httpx timeouts
+    # (10s each), a fully-hung backend plus TLS handshake stalls can exceed
+    # that in practice. Prompt assembly runs on every LLM turn, so cap at 5s
+    # and degrade to an empty snapshot on overrun.
+    try:
+        folders_count, tags, recent, periodic = await asyncio.wait_for(
+            asyncio.gather(
+                _safe_call(_folders_and_count(), ([], 0)),
+                _safe_call(_top_tags(), []),
+                _safe_call(_recent_notes(), []),
+                _safe_call(_today_periodic(), None),
+            ),
+            timeout=SNAPSHOT_BUILD_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "build_snapshot exceeded %.1fs wall-clock budget; returning empty snapshot",
+            SNAPSHOT_BUILD_TIMEOUT,
+        )
+        return VaultSnapshot(host=client.api_host)
+
     folders, count = folders_count
     return VaultSnapshot(
         host=client.api_host,
