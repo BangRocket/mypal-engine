@@ -1,4 +1,5 @@
 """Smoke test that the module-level _snapshot_cache is wired correctly."""
+
 import pytest
 
 from mypalclara.core.obsidian import _snapshot_cache
@@ -13,8 +14,8 @@ def test_fetch_vault_snapshot_block_returns_none_when_unconfigured(monkeypatch):
     """If the user has no Obsidian config, the helper returns None (no exception)."""
     import asyncio
     from unittest.mock import AsyncMock
-    from mypalclara.core.obsidian import fetch_vault_snapshot_block
-    from mypalclara.core.obsidian import factory
+
+    from mypalclara.core.obsidian import factory, fetch_vault_snapshot_block
 
     monkeypatch.setattr(factory, "get_client_for_user", AsyncMock(return_value=None))
     result = asyncio.run(fetch_vault_snapshot_block("any-user"))
