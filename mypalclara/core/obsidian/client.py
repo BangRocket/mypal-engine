@@ -6,6 +6,8 @@ errors into the typed exceptions defined in exceptions.py.
 
 from __future__ import annotations
 
+from datetime import date as _date
+
 import httpx
 
 from mypalclara.core.obsidian.exceptions import (
@@ -161,3 +163,43 @@ class ObsidianClient:
     async def delete_file(self, path: str) -> None:
         """Delete a note from the vault."""
         await self._request("DELETE", f"/vault/{path}")
+
+    # ---- active file ----
+
+    async def get_active(self) -> str:
+        """Return the text content of the currently-open note in Obsidian."""
+        resp = await self._request("GET", "/active/")
+        return resp.text
+
+    async def put_active(self, content: str) -> None:
+        """Replace the content of the currently-open note."""
+        await self._request(
+            "PUT",
+            "/active/",
+            content=content.encode("utf-8"),
+            headers={"Content-Type": "text/markdown; charset=utf-8"},
+        )
+
+    # ---- periodic notes ----
+
+    @staticmethod
+    def _periodic_path(period: str, d: _date | None) -> str:
+        if d is None:
+            return f"/periodic/{period}/"
+        return f"/periodic/{period}/{d.year}/{d.month:02d}/{d.day:02d}/"
+
+    async def get_periodic(self, period: str, date: _date | None = None) -> str:
+        """Read today's (or a specific date's) daily/weekly/etc. note."""
+        resp = await self._request("GET", self._periodic_path(period, date))
+        return resp.text
+
+    async def append_periodic(
+        self, period: str, content: str, date: _date | None = None
+    ) -> None:
+        """Append content to today's (or a specific date's) periodic note."""
+        await self._request(
+            "POST",
+            self._periodic_path(period, date),
+            content=content.encode("utf-8"),
+            headers={"Content-Type": "text/markdown; charset=utf-8"},
+        )

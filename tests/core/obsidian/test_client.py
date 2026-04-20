@@ -1,5 +1,7 @@
 """Tests for ObsidianClient — HTTP wrapper over obsidian-local-rest-api."""
 
+from datetime import date
+
 import httpx
 import pytest
 
@@ -262,3 +264,100 @@ async def test_delete_file_404_raises(httpx_mock):
     client = ObsidianClient("h.example", "t")
     with pytest.raises(ObsidianNotFoundError):
         await client.delete_file("missing.md")
+
+
+# ---- B4 tests ----
+
+async def test_get_active_returns_content(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/active/",
+        text="# Currently open note\n\nBody.",
+    )
+    client = ObsidianClient("h.example", "t")
+    content = await client.get_active()
+    assert content == "# Currently open note\n\nBody."
+
+
+async def test_put_active_sends_put_with_content(httpx_mock):
+    httpx_mock.add_response(url="https://h.example/active/", status_code=204)
+    client = ObsidianClient("h.example", "t")
+    await client.put_active("new body")
+
+    request = httpx_mock.get_request()
+    assert request.method == "PUT"
+    assert request.content == b"new body"
+    assert "text/markdown" in request.headers.get("Content-Type", "")
+
+
+async def test_get_periodic_today_no_date(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/periodic/daily/",
+        text="# 2026-04-20\n",
+    )
+    client = ObsidianClient("h.example", "t")
+    content = await client.get_periodic("daily")
+    assert content == "# 2026-04-20\n"
+
+
+async def test_get_periodic_with_specific_date(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/periodic/daily/2026/01/05/",
+        text="# 2026-01-05\n",
+    )
+    client = ObsidianClient("h.example", "t")
+    content = await client.get_periodic("daily", date=date(2026, 1, 5))
+    assert content == "# 2026-01-05\n"
+
+
+async def test_get_periodic_zero_pads_month_and_day(httpx_mock):
+    """Single-digit month/day must be zero-padded in the URL path."""
+    httpx_mock.add_response(
+        url="https://h.example/periodic/daily/2026/03/07/",
+        text="ok",
+    )
+    client = ObsidianClient("h.example", "t")
+    await client.get_periodic("daily", date=date(2026, 3, 7))
+
+
+async def test_get_periodic_other_periods(httpx_mock):
+    """weekly/monthly/quarterly/yearly must all produce the right path."""
+    for period in ("weekly", "monthly", "quarterly", "yearly"):
+        httpx_mock.add_response(
+            url=f"https://h.example/periodic/{period}/",
+            text="",
+        )
+        client = ObsidianClient("h.example", "t")
+        await client.get_periodic(period)
+
+
+async def test_append_periodic_uses_post(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/periodic/daily/",
+        status_code=204,
+    )
+    client = ObsidianClient("h.example", "t")
+    await client.append_periodic("daily", "- new entry\n")
+
+    request = httpx_mock.get_request()
+    assert request.method == "POST"
+    assert request.content == b"- new entry\n"
+    assert "text/markdown" in request.headers.get("Content-Type", "")
+
+
+async def test_append_periodic_with_specific_date(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/periodic/daily/2026/04/20/",
+        status_code=204,
+    )
+    client = ObsidianClient("h.example", "t")
+    await client.append_periodic("daily", "x", date=date(2026, 4, 20))
+
+
+async def test_get_periodic_404_raises(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/periodic/daily/",
+        status_code=404,
+    )
+    client = ObsidianClient("h.example", "t")
+    with pytest.raises(ObsidianNotFoundError):
+        await client.get_periodic("daily")
