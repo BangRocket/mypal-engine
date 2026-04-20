@@ -169,6 +169,7 @@ class PromptBuilder:
         mode: "PromptMode" = PromptMode.FULL,
         privacy_scope: str = "full",
         user_id: str | None = None,
+        system_prompts: list[tuple[str, str]] | None = None,
     ) -> list[Message]:
         """Build the full prompt for the LLM.
 
@@ -187,6 +188,10 @@ class PromptBuilder:
             mode: PromptMode controlling how much context to include (FULL, MINIMAL, NONE)
             privacy_scope: "full" (DMs) includes per-user workspace, "public_only" (group channels) excludes it
             user_id: User identifier for per-user workspace lookup
+            system_prompts: Optional list of (module_name, prompt_text) tuples, typically
+                gathered by the caller from the tool registry. Passed through to
+                build_worm_persona so each module's guidance is rendered under a
+                "## Tool-specific guidance — {module}" header. Ignored in NONE mode.
 
         Returns:
             List of typed Messages ready for LLM
@@ -201,7 +206,7 @@ class PromptBuilder:
         from mypalclara.core.security.worm_persona import build_worm_persona
 
         personality = self._load_workspace_persona()
-        system_base = build_worm_persona(personality, tools)
+        system_base = build_worm_persona(personality, tools, system_prompts=system_prompts)
 
         # --- MINIMAL mode: identity + runtime only, skip memories/emotions/topics/graph ---
         if mode is PromptMode.MINIMAL:

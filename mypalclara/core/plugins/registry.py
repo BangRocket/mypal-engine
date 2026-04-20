@@ -589,6 +589,33 @@ class PluginRegistry:
 
         return "\n\n".join(prompts)
 
+    def get_system_prompts_list(
+        self,
+        platform: str | None = None,
+        allowed_modules: list[str] | None = None,
+    ) -> list[tuple[str, str]]:
+        """Return registered system prompts as (module_name, prompt_text) tuples.
+
+        Unlike get_system_prompts (which joins into one string), this preserves
+        module boundaries so the caller can render per-module headers.
+
+        Args:
+            platform: Reserved for future platform filtering; currently unused.
+            allowed_modules: If provided, only include prompts from these modules.
+
+        Returns:
+            List of (module_name, prompt) tuples in registration order.
+        """
+        if not self.system_prompts:
+            return []
+        if allowed_modules is not None:
+            allowed_set = set(allowed_modules)
+            return [
+                (mod, prompt) for mod, prompt in self.system_prompts.items()
+                if mod in allowed_set
+            ]
+        return list(self.system_prompts.items())
+
     def get_tool_names(self) -> list[str]:
         """Get list of all registered tool names."""
         return list(self.tools.keys())

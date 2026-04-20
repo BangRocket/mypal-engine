@@ -270,6 +270,26 @@ class ToolRegistry:
         """
         return self._get_plugin_registry().get_system_prompts(platform, allowed_modules)
 
+    def get_system_prompts_list(
+        self,
+        platform: str | None = None,
+        allowed_modules: list[str] | None = None,
+    ) -> list[tuple[str, str]]:
+        """Get system prompts as (module_name, prompt_text) tuples.
+
+        Unlike get_system_prompts (which joins into one string), this preserves
+        module boundaries so the caller can render per-module headers.
+
+        Args:
+            platform: Optional platform filter (not currently used but reserved)
+            allowed_modules: If provided, only include prompts from these modules.
+                            If None, includes all prompts.
+
+        Returns:
+            List of (module_name, prompt) tuples in registration order.
+        """
+        return self._get_plugin_registry().get_system_prompts_list(platform, allowed_modules)
+
     def __len__(self) -> int:
         """Return the number of registered tools."""
         return len(self._get_plugin_registry())
