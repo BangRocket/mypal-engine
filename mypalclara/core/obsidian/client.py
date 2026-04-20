@@ -243,3 +243,37 @@ class ObsidianClient:
             headers={"Content-Type": "application/vnd.olrapi.jsonlogic+json"},
         )
         return resp.json()
+
+    # ---- tags, commands, open ----
+
+    async def list_tags(self) -> list[tuple[str, int]]:
+        """List all tags in the vault with usage counts, sorted by count desc.
+
+        Returns a list of (tag_name, count) tuples. The leading '#' is stripped.
+        """
+        resp = await self._request("GET", "/tags/")
+        data = resp.json()
+        items = data if isinstance(data, list) else data.get("tags", [])
+        result: list[tuple[str, int]] = []
+        for item in items:
+            name = item.get("tag") or item.get("name") or ""
+            if name.startswith("#"):
+                name = name[1:]
+            count = int(item.get("count", 0))
+            if name:
+                result.append((name, count))
+        result.sort(key=lambda t: t[1], reverse=True)
+        return result
+
+    async def list_commands(self) -> list[dict]:
+        """List available Obsidian commands (id + name)."""
+        resp = await self._request("GET", "/commands/")
+        return resp.json().get("commands", [])
+
+    async def execute_command(self, command_id: str) -> None:
+        """Execute an Obsidian command by its ID."""
+        await self._request("POST", f"/commands/{command_id}/")
+
+    async def open_file(self, path: str) -> None:
+        """Surface a note in the Obsidian UI."""
+        await self._request("POST", f"/open/{path}")

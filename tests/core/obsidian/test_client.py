@@ -456,3 +456,119 @@ async def test_search_simple_404_raises(httpx_mock):
     client = ObsidianClient("h.example", "t")
     with pytest.raises(ObsidianNotFoundError):
         await client.search_simple("x")
+
+
+# ---- B6 tests ----
+
+async def test_list_tags_list_shape(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/tags/",
+        json=[
+            {"tag": "work", "count": 42},
+            {"tag": "clara", "count": 17},
+        ],
+    )
+    client = ObsidianClient("h.example", "t")
+    tags = await client.list_tags()
+    assert tags == [("work", 42), ("clara", 17)]
+
+
+async def test_list_tags_dict_shape_with_name_key(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/tags/",
+        json={"tags": [{"name": "ideas", "count": 8}]},
+    )
+    client = ObsidianClient("h.example", "t")
+    tags = await client.list_tags()
+    assert tags == [("ideas", 8)]
+
+
+async def test_list_tags_strips_hash_prefix(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/tags/",
+        json=[{"tag": "#project", "count": 3}],
+    )
+    client = ObsidianClient("h.example", "t")
+    tags = await client.list_tags()
+    assert tags == [("project", 3)]
+
+
+async def test_list_tags_sorts_by_count_desc(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/tags/",
+        json=[
+            {"tag": "low", "count": 1},
+            {"tag": "high", "count": 99},
+            {"tag": "mid", "count": 50},
+        ],
+    )
+    client = ObsidianClient("h.example", "t")
+    tags = await client.list_tags()
+    assert tags == [("high", 99), ("mid", 50), ("low", 1)]
+
+
+async def test_list_tags_skips_entries_missing_name(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/tags/",
+        json=[
+            {"tag": "ok", "count": 5},
+            {"count": 3},  # no tag/name — should be skipped
+        ],
+    )
+    client = ObsidianClient("h.example", "t")
+    tags = await client.list_tags()
+    assert tags == [("ok", 5)]
+
+
+async def test_list_commands_returns_commands_array(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/commands/",
+        json={"commands": [
+            {"id": "app:reload", "name": "Reload app"},
+            {"id": "editor:save-file", "name": "Save current file"},
+        ]},
+    )
+    client = ObsidianClient("h.example", "t")
+    commands = await client.list_commands()
+    assert len(commands) == 2
+    assert commands[0]["id"] == "app:reload"
+
+
+async def test_list_commands_handles_empty(httpx_mock):
+    httpx_mock.add_response(url="https://h.example/commands/", json={"commands": []})
+    client = ObsidianClient("h.example", "t")
+    assert await client.list_commands() == []
+
+
+async def test_execute_command_posts_to_command_path(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/commands/app:reload/",
+        status_code=204,
+    )
+    client = ObsidianClient("h.example", "t")
+    await client.execute_command("app:reload")
+
+    request = httpx_mock.get_request()
+    assert request.method == "POST"
+
+
+async def test_execute_command_404_raises(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/commands/nonexistent/",
+        status_code=404,
+    )
+    client = ObsidianClient("h.example", "t")
+    with pytest.raises(ObsidianNotFoundError):
+        await client.execute_command("nonexistent")
+
+
+async def test_open_file_posts_to_open_path(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/open/Projects/note.md",
+        status_code=204,
+    )
+    client = ObsidianClient("h.example", "t")
+    await client.open_file("Projects/note.md")
+
+    request = httpx_mock.get_request()
+    assert request.method == "POST"
