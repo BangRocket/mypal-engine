@@ -108,6 +108,7 @@ clara-cli = "mypalclara.adapters.cli.main:run"
 pytest = "^8.0"
 pytest-asyncio = "^0.24.0"
 ruff = "^0.8"
+pytest-httpx = "^0.35.0"
 
 [build-system]
 requires = ["poetry-core"]
