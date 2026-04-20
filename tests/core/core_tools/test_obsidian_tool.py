@@ -35,8 +35,10 @@ def test_tools_list_contains_expected_read_tools():
         "obsidian_get_periodic_note",
         "obsidian_list_tags",
         "obsidian_list_commands",
+        "obsidian_search",
+        "obsidian_query",
     }
-    assert expected <= names  # E2 ships these; later tasks add more
+    assert expected <= names  # E2+E3 ship these; later tasks add more
 
 
 def test_system_prompt_mentions_key_tools():
@@ -264,3 +266,129 @@ def test_all_seven_read_tools_have_availability():
         assert t.availability is has_obsidian_config
         assert t.intent == "read"
         assert t.risk_level == "safe"
+
+
+# ---- E3 handler tests ----
+
+
+async def test_search_requires_query():
+    from mypalclara.core.core_tools.obsidian_tool import _handle_search
+
+    result = await _handle_search({}, _ctx())
+    assert "'query' is required" in result
+
+
+async def test_search_rejects_negative_context_length():
+    from mypalclara.core.core_tools.obsidian_tool import _handle_search
+
+    result = await _handle_search({"query": "x", "context_length": -1}, _ctx())
+    assert "non-negative" in result
+
+
+async def test_search_rejects_bad_context_length_type():
+    from mypalclara.core.core_tools.obsidian_tool import _handle_search
+
+    result = await _handle_search({"query": "x", "context_length": "lots"}, _ctx())
+    assert "must be an integer" in result
+
+
+async def test_search_happy_path():
+    from mypalclara.core.core_tools.obsidian_tool import _handle_search
+
+    hits = [{"filename": "a.md", "matches": ["hit"]}]
+    client = _mock_client(search_simple=hits)
+    with patch(
+        "mypalclara.core.core_tools.obsidian_tool.get_client_for_user",
+        new=AsyncMock(return_value=client),
+    ):
+        result = await _handle_search({"query": "clara"}, _ctx())
+    import json
+
+    assert json.loads(result) == hits
+    client.search_simple.assert_awaited_once_with("clara", context_length=None)
+
+
+async def test_search_passes_context_length():
+    from mypalclara.core.core_tools.obsidian_tool import _handle_search
+
+    client = _mock_client(search_simple=[])
+    with patch(
+        "mypalclara.core.core_tools.obsidian_tool.get_client_for_user",
+        new=AsyncMock(return_value=client),
+    ):
+        await _handle_search({"query": "clara", "context_length": 200}, _ctx())
+    client.search_simple.assert_awaited_once_with("clara", context_length=200)
+
+
+async def test_query_rejects_unknown_type():
+    from mypalclara.core.core_tools.obsidian_tool import _handle_query
+
+    result = await _handle_query({"query_type": "sql", "query": "x"}, _ctx())
+    assert "'query_type' must be 'dql' or 'jsonlogic'" in result
+
+
+async def test_query_dql_happy_path():
+    from mypalclara.core.core_tools.obsidian_tool import _handle_query
+
+    results = [{"path": "a.md"}]
+    client = _mock_client(search_dql=results)
+    with patch(
+        "mypalclara.core.core_tools.obsidian_tool.get_client_for_user",
+        new=AsyncMock(return_value=client),
+    ):
+        result = await _handle_query({"query_type": "dql", "query": 'TABLE file.mtime FROM "" LIMIT 5'}, _ctx())
+    import json
+
+    assert json.loads(result) == results
+    client.search_dql.assert_awaited_once()
+
+
+async def test_query_dql_rejects_non_string():
+    from mypalclara.core.core_tools.obsidian_tool import _handle_query
+
+    result = await _handle_query({"query_type": "dql", "query": {"not": "string"}}, _ctx())
+    assert "must be a string" in result
+
+
+async def test_query_jsonlogic_with_dict():
+    from mypalclara.core.core_tools.obsidian_tool import _handle_query
+
+    results = [{"path": "a.md"}]
+    client = _mock_client(search_jsonlogic=results)
+    with patch(
+        "mypalclara.core.core_tools.obsidian_tool.get_client_for_user",
+        new=AsyncMock(return_value=client),
+    ):
+        result = await _handle_query(
+            {"query_type": "jsonlogic", "query": {"in": ["clara", {"var": "tags"}]}},
+            _ctx(),
+        )
+    import json
+
+    assert json.loads(result) == results
+
+
+async def test_query_jsonlogic_with_json_string():
+    from mypalclara.core.core_tools.obsidian_tool import _handle_query
+
+    client = _mock_client(search_jsonlogic=[])
+    with patch(
+        "mypalclara.core.core_tools.obsidian_tool.get_client_for_user",
+        new=AsyncMock(return_value=client),
+    ):
+        await _handle_query({"query_type": "jsonlogic", "query": '{"var": "file.tags"}'}, _ctx())
+    client.search_jsonlogic.assert_awaited_once_with({"var": "file.tags"})
+
+
+async def test_query_jsonlogic_rejects_malformed_json_string():
+    from mypalclara.core.core_tools.obsidian_tool import _handle_query
+
+    result = await _handle_query({"query_type": "jsonlogic", "query": "not json"}, _ctx())
+    assert "JSON object or JSON string" in result
+
+
+def test_all_nine_read_plus_search_tools_registered():
+    names = {t.name for t in TOOLS}
+    assert "obsidian_search" in names
+    assert "obsidian_query" in names
+    assert len(names) >= 9

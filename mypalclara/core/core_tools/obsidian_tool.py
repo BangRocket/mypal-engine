@@ -183,6 +183,72 @@ async def _handle_list_commands(args: dict[str, Any], ctx: ToolContext) -> str:
         return _format_obsidian_error(None, e)
 
 
+# ---- search handlers (E3) ----
+
+
+async def _handle_search(args: dict[str, Any], ctx: ToolContext) -> str:
+    query = args.get("query", "").strip()
+    if not query:
+        return "Error: 'query' is required."
+    context_length = args.get("context_length")
+    if context_length is not None:
+        try:
+            context_length = int(context_length)
+        except (TypeError, ValueError):
+            return "Error: 'context_length' must be an integer."
+        if context_length < 0:
+            return "Error: 'context_length' must be non-negative."
+    client, err = await _client_or_error(ctx)
+    if err:
+        return err
+    try:
+        hits = await client.search_simple(query, context_length=context_length)
+        return json.dumps(hits)
+    except ObsidianError as e:
+        return _format_obsidian_error(None, e)
+
+
+async def _handle_query(args: dict[str, Any], ctx: ToolContext) -> str:
+    query_type = args.get("query_type", "").strip().lower()
+    query = args.get("query")
+    if query_type not in ("dql", "jsonlogic"):
+        return "Error: 'query_type' must be 'dql' or 'jsonlogic'."
+    if query is None or (isinstance(query, str) and not query.strip()):
+        return "Error: 'query' is required."
+
+    # Validate argument shape per dialect before resolving the client, so
+    # argument errors surface consistently regardless of configuration state.
+    if query_type == "dql":
+        if not isinstance(query, str):
+            return "Error: DQL 'query' must be a string."
+        query_payload: str | dict = query
+    else:  # jsonlogic
+        # Accept either a dict directly or a JSON string that parses to a dict.
+        if isinstance(query, str):
+            try:
+                query_obj = json.loads(query)
+            except json.JSONDecodeError:
+                return "Error: JsonLogic 'query' must be a JSON object or JSON string."
+        else:
+            query_obj = query
+        if not isinstance(query_obj, dict):
+            return "Error: JsonLogic 'query' must decode to an object."
+        query_payload = query_obj
+
+    client, err = await _client_or_error(ctx)
+    if err:
+        return err
+
+    try:
+        if query_type == "dql":
+            results = await client.search_dql(query_payload)  # type: ignore[arg-type]
+        else:
+            results = await client.search_jsonlogic(query_payload)  # type: ignore[arg-type]
+        return json.dumps(results)
+    except ObsidianError as e:
+        return _format_obsidian_error(None, e)
+
+
 # ---- tools populated by E2-E5 ----
 
 TOOLS: list[ToolDef] = [
@@ -293,5 +359,59 @@ TOOLS: list[ToolDef] = [
         risk_level="safe",
         intent="read",
         emoji="⚙️",
+    ),
+    ToolDef(
+        name="obsidian_search",
+        description="Full-text search across the user's Obsidian vault. Returns hit paths with match excerpts.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Text to search for in note contents.",
+                },
+                "context_length": {
+                    "type": "integer",
+                    "description": "Optional chars of context around each match (default: API default, ~100).",
+                },
+            },
+            "required": ["query"],
+        },
+        handler=_handle_search,
+        availability=has_obsidian_config,
+        risk_level="safe",
+        intent="read",
+        emoji="🔎",
+        detail_keys=["query"],
+    ),
+    ToolDef(
+        name="obsidian_query",
+        description=(
+            "Run a structured query over the vault. query_type='dql' runs a "
+            "Dataview DQL query (requires the Dataview plugin). query_type='jsonlogic' "
+            "runs a JsonLogic query. For DQL, 'query' is a string like "
+            "'TABLE file.mtime FROM \"\" SORT file.mtime DESC LIMIT 5'. For JsonLogic, "
+            "'query' is a JSON object or a JSON-encoded string."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "query_type": {
+                    "type": "string",
+                    "enum": ["dql", "jsonlogic"],
+                    "description": "Which structured-query dialect.",
+                },
+                "query": {
+                    "description": "DQL query string OR a JsonLogic object/JSON string.",
+                },
+            },
+            "required": ["query_type", "query"],
+        },
+        handler=_handle_query,
+        availability=has_obsidian_config,
+        risk_level="safe",
+        intent="read",
+        emoji="🔎",
+        detail_keys=["query_type"],
     ),
 ]
