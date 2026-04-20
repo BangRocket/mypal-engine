@@ -70,20 +70,32 @@ def build_capability_inventory(tools: list[dict[str, Any]]) -> str:
 def build_worm_persona(
     personality: str,
     tools: list[dict[str, Any]] | None = None,
+    system_prompts: list[tuple[str, str]] | None = None,
 ) -> str:
     """Compose the immutable persona layer.
 
-    Appends security instructions (and optionally a capability inventory)
-    to the existing personality text.
+    Appends security instructions, an optional capability inventory, and
+    optional per-tool system prompts to the existing personality text.
 
     Args:
-        personality: Clara's personality text (unchanged)
-        tools: Optional list of tool schema dicts for capability inventory
+        personality: Clara's personality text (unchanged).
+        tools: Optional list of tool schema dicts for capability inventory.
+        system_prompts: Optional list of (module_name, prompt_text) tuples.
+            Each is rendered under a "## Tool-specific guidance — {module}"
+            header, appended after the capability inventory. Modules with
+            empty or whitespace-only prompt text are skipped.
 
     Returns:
-        personality + security instructions + capability inventory
+        personality + security instructions + (optional inventory) +
+        (optional per-tool guidance).
     """
     parts = [personality, WORM_SECURITY]
     if tools:
         parts.append(WORM_CAPABILITY_PREAMBLE + build_capability_inventory(tools))
+    if system_prompts:
+        for module_name, prompt_text in system_prompts:
+            text = (prompt_text or "").strip()
+            if not text:
+                continue
+            parts.append(f"## Tool-specific guidance — {module_name}\n\n{text}")
     return "\n\n".join(parts)
