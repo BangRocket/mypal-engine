@@ -21,6 +21,7 @@ import logging
 from datetime import date
 from typing import Any
 
+from mypalclara.core.obsidian import _snapshot_cache
 from mypalclara.core.obsidian.exceptions import (
     ObsidianAuthError,
     ObsidianConnectionError,
@@ -249,6 +250,118 @@ async def _handle_query(args: dict[str, Any], ctx: ToolContext) -> str:
         return _format_obsidian_error(None, e)
 
 
+# ---- write handlers (E4) ----
+
+
+async def _handle_create_or_update_file(args: dict[str, Any], ctx: ToolContext) -> str:
+    path = args.get("path", "").strip()
+    content = args.get("content", "")
+    if not path:
+        return "Error: 'path' is required."
+    if content is None:
+        return "Error: 'content' is required."
+    client, err = await _client_or_error(ctx)
+    if err:
+        return err
+    try:
+        await client.put_file(path, content)
+        _snapshot_cache.invalidate(ctx.user_id)
+        return f"Wrote {path}."
+    except ObsidianError as e:
+        return _format_obsidian_error(path, e)
+
+
+async def _handle_append_to_file(args: dict[str, Any], ctx: ToolContext) -> str:
+    path = args.get("path", "").strip()
+    content = args.get("content", "")
+    if not path:
+        return "Error: 'path' is required."
+    if not content:
+        return "Error: 'content' is required."
+    client, err = await _client_or_error(ctx)
+    if err:
+        return err
+    try:
+        await client.append_file(path, content)
+        _snapshot_cache.invalidate(ctx.user_id)
+        return f"Appended to {path}."
+    except ObsidianError as e:
+        return _format_obsidian_error(path, e)
+
+
+async def _handle_patch_file(args: dict[str, Any], ctx: ToolContext) -> str:
+    path = args.get("path", "").strip()
+    target_type = args.get("target_type", "").strip().lower()
+    target = args.get("target", "").strip() if isinstance(args.get("target"), str) else ""
+    content = args.get("content", "")
+    operation = args.get("operation", "append").strip().lower()
+
+    if not path:
+        return "Error: 'path' is required."
+    if target_type not in ("heading", "block", "frontmatter"):
+        return "Error: 'target_type' must be one of heading, block, frontmatter."
+    if not target:
+        return "Error: 'target' is required."
+    if operation not in ("append", "prepend", "replace"):
+        return "Error: 'operation' must be one of append, prepend, replace."
+    if content is None:
+        return "Error: 'content' is required."
+
+    client, err = await _client_or_error(ctx)
+    if err:
+        return err
+    try:
+        await client.patch_file(path, target_type, target, content, operation=operation)
+        _snapshot_cache.invalidate(ctx.user_id)
+        return f"Patched {path} ({operation} at {target_type}={target})."
+    except ObsidianError as e:
+        return _format_obsidian_error(path, e)
+
+
+async def _handle_append_to_periodic_note(args: dict[str, Any], ctx: ToolContext) -> str:
+    period = args.get("period", "").strip().lower()
+    content = args.get("content", "")
+    date_str = args.get("date")
+
+    if period not in ("daily", "weekly", "monthly", "quarterly", "yearly"):
+        return "Error: 'period' must be one of daily, weekly, monthly, quarterly, yearly."
+    if not content:
+        return "Error: 'content' is required."
+
+    parsed_date = None
+    if date_str:
+        try:
+            parsed_date = date.fromisoformat(date_str)
+        except ValueError:
+            return f"Error: 'date' must be YYYY-MM-DD (got {date_str!r})."
+
+    client, err = await _client_or_error(ctx)
+    if err:
+        return err
+    try:
+        await client.append_periodic(period, content, parsed_date)
+        _snapshot_cache.invalidate(ctx.user_id)
+        suffix = f" ({date_str})" if date_str else ""
+        return f"Appended to {period} note{suffix}."
+    except ObsidianError as e:
+        return _format_obsidian_error(f"{period} note", e)
+
+
+async def _handle_delete_file(args: dict[str, Any], ctx: ToolContext) -> str:
+    path = args.get("path", "").strip()
+    if not path:
+        return "Error: 'path' is required."
+    client, err = await _client_or_error(ctx)
+    if err:
+        return err
+    try:
+        await client.delete_file(path)
+        _snapshot_cache.invalidate(ctx.user_id)
+        return f"Deleted {path}."
+    except ObsidianError as e:
+        return _format_obsidian_error(path, e)
+
+
 # ---- tools populated by E2-E5 ----
 
 TOOLS: list[ToolDef] = [
@@ -413,5 +526,124 @@ TOOLS: list[ToolDef] = [
         intent="read",
         emoji="🔎",
         detail_keys=["query_type"],
+    ),
+    ToolDef(
+        name="obsidian_create_or_update_file",
+        description=(
+            "Create a new note or REPLACE an existing note entirely. Prefer "
+            "obsidian_append_to_file or obsidian_patch_file for targeted edits."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Vault-relative file path."},
+                "content": {"type": "string", "description": "Full markdown content."},
+            },
+            "required": ["path", "content"],
+        },
+        handler=_handle_create_or_update_file,
+        availability=has_obsidian_config,
+        risk_level="moderate",
+        intent="write",
+        emoji="✍️",
+        detail_keys=["path"],
+    ),
+    ToolDef(
+        name="obsidian_append_to_file",
+        description="Append markdown content to the end of an existing note (or create it).",
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Vault-relative file path."},
+                "content": {"type": "string", "description": "Content to append."},
+            },
+            "required": ["path", "content"],
+        },
+        handler=_handle_append_to_file,
+        availability=has_obsidian_config,
+        risk_level="moderate",
+        intent="write",
+        emoji="➕",
+        detail_keys=["path"],
+    ),
+    ToolDef(
+        name="obsidian_patch_file",
+        description=(
+            "Insert content relative to a heading, block ID, or frontmatter field. "
+            "Prefer this over obsidian_create_or_update_file for targeted edits."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Vault-relative file path."},
+                "target_type": {
+                    "type": "string",
+                    "enum": ["heading", "block", "frontmatter"],
+                    "description": "What kind of insertion point to target.",
+                },
+                "target": {
+                    "type": "string",
+                    "description": "Heading path (e.g. 'H1::H2'), block ID, or frontmatter field name.",
+                },
+                "content": {"type": "string", "description": "Content to insert."},
+                "operation": {
+                    "type": "string",
+                    "enum": ["append", "prepend", "replace"],
+                    "description": "How to combine content with the target (default: append).",
+                },
+            },
+            "required": ["path", "target_type", "target", "content"],
+        },
+        handler=_handle_patch_file,
+        availability=has_obsidian_config,
+        risk_level="moderate",
+        intent="write",
+        emoji="🔧",
+        detail_keys=["path", "target_type", "target"],
+    ),
+    ToolDef(
+        name="obsidian_append_to_periodic_note",
+        description=(
+            "Append markdown to the user's periodic (daily/weekly/etc.) note. "
+            "Default is today's note for the chosen period."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "period": {
+                    "type": "string",
+                    "enum": ["daily", "weekly", "monthly", "quarterly", "yearly"],
+                },
+                "content": {"type": "string", "description": "Content to append."},
+                "date": {
+                    "type": "string",
+                    "description": "Optional ISO date (YYYY-MM-DD); defaults to today.",
+                },
+            },
+            "required": ["period", "content"],
+        },
+        handler=_handle_append_to_periodic_note,
+        availability=has_obsidian_config,
+        risk_level="moderate",
+        intent="write",
+        emoji="📝",
+        detail_keys=["period", "date"],
+    ),
+    ToolDef(
+        name="obsidian_delete_file",
+        description="Permanently delete a note from the vault. This cannot be undone via Clara.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Vault-relative file path."},
+            },
+            "required": ["path"],
+        },
+        handler=_handle_delete_file,
+        availability=has_obsidian_config,
+        risk_level="dangerous",
+        intent="write",
+        emoji="🗑️",
+        detail_keys=["path"],
     ),
 ]

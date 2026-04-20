@@ -264,8 +264,8 @@ async def test_auth_error_returns_user_message():
 def test_all_seven_read_tools_have_availability():
     for t in TOOLS:
         assert t.availability is has_obsidian_config
-        assert t.intent == "read"
-        assert t.risk_level == "safe"
+        if t.intent == "read":
+            assert t.risk_level == "safe"
 
 
 # ---- E3 handler tests ----
@@ -392,3 +392,192 @@ def test_all_nine_read_plus_search_tools_registered():
     assert "obsidian_search" in names
     assert "obsidian_query" in names
     assert len(names) >= 9
+
+
+# ---- E4 handler tests ----
+
+from unittest.mock import MagicMock
+
+
+@pytest.fixture
+def mock_snapshot_cache(monkeypatch):
+    """Replace the module-level _snapshot_cache with a MagicMock to observe invalidate calls."""
+    import mypalclara.core.core_tools.obsidian_tool as tool_mod
+
+    fake = MagicMock()
+    monkeypatch.setattr(tool_mod, "_snapshot_cache", fake)
+    return fake
+
+
+async def test_create_or_update_file_happy_path(mock_snapshot_cache):
+    from mypalclara.core.core_tools.obsidian_tool import _handle_create_or_update_file
+
+    client = _mock_client(put_file=None)
+    with patch(
+        "mypalclara.core.core_tools.obsidian_tool.get_client_for_user",
+        new=AsyncMock(return_value=client),
+    ):
+        result = await _handle_create_or_update_file({"path": "new.md", "content": "hi"}, _ctx("u1"))
+    assert "Wrote new.md" in result
+    client.put_file.assert_awaited_once_with("new.md", "hi")
+    mock_snapshot_cache.invalidate.assert_called_once_with("u1")
+
+
+async def test_create_or_update_does_not_invalidate_on_error(mock_snapshot_cache):
+    from mypalclara.core.core_tools.obsidian_tool import _handle_create_or_update_file
+    from mypalclara.core.obsidian.exceptions import ObsidianAuthError
+
+    client = _mock_client(put_file=ObsidianAuthError("401"))
+    with patch(
+        "mypalclara.core.core_tools.obsidian_tool.get_client_for_user",
+        new=AsyncMock(return_value=client),
+    ):
+        result = await _handle_create_or_update_file({"path": "x.md", "content": "y"}, _ctx("u1"))
+    assert "authentication failed" in result.lower()
+    mock_snapshot_cache.invalidate.assert_not_called()
+
+
+async def test_create_or_update_file_requires_path(mock_snapshot_cache):
+    from mypalclara.core.core_tools.obsidian_tool import _handle_create_or_update_file
+
+    result = await _handle_create_or_update_file({"content": "x"}, _ctx())
+    assert "'path' is required" in result
+    mock_snapshot_cache.invalidate.assert_not_called()
+
+
+async def test_append_to_file_happy_path(mock_snapshot_cache):
+    from mypalclara.core.core_tools.obsidian_tool import _handle_append_to_file
+
+    client = _mock_client(append_file=None)
+    with patch(
+        "mypalclara.core.core_tools.obsidian_tool.get_client_for_user",
+        new=AsyncMock(return_value=client),
+    ):
+        result = await _handle_append_to_file({"path": "note.md", "content": "- new\n"}, _ctx("u2"))
+    assert "Appended to note.md" in result
+    client.append_file.assert_awaited_once_with("note.md", "- new\n")
+    mock_snapshot_cache.invalidate.assert_called_once_with("u2")
+
+
+async def test_patch_file_happy_path(mock_snapshot_cache):
+    from mypalclara.core.core_tools.obsidian_tool import _handle_patch_file
+
+    client = _mock_client(patch_file=None)
+    with patch(
+        "mypalclara.core.core_tools.obsidian_tool.get_client_for_user",
+        new=AsyncMock(return_value=client),
+    ):
+        result = await _handle_patch_file(
+            {"path": "note.md", "target_type": "heading", "target": "## Log", "content": "- entry\n"}, _ctx("u1")
+        )
+    assert "Patched note.md" in result
+    client.patch_file.assert_awaited_once_with("note.md", "heading", "## Log", "- entry\n", operation="append")
+    mock_snapshot_cache.invalidate.assert_called_once_with("u1")
+
+
+async def test_patch_file_rejects_bad_target_type(mock_snapshot_cache):
+    from mypalclara.core.core_tools.obsidian_tool import _handle_patch_file
+
+    result = await _handle_patch_file(
+        {"path": "x.md", "target_type": "section", "target": "t", "content": "c"},
+        _ctx(),
+    )
+    assert "target_type" in result and "heading, block, frontmatter" in result
+    mock_snapshot_cache.invalidate.assert_not_called()
+
+
+async def test_patch_file_rejects_bad_operation(mock_snapshot_cache):
+    from mypalclara.core.core_tools.obsidian_tool import _handle_patch_file
+
+    result = await _handle_patch_file(
+        {"path": "x.md", "target_type": "heading", "target": "H", "content": "c", "operation": "overwrite"},
+        _ctx(),
+    )
+    assert "operation" in result and "append, prepend, replace" in result
+    mock_snapshot_cache.invalidate.assert_not_called()
+
+
+async def test_append_to_periodic_note_happy_path(mock_snapshot_cache):
+    from datetime import date as _date
+
+    from mypalclara.core.core_tools.obsidian_tool import _handle_append_to_periodic_note
+
+    client = _mock_client(append_periodic=None)
+    with patch(
+        "mypalclara.core.core_tools.obsidian_tool.get_client_for_user",
+        new=AsyncMock(return_value=client),
+    ):
+        result = await _handle_append_to_periodic_note(
+            {"period": "daily", "content": "- marker\n", "date": "2026-04-20"},
+            _ctx("u1"),
+        )
+    assert "Appended to daily note" in result
+    client.append_periodic.assert_awaited_once_with("daily", "- marker\n", _date(2026, 4, 20))
+    mock_snapshot_cache.invalidate.assert_called_once_with("u1")
+
+
+async def test_append_to_periodic_note_requires_content(mock_snapshot_cache):
+    from mypalclara.core.core_tools.obsidian_tool import _handle_append_to_periodic_note
+
+    result = await _handle_append_to_periodic_note({"period": "daily"}, _ctx())
+    assert "'content' is required" in result
+    mock_snapshot_cache.invalidate.assert_not_called()
+
+
+async def test_delete_file_happy_path(mock_snapshot_cache):
+    from mypalclara.core.core_tools.obsidian_tool import _handle_delete_file
+
+    client = _mock_client(delete_file=None)
+    with patch(
+        "mypalclara.core.core_tools.obsidian_tool.get_client_for_user",
+        new=AsyncMock(return_value=client),
+    ):
+        result = await _handle_delete_file({"path": "trash.md"}, _ctx("u9"))
+    assert "Deleted trash.md" in result
+    client.delete_file.assert_awaited_once_with("trash.md")
+    mock_snapshot_cache.invalidate.assert_called_once_with("u9")
+
+
+async def test_delete_file_not_found(mock_snapshot_cache):
+    from mypalclara.core.core_tools.obsidian_tool import _handle_delete_file
+    from mypalclara.core.obsidian.exceptions import ObsidianNotFoundError
+
+    client = _mock_client(delete_file=ObsidianNotFoundError("gone"))
+    with patch(
+        "mypalclara.core.core_tools.obsidian_tool.get_client_for_user",
+        new=AsyncMock(return_value=client),
+    ):
+        result = await _handle_delete_file({"path": "gone.md"}, _ctx("u9"))
+    assert "Note not found: gone.md" in result
+    mock_snapshot_cache.invalidate.assert_not_called()
+
+
+def test_all_fourteen_tools_are_present_so_far():
+    names = {t.name for t in TOOLS}
+    # E1 scaffold + E2 (7) + E3 (2) + E4 (5) = 14. E5 adds 2 more.
+    assert len(names) == 14
+    expected_writes = {
+        "obsidian_create_or_update_file",
+        "obsidian_append_to_file",
+        "obsidian_patch_file",
+        "obsidian_append_to_periodic_note",
+        "obsidian_delete_file",
+    }
+    assert expected_writes <= names
+
+
+def test_write_tools_have_correct_risk_and_intent():
+    write_names = {
+        "obsidian_create_or_update_file",
+        "obsidian_append_to_file",
+        "obsidian_patch_file",
+        "obsidian_append_to_periodic_note",
+        "obsidian_delete_file",
+    }
+    for t in TOOLS:
+        if t.name in write_names:
+            assert t.intent == "write"
+            if t.name == "obsidian_delete_file":
+                assert t.risk_level == "dangerous"
+            else:
+                assert t.risk_level == "moderate"
