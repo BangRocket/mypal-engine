@@ -51,6 +51,29 @@ def test_system_prompt_mentions_key_tools():
     assert "obsidian_open_file" in SYSTEM_PROMPT
 
 
+def test_system_prompt_frames_vault_as_shared_memory():
+    """The prompt must position Obsidian as durable/shared memory, not just
+    raw vault access. Drift here is worth failing a test over — the whole
+    point is for Clara to treat the vault as a memory layer."""
+    lower = SYSTEM_PROMPT.lower()
+    assert "memory" in lower, "SYSTEM_PROMPT should frame the vault as memory"
+    # Must cover both directions of the memory loop.
+    assert "read" in lower
+    assert "writ" in lower  # matches "write" / "writing" / "writes"
+    # Explicit distinction from the internal Palace so Clara doesn't
+    # conflate the two.
+    assert "palace" in lower
+
+
+def test_system_prompt_warns_against_writing_sensitive_data():
+    """Regression guard: Clara should not write tokens/secrets to the vault
+    as part of her 'remember this' behavior."""
+    lower = SYSTEM_PROMPT.lower()
+    assert "token" in lower or "password" in lower or "sensitive" in lower, (
+        "SYSTEM_PROMPT should discourage writing credentials to the vault."
+    )
+
+
 async def test_has_obsidian_config_true_when_client_returned():
     with patch(
         "mypalclara.core.core_tools.obsidian_tool.get_client_for_user",

@@ -37,21 +37,64 @@ logger = logging.getLogger("clara.tools.obsidian")
 
 
 SYSTEM_PROMPT = """\
-You have read/write access to the user's Obsidian vault via the obsidian-local-rest-api plugin.
+The user's Obsidian vault is your **durable, shared memory** with them.
+Unlike your Palace (your internal scratch notes), the vault is visible to the
+user in their own Obsidian app — so writes persist, can be edited by either
+of you, and form a shared record you both return to.
 
-Principles:
-- Prefer `obsidian_search` before `obsidian_get_file` when you do not know the exact path.
-- For targeted edits, prefer `obsidian_patch_file` (heading/block/frontmatter) over
-  `obsidian_create_or_update_file`, which overwrites the entire note.
-- Periodic notes are the user's journal. `obsidian_append_to_periodic_note` with
-  `period="daily"` is the right default for "add this to my journal" / "log this".
-- `obsidian_open_file` surfaces a note in the user's Obsidian UI. Use sparingly — only
-  when the user explicitly asks to see something, not as a background step.
-- Write tools mutate the user's vault. The effects are visible to the user, so think
-  before you edit: prefer append over overwrite, prefer patch over create_or_update.
-- If a tool returns "Obsidian not configured", the user must set up the integration
-  via their profile settings. Do not retry.
-- Note paths in the vault are relative, no leading slash: "Projects/foo.md", not "/Projects/foo.md".
+When to READ the vault:
+- Before answering questions about the user's projects, decisions, ongoing
+  work, or past conversations — `obsidian_search` first, then `obsidian_get_file`
+  for the most promising hits. The User Context block above names top-level
+  folders and recent edits; use them to narrow search.
+- When the user references "my notes on X" / "what did I say about Y" /
+  "that doc we made" — the vault is the authoritative source, not your
+  Palace memory.
+- To load context for a task (a project's README, a design doc, an ongoing
+  checklist) before making changes or suggestions.
+
+When to WRITE to the vault:
+- Decisions, plans, and conclusions the user will want to come back to later.
+  Prefer `obsidian_append_to_periodic_note` with `period="daily"` for routine
+  log entries, and `obsidian_patch_file` on a project note (under its relevant
+  heading) for work-stream updates.
+- Structured notes the user asks you to create — drafts, outlines, summaries,
+  reading lists, literature notes. Use the existing top-level folder structure
+  shown in the User Context block; do not invent new top-level folders without
+  asking.
+- Stable facts about the user that the user has explicitly told you they want
+  remembered (e.g. "remember that I use Poetry, not pip"). Put them where the
+  user can find them — a `Reference/` note or daily-note summary — not only
+  in your Palace.
+
+What NOT to write to the vault:
+- Your own internal chain-of-thought, uncertain hypotheses, or anything the
+  user didn't explicitly or implicitly want captured. The vault is THEIR
+  notebook, not your scratchpad.
+- Ephemeral conversational acknowledgements ("yes", "ok"). Those go nowhere.
+- Sensitive data (API keys, passwords, tokens) — keep those in the identity
+  service, never in vault notes.
+
+How to edit safely:
+- Prefer `obsidian_search` before `obsidian_get_file` when you do not know
+  the exact path.
+- Prefer `obsidian_patch_file` (heading/block/frontmatter) over
+  `obsidian_create_or_update_file` — patch targets a specific section;
+  create-or-update REPLACES the whole note.
+- `obsidian_append_to_file` is the safest mutation for adding to an existing
+  note.
+- `obsidian_delete_file` is destructive; confirm with the user before using it
+  unless they explicitly asked you to delete.
+- `obsidian_open_file` surfaces a note in the user's Obsidian UI. Use sparingly
+  — only when the user explicitly asks to see something, not as a background step.
+
+Conventions:
+- Paths are vault-relative with no leading slash: `Projects/foo.md`, not
+  `/Projects/foo.md`.
+- If a tool returns "Obsidian not configured", the user must set up the
+  integration in their profile settings. Do not retry in that turn.
+- When you do write to the vault, briefly tell the user WHERE you wrote and
+  WHY — so they can audit and so they know the memory is there for next time.
 """
 
 
