@@ -170,6 +170,7 @@ class PromptBuilder:
         privacy_scope: str = "full",
         user_id: str | None = None,
         system_prompts: list[tuple[str, str]] | None = None,
+        vault_snapshot_block: str | None = None,
     ) -> list[Message]:
         """Build the full prompt for the LLM.
 
@@ -192,6 +193,10 @@ class PromptBuilder:
                 gathered by the caller from the tool registry. Passed through to
                 build_worm_persona so each module's guidance is rendered under a
                 "## Tool-specific guidance — {module}" header. Ignored in NONE mode.
+            vault_snapshot_block: Optional prompt-ready snapshot of the user's
+                Obsidian vault (from fetch_vault_snapshot_block). When provided,
+                injected as a separate SystemMessage under a "## User Context"
+                header after the persona block. Ignored in NONE mode.
 
         Returns:
             List of typed Messages ready for LLM
@@ -219,6 +224,11 @@ class PromptBuilder:
                 SystemMessage(content=system_base),
                 SystemMessage(content=context_block),
             ]
+
+            if vault_snapshot_block:
+                messages.append(
+                    SystemMessage(content=f"## User Context\n\n{vault_snapshot_block}")
+                )
 
             # Add recent messages (same formatting as FULL mode)
             for m in recent_msgs:
@@ -294,6 +304,11 @@ class PromptBuilder:
         messages: list[Message] = [
             SystemMessage(content=system_base),
         ]
+
+        if vault_snapshot_block:
+            messages.append(
+                SystemMessage(content=f"## User Context\n\n{vault_snapshot_block}")
+            )
 
         if context_parts:
             messages.append(SystemMessage(content="\n\n".join(context_parts)))
