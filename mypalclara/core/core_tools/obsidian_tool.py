@@ -16,8 +16,17 @@ next prompt build reflects the mutation.
 
 from __future__ import annotations
 
+import json
 import logging
+from datetime import date
+from typing import Any
 
+from mypalclara.core.obsidian.exceptions import (
+    ObsidianAuthError,
+    ObsidianConnectionError,
+    ObsidianError,
+    ObsidianNotFoundError,
+)
 from mypalclara.core.obsidian.factory import get_client_for_user
 from mypalclara.tools._base import ToolContext, ToolDef
 
@@ -60,6 +69,229 @@ async def has_obsidian_config(canonical_user_id: str) -> bool:
         return False
 
 
+async def _client_or_error(ctx: ToolContext):
+    """Return the user's ObsidianClient, or an error string to return to the LLM."""
+    client = await get_client_for_user(ctx.user_id)
+    if client is None:
+        return None, "Obsidian is not configured for this user."
+    return client, None
+
+
+def _format_obsidian_error(path: str | None, e: Exception) -> str:
+    if isinstance(e, ObsidianAuthError):
+        return "Obsidian authentication failed. Please update your API token."
+    if isinstance(e, ObsidianNotFoundError):
+        return f"Note not found: {path}" if path else "Resource not found."
+    if isinstance(e, ObsidianConnectionError):
+        return f"Obsidian unreachable: {e}"
+    if isinstance(e, ObsidianError):
+        return f"Obsidian error: {e}"
+    return f"Unexpected error: {e}"
+
+
+# ---- read handlers (E2) ----
+
+
+async def _handle_list_vault(args: dict[str, Any], ctx: ToolContext) -> str:
+    client, err = await _client_or_error(ctx)
+    if err:
+        return err
+    try:
+        files = await client.list_vault()
+        return json.dumps(files)
+    except ObsidianError as e:
+        return _format_obsidian_error(None, e)
+
+
+async def _handle_list_dir(args: dict[str, Any], ctx: ToolContext) -> str:
+    path = args.get("path", "").strip()
+    if not path:
+        return "Error: 'path' is required."
+    client, err = await _client_or_error(ctx)
+    if err:
+        return err
+    try:
+        files = await client.list_dir(path)
+        return json.dumps(files)
+    except ObsidianError as e:
+        return _format_obsidian_error(path, e)
+
+
+async def _handle_get_file(args: dict[str, Any], ctx: ToolContext) -> str:
+    path = args.get("path", "").strip()
+    if not path:
+        return "Error: 'path' is required."
+    client, err = await _client_or_error(ctx)
+    if err:
+        return err
+    try:
+        return await client.get_file(path)
+    except ObsidianError as e:
+        return _format_obsidian_error(path, e)
+
+
+async def _handle_get_active_file(args: dict[str, Any], ctx: ToolContext) -> str:
+    client, err = await _client_or_error(ctx)
+    if err:
+        return err
+    try:
+        return await client.get_active()
+    except ObsidianError as e:
+        return _format_obsidian_error(None, e)
+
+
+async def _handle_get_periodic_note(args: dict[str, Any], ctx: ToolContext) -> str:
+    period = args.get("period", "").strip().lower()
+    if period not in ("daily", "weekly", "monthly", "quarterly", "yearly"):
+        return "Error: 'period' must be one of daily, weekly, monthly, quarterly, yearly."
+    date_str = args.get("date")
+    parsed_date = None
+    if date_str:
+        try:
+            parsed_date = date.fromisoformat(date_str)
+        except ValueError:
+            return f"Error: 'date' must be YYYY-MM-DD (got {date_str!r})."
+    client, err = await _client_or_error(ctx)
+    if err:
+        return err
+    try:
+        return await client.get_periodic(period, parsed_date)
+    except ObsidianError as e:
+        return _format_obsidian_error(f"{period} note", e)
+
+
+async def _handle_list_tags(args: dict[str, Any], ctx: ToolContext) -> str:
+    client, err = await _client_or_error(ctx)
+    if err:
+        return err
+    try:
+        tags = await client.list_tags()
+        # Return a structured list for Clara to consume
+        return json.dumps([{"tag": name, "count": count} for name, count in tags])
+    except ObsidianError as e:
+        return _format_obsidian_error(None, e)
+
+
+async def _handle_list_commands(args: dict[str, Any], ctx: ToolContext) -> str:
+    client, err = await _client_or_error(ctx)
+    if err:
+        return err
+    try:
+        commands = await client.list_commands()
+        return json.dumps(commands)
+    except ObsidianError as e:
+        return _format_obsidian_error(None, e)
+
+
 # ---- tools populated by E2-E5 ----
 
-TOOLS: list[ToolDef] = []
+TOOLS: list[ToolDef] = [
+    ToolDef(
+        name="obsidian_list_vault",
+        description="List files and directories at the root of the user's Obsidian vault.",
+        parameters={"type": "object", "properties": {}, "required": []},
+        handler=_handle_list_vault,
+        availability=has_obsidian_config,
+        risk_level="safe",
+        intent="read",
+        emoji="📁",
+    ),
+    ToolDef(
+        name="obsidian_list_dir",
+        description="List files and directories at a specific path in the Obsidian vault.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Vault-relative directory path, e.g. 'Projects'.",
+                }
+            },
+            "required": ["path"],
+        },
+        handler=_handle_list_dir,
+        availability=has_obsidian_config,
+        risk_level="safe",
+        intent="read",
+        emoji="📁",
+        detail_keys=["path"],
+    ),
+    ToolDef(
+        name="obsidian_get_file",
+        description="Read the full content of a note in the Obsidian vault.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Vault-relative file path, e.g. 'Projects/foo.md'.",
+                }
+            },
+            "required": ["path"],
+        },
+        handler=_handle_get_file,
+        availability=has_obsidian_config,
+        risk_level="safe",
+        intent="read",
+        emoji="📄",
+        detail_keys=["path"],
+    ),
+    ToolDef(
+        name="obsidian_get_active_file",
+        description="Read the content of the note currently open in the user's Obsidian UI.",
+        parameters={"type": "object", "properties": {}, "required": []},
+        handler=_handle_get_active_file,
+        availability=has_obsidian_config,
+        risk_level="safe",
+        intent="read",
+        emoji="📄",
+    ),
+    ToolDef(
+        name="obsidian_get_periodic_note",
+        description=(
+            "Read the user's periodic note (daily/weekly/monthly/quarterly/yearly). "
+            "Defaults to today's note for the chosen period."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "period": {
+                    "type": "string",
+                    "enum": ["daily", "weekly", "monthly", "quarterly", "yearly"],
+                    "description": "Which periodic note to read.",
+                },
+                "date": {
+                    "type": "string",
+                    "description": ("Optional ISO date (YYYY-MM-DD). If omitted, reads the " "current period's note."),
+                },
+            },
+            "required": ["period"],
+        },
+        handler=_handle_get_periodic_note,
+        availability=has_obsidian_config,
+        risk_level="safe",
+        intent="read",
+        emoji="📆",
+        detail_keys=["period", "date"],
+    ),
+    ToolDef(
+        name="obsidian_list_tags",
+        description="List all tags in the user's Obsidian vault with usage counts.",
+        parameters={"type": "object", "properties": {}, "required": []},
+        handler=_handle_list_tags,
+        availability=has_obsidian_config,
+        risk_level="safe",
+        intent="read",
+        emoji="🏷️",
+    ),
+    ToolDef(
+        name="obsidian_list_commands",
+        description="List available Obsidian commands the user could execute.",
+        parameters={"type": "object", "properties": {}, "required": []},
+        handler=_handle_list_commands,
+        availability=has_obsidian_config,
+        risk_level="safe",
+        intent="read",
+        emoji="⚙️",
+    ),
+]
