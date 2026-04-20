@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "mypalclara"
-version = "2026.17.33"
+version = "2026.17.34"
 description = "MyPalClara - AI assistant with session management and memory"
 authors = ["Joshua Heidorn <heidornj@icloud.com>"]
 license = "PolyForm-Noncommercial-1.0.0"
@@ -141,3 +141,7 @@ ignore = [
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+addopts = "-m 'not integration'"
+markers = [
+    "integration: live-network integration tests. Deselected by default via addopts. Run with `pytest -m integration` and required env vars set.",
+]
