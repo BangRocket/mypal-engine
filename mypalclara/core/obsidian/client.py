@@ -203,3 +203,43 @@ class ObsidianClient:
             content=content.encode("utf-8"),
             headers={"Content-Type": "text/markdown; charset=utf-8"},
         )
+
+    # ---- search ----
+
+    async def search_simple(
+        self, query: str, context_length: int | None = None
+    ) -> list[dict]:
+        """Full-text search across the vault.
+
+        Returns a list of hit dicts; each hit has at least `filename` and `matches`.
+        """
+        body: dict[str, object] = {"query": query}
+        if context_length is not None:
+            body["contextLength"] = context_length
+        resp = await self._request("POST", "/search/simple/", json=body)
+        return resp.json()
+
+    async def search_dql(self, query: str) -> list[dict]:
+        """Run a Dataview DQL query over the vault.
+
+        Only works if the Dataview plugin is installed and enabled.
+        """
+        resp = await self._request(
+            "POST",
+            "/search/",
+            content=query.encode("utf-8"),
+            headers={"Content-Type": "application/vnd.olrapi.dataview.dql+txt"},
+        )
+        return resp.json()
+
+    async def search_jsonlogic(self, query: dict) -> list[dict]:
+        """Run a JsonLogic query over the vault."""
+        import json as _json  # local alias; don't clutter top-level imports
+
+        resp = await self._request(
+            "POST",
+            "/search/",
+            content=_json.dumps(query).encode("utf-8"),
+            headers={"Content-Type": "application/vnd.olrapi.jsonlogic+json"},
+        )
+        return resp.json()

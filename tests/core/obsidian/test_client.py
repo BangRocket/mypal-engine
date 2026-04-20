@@ -361,3 +361,98 @@ async def test_get_periodic_404_raises(httpx_mock):
     client = ObsidianClient("h.example", "t")
     with pytest.raises(ObsidianNotFoundError):
         await client.get_periodic("daily")
+
+
+# ---- B5 tests ----
+
+async def test_search_simple_sends_post_with_query(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/search/simple/",
+        json=[
+            {"filename": "a.md", "matches": ["hit"]},
+            {"filename": "b.md", "matches": ["another"]},
+        ],
+    )
+    client = ObsidianClient("h.example", "t")
+    hits = await client.search_simple("clara")
+    assert len(hits) == 2
+    assert hits[0]["filename"] == "a.md"
+
+    request = httpx_mock.get_request()
+    assert request.method == "POST"
+    import json
+    body = json.loads(request.content)
+    assert body == {"query": "clara"}
+
+
+async def test_search_simple_includes_context_length_when_given(httpx_mock):
+    httpx_mock.add_response(url="https://h.example/search/simple/", json=[])
+    client = ObsidianClient("h.example", "t")
+    await client.search_simple("clara", context_length=200)
+
+    request = httpx_mock.get_request()
+    import json
+    body = json.loads(request.content)
+    assert body == {"query": "clara", "contextLength": 200}
+
+
+async def test_search_simple_omits_context_length_by_default(httpx_mock):
+    httpx_mock.add_response(url="https://h.example/search/simple/", json=[])
+    client = ObsidianClient("h.example", "t")
+    await client.search_simple("clara")
+
+    request = httpx_mock.get_request()
+    import json
+    body = json.loads(request.content)
+    assert "contextLength" not in body
+
+
+async def test_search_dql_uses_dql_content_type(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/search/",
+        json=[{"path": "a.md"}],
+    )
+    client = ObsidianClient("h.example", "t")
+    results = await client.search_dql('TABLE file.mtime FROM "" LIMIT 5')
+    assert results == [{"path": "a.md"}]
+
+    request = httpx_mock.get_request()
+    assert request.headers.get("Content-Type") == "application/vnd.olrapi.dataview.dql+txt"
+    assert request.content == b'TABLE file.mtime FROM "" LIMIT 5'
+
+
+async def test_search_jsonlogic_uses_jsonlogic_content_type(httpx_mock):
+    httpx_mock.add_response(
+        url="https://h.example/search/",
+        json=[{"path": "a.md"}],
+    )
+    client = ObsidianClient("h.example", "t")
+    results = await client.search_jsonlogic({"in": ["clara", {"var": "file.tags"}]})
+    assert results == [{"path": "a.md"}]
+
+    request = httpx_mock.get_request()
+    assert request.headers.get("Content-Type") == "application/vnd.olrapi.jsonlogic+json"
+    import json
+    parsed = json.loads(request.content)
+    assert parsed == {"in": ["clara", {"var": "file.tags"}]}
+
+
+async def test_search_methods_preserve_auth(httpx_mock):
+    httpx_mock.add_response(url="https://h.example/search/simple/", json=[])
+    httpx_mock.add_response(url="https://h.example/search/", json=[])
+    httpx_mock.add_response(url="https://h.example/search/", json=[])
+
+    client = ObsidianClient("h.example", "secret")
+    await client.search_simple("x")
+    await client.search_dql("TABLE * FROM \"\"")
+    await client.search_jsonlogic({"var": "file"})
+
+    for request in httpx_mock.get_requests():
+        assert request.headers["Authorization"] == "Bearer secret"
+
+
+async def test_search_simple_404_raises(httpx_mock):
+    httpx_mock.add_response(url="https://h.example/search/simple/", status_code=404)
+    client = ObsidianClient("h.example", "t")
+    with pytest.raises(ObsidianNotFoundError):
+        await client.search_simple("x")
