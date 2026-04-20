@@ -66,6 +66,16 @@ class ToolDef:
     # Policy metadata
     risk_level: str = "safe"  # safe, moderate, dangerous
     intent: str = "read"  # read, write, execute, network
+    # Availability — optional predicate for per-user tool filtering
+    availability: Callable[[str], Awaitable[bool]] | None = None
+    """Optional per-user availability predicate.
+
+    Receives the canonical_user_id and returns True if the tool should be
+    exposed to that user. None (the default) means the tool is available
+    to everyone. The framework awaits this predicate in ToolExecutor when
+    a user_id is provided; tools whose predicate returns False are
+    silently omitted from the tool inventory that the LLM sees.
+    """
 
     def to_schema(self) -> "ToolSchema":
         """Convert to a ToolSchema for the unified LLM pipeline."""
