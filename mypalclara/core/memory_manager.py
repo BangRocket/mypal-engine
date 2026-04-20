@@ -318,6 +318,8 @@ class MemoryManager:
         model_name: str = "claude",
         privacy_scope: str = "full",
         user_id: str | None = None,
+        system_prompts: list[tuple[str, str]] | None = None,
+        vault_snapshot_block: str | None = None,
     ) -> list[Message]:
         """Build the full prompt for the LLM."""
         return self._prompt_builder.build_prompt(
@@ -334,6 +336,8 @@ class MemoryManager:
             model_name=model_name,
             privacy_scope=privacy_scope,
             user_id=user_id,
+            system_prompts=system_prompts,
+            vault_snapshot_block=vault_snapshot_block,
         )
 
     def build_prompt_layered(
@@ -345,6 +349,8 @@ class MemoryManager:
         tools: list[dict] | None = None,
         model_name: str = "claude",
         privacy_scope: str = "full",
+        system_prompts: list[tuple[str, str]] | None = None,
+        vault_snapshot_block: str | None = None,
     ) -> list:
         """Build prompt using layered retrieval (episodes, graph, memories).
 
@@ -359,6 +365,8 @@ class MemoryManager:
             tools=tools,
             model_name=model_name,
             privacy_scope=privacy_scope,
+            system_prompts=system_prompts,
+            vault_snapshot_block=vault_snapshot_block,
         )
 
     async def load_user_workspace(self, user_id: str, vm_manager: object) -> None:

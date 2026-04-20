@@ -630,6 +630,21 @@ class MessageProcessor:
         except Exception as e:
             logger.debug(f"Could not check intentions: {e}")
 
+        # Gather per-tool system_prompts and per-user vault snapshot block.
+        system_prompts: list[tuple[str, str]] = []
+        if self._tool_executor and self._tool_executor._tool_registry:
+            system_prompts = self._tool_executor._tool_registry.get_system_prompts_list()
+
+        vault_snapshot_block: str | None = None
+        if user_id:
+            try:
+                from mypalclara.core.obsidian import fetch_vault_snapshot_block
+
+                vault_snapshot_block = await fetch_vault_snapshot_block(user_id)
+            except Exception as e:
+                logger.warning("Failed to fetch Obsidian vault snapshot: %s", e, exc_info=True)
+                vault_snapshot_block = None
+
         # Build prompt using layered retrieval (episodes, graph, memories)
         try:
             messages = await asyncio.wait_for(
@@ -642,6 +657,8 @@ class MessageProcessor:
                         channel_context=channel_context_msgs if channel_context_msgs else None,
                         tools=tools,
                         privacy_scope=privacy_scope,
+                        system_prompts=system_prompts,
+                        vault_snapshot_block=vault_snapshot_block,
                     ),
                 ),
                 timeout=MEMORY_FETCH_TIMEOUT,
@@ -653,7 +670,10 @@ class MessageProcessor:
             )
             messages = self._memory_manager.build_prompt(
                 [], [], None, recent_msgs, user_content,
-                privacy_scope=privacy_scope, user_id=user_id,
+                privacy_scope=privacy_scope,
+                user_id=user_id,
+                system_prompts=system_prompts,
+                vault_snapshot_block=vault_snapshot_block,
             )
 
         # Add gateway context

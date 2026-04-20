@@ -363,6 +363,8 @@ class PromptBuilder:
         tools: list[dict] | None = None,
         model_name: str = "claude",
         privacy_scope: str = "full",
+        system_prompts: list[tuple[str, str]] | None = None,
+        vault_snapshot_block: str | None = None,
     ) -> list[Message]:
         """Build prompt using the layered retrieval system.
 
@@ -380,6 +382,12 @@ class PromptBuilder:
             tools: Optional tool schemas for WORM inventory.
             model_name: Model name for token budgeting.
             privacy_scope: "full" for DMs, "public_only" for group channels.
+            system_prompts: Optional list of (module_name, prompt_text) tuples
+                from the tool registry. Rendered as per-module guidance blocks
+                inside the persona via build_worm_persona.
+            vault_snapshot_block: Optional prompt-ready snapshot of the user's
+                Obsidian vault. Injected as a separate SystemMessage under a
+                "## User Context" header immediately after the persona block.
 
         Returns:
             List of typed Messages ready for LLM.
@@ -489,12 +497,17 @@ class PromptBuilder:
 
         # --- Build persona ---
         personality = self._load_workspace_persona()
-        system_base = build_worm_persona(personality, tools)
+        system_base = build_worm_persona(personality, tools, system_prompts=system_prompts)
 
         # --- Assemble messages ---
         messages: list[Message] = [
             SystemMessage(content=system_base),
         ]
+
+        if vault_snapshot_block:
+            messages.append(
+                SystemMessage(content=f"## User Context\n\n{vault_snapshot_block}")
+            )
 
         # Add layered context as second system message
         if layered_context:
