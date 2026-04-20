@@ -554,8 +554,8 @@ async def test_delete_file_not_found(mock_snapshot_cache):
 
 def test_all_fourteen_tools_are_present_so_far():
     names = {t.name for t in TOOLS}
-    # E1 scaffold + E2 (7) + E3 (2) + E4 (5) = 14. E5 adds 2 more.
-    assert len(names) == 14
+    # E2 (7) + E3 (2) + E4 (5) = 14 write-capable surface; E5 adds 2 more UI tools.
+    assert len(names) >= 14
     expected_writes = {
         "obsidian_create_or_update_file",
         "obsidian_append_to_file",
@@ -581,3 +581,91 @@ def test_write_tools_have_correct_risk_and_intent():
                 assert t.risk_level == "dangerous"
             else:
                 assert t.risk_level == "moderate"
+
+
+# ---- E5 handler tests ----
+
+
+async def test_open_file_happy_path():
+    from mypalclara.core.core_tools.obsidian_tool import _handle_open_file
+
+    client = _mock_client(open_file=None)
+    with patch(
+        "mypalclara.core.core_tools.obsidian_tool.get_client_for_user",
+        new=AsyncMock(return_value=client),
+    ):
+        result = await _handle_open_file({"path": "Projects/note.md"}, _ctx())
+    assert "Opened Projects/note.md" in result
+    client.open_file.assert_awaited_once_with("Projects/note.md")
+
+
+async def test_open_file_requires_path():
+    from mypalclara.core.core_tools.obsidian_tool import _handle_open_file
+
+    result = await _handle_open_file({}, _ctx())
+    assert "'path' is required" in result
+
+
+async def test_execute_command_happy_path():
+    from mypalclara.core.core_tools.obsidian_tool import _handle_execute_command
+
+    client = _mock_client(execute_command=None)
+    with patch(
+        "mypalclara.core.core_tools.obsidian_tool.get_client_for_user",
+        new=AsyncMock(return_value=client),
+    ):
+        result = await _handle_execute_command(
+            {"command_id": "editor:save-file"}, _ctx()
+        )
+    assert "Executed Obsidian command: editor:save-file" in result
+    client.execute_command.assert_awaited_once_with("editor:save-file")
+
+
+async def test_execute_command_requires_id():
+    from mypalclara.core.core_tools.obsidian_tool import _handle_execute_command
+
+    result = await _handle_execute_command({}, _ctx())
+    assert "'command_id' is required" in result
+
+
+async def test_execute_command_not_found():
+    from mypalclara.core.core_tools.obsidian_tool import _handle_execute_command
+    from mypalclara.core.obsidian.exceptions import ObsidianNotFoundError
+
+    client = _mock_client(execute_command=ObsidianNotFoundError("no such command"))
+    with patch(
+        "mypalclara.core.core_tools.obsidian_tool.get_client_for_user",
+        new=AsyncMock(return_value=client),
+    ):
+        result = await _handle_execute_command(
+            {"command_id": "nonexistent"}, _ctx()
+        )
+    assert "Resource not found" in result or "Not found" in result or "not found" in result.lower()
+
+
+def test_all_sixteen_tools_registered_in_module():
+    names = {t.name for t in TOOLS}
+    assert len(names) == 16, f"Expected 16 tools, got {len(names)}: {sorted(names)}"
+    expected = {
+        # Read (7)
+        "obsidian_list_vault",
+        "obsidian_list_dir",
+        "obsidian_get_file",
+        "obsidian_get_active_file",
+        "obsidian_get_periodic_note",
+        "obsidian_list_tags",
+        "obsidian_list_commands",
+        # Search (2)
+        "obsidian_search",
+        "obsidian_query",
+        # Write (5)
+        "obsidian_create_or_update_file",
+        "obsidian_append_to_file",
+        "obsidian_patch_file",
+        "obsidian_append_to_periodic_note",
+        "obsidian_delete_file",
+        # UI / commands (2)
+        "obsidian_open_file",
+        "obsidian_execute_command",
+    }
+    assert names == expected

@@ -362,6 +362,44 @@ async def _handle_delete_file(args: dict[str, Any], ctx: ToolContext) -> str:
         return _format_obsidian_error(path, e)
 
 
+# ---- UI / command handlers (E5) ----
+#
+# These are write-intent (user-visible effect) but they do NOT invalidate the
+# snapshot cache: opening a note doesn't mutate the vault, and most Obsidian
+# commands don't either. If Clara chooses to run a command that does mutate
+# (e.g. a bulk-rename plugin command), the next write-path tool call will
+# invalidate — keeping invalidation coupled to explicit writes keeps things
+# simple.
+
+
+async def _handle_open_file(args: dict[str, Any], ctx: ToolContext) -> str:
+    path = args.get("path", "").strip()
+    if not path:
+        return "Error: 'path' is required."
+    client, err = await _client_or_error(ctx)
+    if err:
+        return err
+    try:
+        await client.open_file(path)
+        return f"Opened {path} in the Obsidian UI."
+    except ObsidianError as e:
+        return _format_obsidian_error(path, e)
+
+
+async def _handle_execute_command(args: dict[str, Any], ctx: ToolContext) -> str:
+    command_id = args.get("command_id", "").strip()
+    if not command_id:
+        return "Error: 'command_id' is required."
+    client, err = await _client_or_error(ctx)
+    if err:
+        return err
+    try:
+        await client.execute_command(command_id)
+        return f"Executed Obsidian command: {command_id}"
+    except ObsidianError as e:
+        return _format_obsidian_error(command_id, e)
+
+
 # ---- tools populated by E2-E5 ----
 
 TOOLS: list[ToolDef] = [
@@ -645,5 +683,51 @@ TOOLS: list[ToolDef] = [
         intent="write",
         emoji="🗑️",
         detail_keys=["path"],
+    ),
+    ToolDef(
+        name="obsidian_open_file",
+        description=(
+            "Open a note in the user's Obsidian UI. The user will see the note pop "
+            "open. Use sparingly — only when the user explicitly wants to see something."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Vault-relative file path to open.",
+                },
+            },
+            "required": ["path"],
+        },
+        handler=_handle_open_file,
+        availability=has_obsidian_config,
+        risk_level="safe",
+        intent="write",  # user-visible effect
+        emoji="👁️",
+        detail_keys=["path"],
+    ),
+    ToolDef(
+        name="obsidian_execute_command",
+        description=(
+            "Run an Obsidian command by its ID (e.g. 'editor:save-file'). Use "
+            "obsidian_list_commands to discover available command IDs."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "command_id": {
+                    "type": "string",
+                    "description": "Obsidian command ID, e.g. 'editor:save-file'.",
+                },
+            },
+            "required": ["command_id"],
+        },
+        handler=_handle_execute_command,
+        availability=has_obsidian_config,
+        risk_level="moderate",
+        intent="write",
+        emoji="⚡",
+        detail_keys=["command_id"],
     ),
 ]

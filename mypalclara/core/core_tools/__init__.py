@@ -224,6 +224,22 @@ async def register_core_tools(registry: "ToolRegistry") -> int:
     except Exception as e:
         logger.warning(f"[core_tools] Failed to register blog_tool: {e}")
 
+    # Initialize and register obsidian_tool
+    # No async initialize() — the module is pure-declarative. Import inside the
+    # try so that any Obsidian sub-import failure degrades gracefully and other
+    # tool registrations still succeed.
+    try:
+        from . import obsidian_tool
+
+        for tool_def in obsidian_tool.TOOLS:
+            registry.register(tool_def)
+            count += 1
+        if obsidian_tool.SYSTEM_PROMPT:
+            registry.register_system_prompt(obsidian_tool.MODULE_NAME, obsidian_tool.SYSTEM_PROMPT)
+        logger.info(f"[core_tools] Registered {len(obsidian_tool.TOOLS)} obsidian tools")
+    except Exception as e:
+        logger.warning(f"[core_tools] Failed to register obsidian_tool: {e}")
+
     return count
 
 
