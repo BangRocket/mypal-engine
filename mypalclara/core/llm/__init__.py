@@ -66,6 +66,7 @@ from mypalclara.core.llm.messages import (
 from mypalclara.core.llm.providers.base import LLMProvider
 from mypalclara.core.llm.providers.langchain import (
     DirectAnthropicProvider,
+    DirectKimiProvider,
     DirectOpenAIProvider,
     LangChainProvider,
 )
@@ -89,6 +90,7 @@ from mypalclara.core.llm.tools.formats import (
     message_to_anthropic,
     message_to_openai,
     messages_to_anthropic,
+    messages_to_kimi,
     messages_to_langchain,
     messages_to_openai,
 )
@@ -101,6 +103,7 @@ __all__ = [
     "LLMProvider",
     "LangChainProvider",
     "DirectAnthropicProvider",
+    "DirectKimiProvider",
     "DirectOpenAIProvider",
     "ProviderRegistry",
     "get_provider",
@@ -138,6 +141,7 @@ __all__ = [
     "messages_to_openai",
     "message_to_anthropic",
     "messages_to_anthropic",
+    "messages_to_kimi",
     "messages_to_langchain",
     # Backward compatibility
     "make_llm",

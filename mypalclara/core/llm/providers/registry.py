@@ -54,6 +54,7 @@ class ProviderRegistry:
                 - "langchain": LangChain-based (default, recommended)
                 - "direct_anthropic": Direct Anthropic SDK
                 - "direct_openai": Direct OpenAI SDK
+                - "direct_kimi": Direct Moonshot/Kimi SDK route
             config: Optional LLMConfig for initialization
 
         Returns:
@@ -61,6 +62,7 @@ class ProviderRegistry:
         """
         from mypalclara.core.llm.providers.langchain import (
             DirectAnthropicProvider,
+            DirectKimiProvider,
             DirectOpenAIProvider,
             LangChainProvider,
         )
@@ -78,6 +80,8 @@ class ProviderRegistry:
             provider = DirectAnthropicProvider()
         elif provider_type == "direct_openai":
             provider = DirectOpenAIProvider()
+        elif provider_type == "direct_kimi":
+            provider = DirectKimiProvider()
         else:
             raise ValueError(f"Unknown provider type: {provider_type}")
 
@@ -103,6 +107,8 @@ class ProviderRegistry:
 
         if provider_name == "anthropic":
             return cls.get_provider("direct_anthropic")
+        if provider_name == "kimi":
+            return cls.get_provider("direct_kimi")
         else:
             return cls.get_provider("direct_openai")
 
@@ -123,7 +129,7 @@ def get_provider(
     """Convenience function to get a provider.
 
     Args:
-        provider_type: Type of provider ("langchain", "direct_anthropic", "direct_openai")
+        provider_type: Type of provider ("langchain", "direct_anthropic", "direct_openai", "direct_kimi")
         config: Optional configuration
 
     Returns:

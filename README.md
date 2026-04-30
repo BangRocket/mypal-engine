@@ -95,7 +95,7 @@ docker-compose --profile discord up
 
 | Variable | Description |
 |----------|-------------|
-| `LLM_PROVIDER` | `openrouter`, `nanogpt`, `anthropic`, `openai`, `bedrock`, or `azure` |
+| `LLM_PROVIDER` | `openrouter`, `nanogpt`, `anthropic`, `openai`, `kimi`, `bedrock`, or `azure` |
 | `HF_TOKEN` | Required for HuggingFace embeddings (default provider) |
 
 Plus at least one platform token (e.g. `DISCORD_BOT_TOKEN`).
@@ -140,6 +140,14 @@ LLM_PROVIDER=openai
 CUSTOM_OPENAI_API_KEY=your-key
 CUSTOM_OPENAI_BASE_URL=https://api.openai.com/v1
 CUSTOM_OPENAI_MODEL=gpt-4o
+```
+
+**Kimi / Moonshot**:
+```bash
+LLM_PROVIDER=kimi
+KIMI_API_KEY=your-key  # or MOONSHOT_API_KEY
+KIMI_MODEL=kimi-k2.6
+KIMI_BASE_URL=https://api.moonshot.ai/v1  # Optional
 ```
 
 **Amazon Bedrock**:

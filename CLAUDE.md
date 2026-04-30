@@ -130,7 +130,7 @@ Web UI uses Rails as BFF (backend-for-frontend). Rails handles game logic direct
 
 ### Required
 ```bash
-LLM_PROVIDER=anthropic      # openrouter, nanogpt, openai, or anthropic
+LLM_PROVIDER=anthropic      # openrouter, nanogpt, openai, kimi, or anthropic
 HF_TOKEN=...                # Required for HuggingFace embeddings (default provider)
 ```
 
@@ -157,6 +157,13 @@ EMBEDDING_MODEL_DIMS=1024      # Must match model output dimensions
 - `CUSTOM_OPENAI_API_KEY` - API key for LLM (separate from embeddings)
 - `CUSTOM_OPENAI_BASE_URL` - Base URL (default: https://api.openai.com/v1)
 - `CUSTOM_OPENAI_MODEL` - Chat model (default: gpt-4o)
+
+**Kimi / Moonshot** (`LLM_PROVIDER=kimi`):
+- `KIMI_API_KEY` or `MOONSHOT_API_KEY` - API key
+- `KIMI_BASE_URL` - Base URL (default: https://api.moonshot.ai/v1)
+- `KIMI_MODEL` - Chat model (default: kimi-k2.6)
+
+Uses a separate direct provider so Kimi-specific tool result message formatting does not affect the generic OpenAI route.
 
 **Anthropic** (`LLM_PROVIDER=anthropic`):
 - `ANTHROPIC_API_KEY` - Anthropic API key
