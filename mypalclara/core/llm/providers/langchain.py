@@ -14,6 +14,7 @@ Benefits:
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
@@ -502,6 +503,17 @@ class DirectKimiProvider(LLMProvider):
 
     _clients: dict[str, Any] = {}
 
+    def _thinking_mode(self) -> str:
+        """Get Kimi thinking mode from environment.
+
+        Defaults to ``disabled`` for tool-calling stability because Kimi requires
+        replaying ``reasoning_content`` across tool turns when thinking is enabled.
+        """
+        mode = os.getenv("KIMI_THINKING_MODE", "disabled").strip().lower()
+        if mode in {"enabled", "disabled"}:
+            return mode
+        return "disabled"
+
     def _get_client(self, config: "LLMConfig"):
         """Get or create an OpenAI SDK client pointed at Kimi."""
         from openai import OpenAI
@@ -547,6 +559,7 @@ class DirectKimiProvider(LLMProvider):
             "model": config.model,
             "messages": messages_to_kimi(messages),
             "temperature": config.temperature,
+            "thinking": {"type": self._thinking_mode()},
         }
         if normalized:
             kwargs["tools"] = normalized
