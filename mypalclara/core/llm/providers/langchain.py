@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 from mypalclara.core.llm.providers.base import LLMProvider, _normalize_tools
 from mypalclara.core.llm.tools.formats import (
     messages_to_anthropic,
+    messages_to_kimi,
     messages_to_langchain,
     messages_to_openai,
 )
@@ -151,6 +152,8 @@ class LangChainProvider(LLMProvider):
             model = self._create_bedrock_model(config)
         elif config.provider == "azure":
             model = self._create_azure_model(config)
+        elif config.provider == "kimi":
+            model = self._create_kimi_model(config)
         else:
             model = self._create_openai_model(config)
 
@@ -188,6 +191,22 @@ class LangChainProvider(LLMProvider):
 
         if config.base_url:
             kwargs["base_url"] = config.base_url
+
+        if config.extra_headers:
+            kwargs["default_headers"] = config.extra_headers
+
+        return ChatOpenAI(**kwargs)
+
+    def _create_kimi_model(self, config: "LLMConfig") -> "BaseChatModel":
+        """Create a ChatOpenAI model configured for Moonshot/Kimi."""
+        from langchain_openai import ChatOpenAI
+
+        kwargs: dict[str, Any] = {
+            "model": config.model,
+            "api_key": config.api_key,
+            "base_url": config.base_url or "https://api.moonshot.ai/v1",
+            "temperature": config.temperature,
+        }
 
         if config.extra_headers:
             kwargs["default_headers"] = config.extra_headers
@@ -466,6 +485,105 @@ class DirectOpenAIProvider(LLMProvider):
         }
         if config.base_url:
             kwargs["base_url"] = config.base_url
+        if config.extra_headers:
+            kwargs["default_headers"] = config.extra_headers
+
+        return ChatOpenAI(**kwargs)
+
+
+class DirectKimiProvider(LLMProvider):
+    """Direct Moonshot/Kimi provider with Kimi-specific tool message handling.
+
+    Kimi's API is OpenAI-compatible at the transport level, but tool result
+    messages need the tool ``name`` in addition to ``tool_call_id``. Keeping this
+    as a separate provider avoids leaking that behavior into the generic OpenAI
+    route.
+    """
+
+    _clients: dict[str, Any] = {}
+
+    def _get_client(self, config: "LLMConfig"):
+        """Get or create an OpenAI SDK client pointed at Kimi."""
+        from openai import OpenAI
+
+        base_url = config.base_url or "https://api.moonshot.ai/v1"
+        cache_key = f"{config.api_key}:{base_url}"
+        if cache_key not in self._clients:
+            kwargs: dict[str, Any] = {
+                "api_key": config.api_key,
+                "base_url": base_url,
+            }
+            if config.extra_headers:
+                kwargs["default_headers"] = config.extra_headers
+            self._clients[cache_key] = OpenAI(**kwargs)
+        return self._clients[cache_key]
+
+    def complete(
+        self,
+        messages: list[Message],
+        config: "LLMConfig",
+    ) -> str:
+        """Generate a text completion using the Kimi API."""
+        client = self._get_client(config)
+        response = client.chat.completions.create(
+            model=config.model,
+            messages=messages_to_kimi(messages),
+            temperature=config.temperature,
+        )
+        content = response.choices[0].message.content
+        return content if content else ""
+
+    def complete_with_tools(
+        self,
+        messages: list[Message],
+        tools: "list[ToolSchema | dict[str, Any]]",
+        config: "LLMConfig",
+    ) -> ToolResponse:
+        """Generate a response with Kimi tool calling."""
+        client = self._get_client(config)
+        normalized = _normalize_tools(tools)
+
+        kwargs: dict[str, Any] = {
+            "model": config.model,
+            "messages": messages_to_kimi(messages),
+            "temperature": config.temperature,
+        }
+        if normalized:
+            kwargs["tools"] = normalized
+        if config.tool_choice:
+            kwargs["tool_choice"] = config.tool_choice
+
+        response = client.chat.completions.create(**kwargs)
+        return ToolResponse.from_openai(response)
+
+    def stream(
+        self,
+        messages: list[Message],
+        config: "LLMConfig",
+    ) -> Iterator[str]:
+        """Generate a streaming completion using the Kimi API."""
+        client = self._get_client(config)
+        stream = client.chat.completions.create(
+            model=config.model,
+            messages=messages_to_kimi(messages),
+            temperature=config.temperature,
+            stream=True,
+        )
+
+        for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+
+    def get_langchain_model(self, config: "LLMConfig") -> "BaseChatModel":
+        """Get a LangChain model pointed at Kimi for advanced callers."""
+        from langchain_openai import ChatOpenAI
+
+        kwargs: dict[str, Any] = {
+            "model": config.model,
+            "api_key": config.api_key,
+            "base_url": config.base_url or "https://api.moonshot.ai/v1",
+            "temperature": config.temperature,
+        }
         if config.extra_headers:
             kwargs["default_headers"] = config.extra_headers
 

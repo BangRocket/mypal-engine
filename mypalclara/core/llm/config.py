@@ -24,6 +24,7 @@ class LLMConfig:
     - openrouter: OpenRouter API
     - nanogpt: NanoGPT API
     - openai: Custom OpenAI-compatible endpoint
+    - kimi: Moonshot/Kimi API
     - anthropic: Native Anthropic SDK (with base_url for clewdr proxy)
     - bedrock: Amazon Bedrock (Claude models via AWS)
     - azure: Azure OpenAI Service
@@ -83,7 +84,7 @@ class LLMConfig:
 
         Environment Variables:
             LLM_PROVIDER: Provider selection
-                (openrouter, nanogpt, openai, anthropic, bedrock, azure)
+                (openrouter, nanogpt, openai, kimi, anthropic, bedrock, azure)
             MODEL_TIER: Default tier (high, mid, low)
 
             OpenRouter:
@@ -96,6 +97,10 @@ class LLMConfig:
             Custom OpenAI:
                 CUSTOM_OPENAI_API_KEY, CUSTOM_OPENAI_BASE_URL
                 CUSTOM_OPENAI_MODEL, CUSTOM_OPENAI_MODEL_{HIGH,MID,LOW}
+
+            Kimi:
+                KIMI_API_KEY or MOONSHOT_API_KEY, KIMI_BASE_URL
+                KIMI_MODEL, KIMI_MODEL_{HIGH,MID,LOW}
 
             Anthropic:
                 ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL
@@ -154,6 +159,11 @@ class LLMConfig:
         elif provider == "openai":
             api_key = os.getenv("CUSTOM_OPENAI_API_KEY")
             base_url = os.getenv("CUSTOM_OPENAI_BASE_URL", "https://api.openai.com/v1")
+            extra_headers = _get_cf_access_headers()
+
+        elif provider == "kimi":
+            api_key = os.getenv("KIMI_API_KEY") or os.getenv("MOONSHOT_API_KEY")
+            base_url = os.getenv("KIMI_BASE_URL", "https://api.moonshot.ai/v1")
             extra_headers = _get_cf_access_headers()
 
         elif provider == "anthropic":

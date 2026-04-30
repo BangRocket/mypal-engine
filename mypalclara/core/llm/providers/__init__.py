@@ -3,6 +3,7 @@
 from mypalclara.core.llm.providers.base import LLMProvider
 from mypalclara.core.llm.providers.langchain import (
     DirectAnthropicProvider,
+    DirectKimiProvider,
     DirectOpenAIProvider,
     LangChainProvider,
 )
@@ -12,6 +13,7 @@ __all__ = [
     "LLMProvider",
     "LangChainProvider",
     "DirectAnthropicProvider",
+    "DirectKimiProvider",
     "DirectOpenAIProvider",
     "ProviderRegistry",
     "get_provider",

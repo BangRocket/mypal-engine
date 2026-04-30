@@ -54,6 +54,11 @@ DEFAULT_MODELS = {
         "mid": "gpt-4o",
         "low": "gpt-4o-mini",
     },
+    "kimi": {
+        "high": "kimi-k2.6",
+        "mid": "kimi-k2.6",
+        "low": "kimi-k2.6",
+    },
     "anthropic": {
         "high": "claude-opus-4-5",
         "mid": "claude-sonnet-4-5",
@@ -86,6 +91,7 @@ def get_model_for_tier(tier: ModelTierType, provider: str | None = None) -> str:
         OpenRouter: OPENROUTER_MODEL_{HIGH,MID,LOW}
         NanoGPT: NANOGPT_MODEL_{HIGH,MID,LOW}
         OpenAI: CUSTOM_OPENAI_MODEL_{HIGH,MID,LOW}
+        Kimi: KIMI_MODEL_{HIGH,MID,LOW}
         Anthropic: ANTHROPIC_MODEL_{HIGH,MID,LOW}
 
     For backwards compatibility:
@@ -129,6 +135,14 @@ def get_model_for_tier(tier: ModelTierType, provider: str | None = None) -> str:
         if tier == "mid":
             return os.getenv("CUSTOM_OPENAI_MODEL", DEFAULT_MODELS["openai"]["mid"])
         return DEFAULT_MODELS["openai"].get(tier, DEFAULT_MODELS["openai"]["mid"])
+
+    elif provider == "kimi":
+        tier_model = os.getenv(f"KIMI_MODEL_{tier_upper}")
+        if tier_model:
+            return tier_model
+        if tier == "mid":
+            return os.getenv("KIMI_MODEL", DEFAULT_MODELS["kimi"]["mid"])
+        return DEFAULT_MODELS["kimi"].get(tier, DEFAULT_MODELS["kimi"]["mid"])
 
     elif provider == "anthropic":
         tier_model = os.getenv(f"ANTHROPIC_MODEL_{tier_upper}")
@@ -179,6 +193,8 @@ def get_base_model(provider: str | None = None) -> str:
         return os.getenv("NANOGPT_MODEL", DEFAULT_MODELS["nanogpt"]["mid"])
     elif provider == "openai":
         return os.getenv("CUSTOM_OPENAI_MODEL", DEFAULT_MODELS["openai"]["mid"])
+    elif provider == "kimi":
+        return os.getenv("KIMI_MODEL", DEFAULT_MODELS["kimi"]["mid"])
     elif provider == "anthropic":
         return os.getenv("ANTHROPIC_MODEL", DEFAULT_MODELS["anthropic"]["mid"])
     elif provider == "bedrock":

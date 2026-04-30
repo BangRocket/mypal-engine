@@ -282,6 +282,37 @@ def messages_to_openai(msgs: list["Message"]) -> list[dict[str, Any]]:
     return [message_to_openai(m) for m in msgs]
 
 
+def messages_to_kimi(msgs: list["Message"]) -> list[dict[str, Any]]:
+    """Convert typed Messages to Kimi's OpenAI-compatible chat format.
+
+    Kimi accepts OpenAI-style chat messages, but its tool-call follow-up
+    messages require the tool name as well as ``tool_call_id``. Clara's neutral
+    ToolResultMessage stores only the call ID, so this converter reconstructs
+    the name from the preceding assistant tool calls.
+    """
+    from mypalclara.core.llm.messages import AssistantMessage as AssistantMsg
+    from mypalclara.core.llm.messages import ToolResultMessage as ToolResultMsg
+
+    tool_names_by_id: dict[str, str] = {}
+    result: list[dict[str, Any]] = []
+
+    for msg in msgs:
+        if isinstance(msg, AssistantMsg):
+            for tc in msg.tool_calls:
+                tool_names_by_id[tc.id] = tc.name
+            result.append(message_to_openai(msg))
+        elif isinstance(msg, ToolResultMsg):
+            converted = message_to_openai(msg)
+            tool_name = tool_names_by_id.get(msg.tool_call_id)
+            if tool_name:
+                converted["name"] = tool_name
+            result.append(converted)
+        else:
+            result.append(message_to_openai(msg))
+
+    return result
+
+
 def message_to_anthropic(msg: "Message") -> dict[str, Any]:
     """Convert a typed Message to Anthropic API format.
 

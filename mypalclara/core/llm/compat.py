@@ -41,6 +41,17 @@ def _ensure_messages(messages: list) -> list[Message]:
     return messages
 
 
+def _provider_type_for_config(config: LLMConfig, *, tools: bool = False) -> str:
+    """Pick the provider route for a config.
+
+    Kimi stays on its own direct path so Kimi-specific tool message shaping does
+    not affect the generic OpenAI-compatible route.
+    """
+    if config.provider == "kimi":
+        return "direct_kimi"
+    return "langchain"
+
+
 # ============== Non-streaming LLM ==============
 
 
@@ -53,6 +64,7 @@ def make_llm(tier: ModelTier | None = None) -> Callable[[list], str]:
       - "openrouter" (default)
       - "nanogpt"
       - "openai" (custom OpenAI-compatible endpoint)
+      - "kimi" (Moonshot/Kimi API)
       - "anthropic" (native Anthropic SDK with base_url support)
 
     Args:
@@ -60,7 +72,7 @@ def make_llm(tier: ModelTier | None = None) -> Callable[[list], str]:
               If None, uses MODEL_TIER env var if set, otherwise uses the base model.
     """
     config = LLMConfig.from_env(tier=tier)
-    provider = get_provider("langchain")
+    provider = get_provider(_provider_type_for_config(config))
 
     def llm(messages: list) -> str:
         return provider.complete(_ensure_messages(messages), config)
@@ -83,7 +95,7 @@ def make_llm_streaming(
               If None, uses MODEL_TIER env var if set, otherwise uses the base model.
     """
     config = LLMConfig.from_env(tier=tier)
-    provider = get_provider("langchain")
+    provider = get_provider(_provider_type_for_config(config))
 
     def llm(messages: list) -> Generator[str, None, None]:
         yield from provider.stream(_ensure_messages(messages), config)
@@ -220,7 +232,7 @@ def make_llm_with_tools_langchain(
         - tool_calls: List of tool calls in OpenAI format (if any)
     """
     config = LLMConfig.from_env(tier=tier, for_tools=True)
-    provider = get_provider("langchain")
+    provider = get_provider(_provider_type_for_config(config, tools=True))
 
     def llm(messages: list) -> dict:
         response = provider.complete_with_tools(_ensure_messages(messages), tools or [], config)
@@ -271,7 +283,7 @@ def make_llm_with_tools_unified(
             print(response.content)
     """
     config = LLMConfig.from_env(tier=tier, for_tools=True)
-    provider = get_provider("langchain")
+    provider = get_provider(_provider_type_for_config(config, tools=True))
 
     def llm(messages: list) -> ToolResponse:
         return provider.complete_with_tools(_ensure_messages(messages), tools or [], config)
