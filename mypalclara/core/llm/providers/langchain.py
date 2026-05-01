@@ -514,6 +514,10 @@ class DirectKimiProvider(LLMProvider):
             return mode
         return "disabled"
 
+    def _temperature(self) -> float:
+        """Kimi models in this route only accept temperature=1."""
+        return 1.0
+
     def _get_client(self, config: "LLMConfig"):
         """Get or create an OpenAI SDK client pointed at Kimi."""
         from openai import OpenAI
@@ -540,7 +544,7 @@ class DirectKimiProvider(LLMProvider):
         response = client.chat.completions.create(
             model=config.model,
             messages=messages_to_kimi(messages),
-            temperature=config.temperature,
+            temperature=self._temperature(),
         )
         content = response.choices[0].message.content
         return content if content else ""
@@ -558,7 +562,7 @@ class DirectKimiProvider(LLMProvider):
         kwargs: dict[str, Any] = {
             "model": config.model,
             "messages": messages_to_kimi(messages),
-            "temperature": config.temperature,
+            "temperature": self._temperature(),
             # OpenAI SDK rejects unknown top-level kwargs; provider-specific fields
             # must go through extra_body.
             "extra_body": {"thinking": {"type": self._thinking_mode()}},
@@ -581,7 +585,7 @@ class DirectKimiProvider(LLMProvider):
         stream = client.chat.completions.create(
             model=config.model,
             messages=messages_to_kimi(messages),
-            temperature=config.temperature,
+            temperature=self._temperature(),
             stream=True,
         )
 
@@ -597,7 +601,7 @@ class DirectKimiProvider(LLMProvider):
             "model": config.model,
             "api_key": config.api_key,
             "base_url": config.base_url or "https://api.moonshot.ai/v1",
-            "temperature": config.temperature,
+            "temperature": self._temperature(),
         }
         if config.extra_headers:
             kwargs["default_headers"] = config.extra_headers
