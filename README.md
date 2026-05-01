@@ -148,7 +148,8 @@ LLM_PROVIDER=kimi
 KIMI_API_KEY=your-key  # or MOONSHOT_API_KEY
 KIMI_MODEL=kimi-k2.6
 KIMI_BASE_URL=https://api.moonshot.ai/v1  # Optional
-KIMI_THINKING_MODE=disabled  # Optional: enabled|disabled
+KIMI_THINKING_MODE=disabled  # Optional: enabled|disabled (non-tool turns)
+KIMI_THINKING_MODE_TOOLS=disabled  # Optional: enabled|disabled (tool turns)
 ```
 
 **Amazon Bedrock**:

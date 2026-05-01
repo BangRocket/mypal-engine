@@ -513,25 +513,29 @@ class DirectKimiProvider(LLMProvider):
 
     _clients: dict[str, Any] = {}
 
-    def _thinking_mode(self) -> str:
+    def _thinking_mode(self, *, for_tools: bool = False) -> str:
         """Get Kimi thinking mode from environment.
 
-        Defaults to ``disabled`` for tool-calling stability because Kimi requires
-        replaying ``reasoning_content`` across tool turns when thinking is enabled.
+        Uses separate env vars for normal vs tool-calling turns:
+        - non-tools: KIMI_THINKING_MODE (default: disabled)
+        - tools: KIMI_THINKING_MODE_TOOLS (default: disabled)
         """
-        mode = os.getenv("KIMI_THINKING_MODE", "disabled").strip().lower()
+        if for_tools:
+            mode = os.getenv("KIMI_THINKING_MODE_TOOLS", "disabled").strip().lower()
+        else:
+            mode = os.getenv("KIMI_THINKING_MODE", "disabled").strip().lower()
         if mode in {"enabled", "disabled"}:
             return mode
         return "disabled"
 
-    def _temperature(self) -> float:
+    def _temperature(self, *, for_tools: bool = False) -> float:
         """Kimi K2.6/K2.5 require fixed temperatures based on thinking mode.
 
         Thinking mode (default): 1.0
         Non-thinking mode: 0.6
         Any other value results in a 400 error.
         """
-        return 1.0 if self._thinking_mode() == "enabled" else 0.6
+        return 1.0 if self._thinking_mode(for_tools=for_tools) == "enabled" else 0.6
 
     def _get_client(self, config: "LLMConfig"):
         """Get or create an OpenAI SDK client pointed at Kimi."""
@@ -559,9 +563,9 @@ class DirectKimiProvider(LLMProvider):
         response = client.chat.completions.create(
             model=config.model,
             messages=messages_to_kimi(messages),
-            temperature=self._temperature(),
+            temperature=self._temperature(for_tools=False),
             top_p=0.95,
-            extra_body={"thinking": {"type": self._thinking_mode()}},
+            extra_body={"thinking": {"type": self._thinking_mode(for_tools=False)}},
         )
         content = response.choices[0].message.content
         return content if content else ""
@@ -579,11 +583,11 @@ class DirectKimiProvider(LLMProvider):
         kwargs: dict[str, Any] = {
             "model": config.model,
             "messages": messages_to_kimi(messages),
-            "temperature": self._temperature(),
+            "temperature": self._temperature(for_tools=True),
             "top_p": 0.95,
             # OpenAI SDK rejects unknown top-level kwargs; provider-specific fields
             # must go through extra_body.
-            "extra_body": {"thinking": {"type": self._thinking_mode()}},
+            "extra_body": {"thinking": {"type": self._thinking_mode(for_tools=True)}},
         }
         if normalized:
             kwargs["tools"] = normalized
@@ -603,10 +607,10 @@ class DirectKimiProvider(LLMProvider):
         stream = client.chat.completions.create(
             model=config.model,
             messages=messages_to_kimi(messages),
-            temperature=self._temperature(),
+            temperature=self._temperature(for_tools=False),
             top_p=0.95,
             stream=True,
-            extra_body={"thinking": {"type": self._thinking_mode()}},
+            extra_body={"thinking": {"type": self._thinking_mode(for_tools=False)}},
         )
 
         for chunk in stream:
@@ -621,7 +625,7 @@ class DirectKimiProvider(LLMProvider):
             "model": config.model,
             "api_key": config.api_key,
             "base_url": config.base_url or "https://api.moonshot.ai/v1",
-            "temperature": self._temperature(),
+            "temperature": self._temperature(for_tools=False),
             "top_p": 0.95,
         }
         if config.extra_headers:
