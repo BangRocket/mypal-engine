@@ -202,15 +202,25 @@ class LangChainProvider(LLMProvider):
         """Create a ChatOpenAI model configured for Moonshot/Kimi."""
         from langchain_openai import ChatOpenAI
 
+        # Kimi K2.6/K2.5 require fixed temperatures based on thinking mode.
+        thinking_mode = os.getenv("KIMI_THINKING_MODE", "disabled").strip().lower()
+        if thinking_mode not in ("enabled", "disabled"):
+            thinking_mode = "disabled"
+        temperature = 1.0 if thinking_mode == "enabled" else 0.6
+
         kwargs: dict[str, Any] = {
             "model": config.model,
             "api_key": config.api_key,
             "base_url": config.base_url or "https://api.moonshot.ai/v1",
-            "temperature": config.temperature,
+            "temperature": temperature,
         }
 
         if config.extra_headers:
             kwargs["default_headers"] = config.extra_headers
+
+        # Pass thinking mode through model_kwargs so LangChain forwards it
+        # in the request body (provider-specific fields must not be top-level).
+        kwargs["model_kwargs"] = {"extra_body": {"thinking": {"type": thinking_mode}}}
 
         return ChatOpenAI(**kwargs)
 
@@ -551,6 +561,7 @@ class DirectKimiProvider(LLMProvider):
             messages=messages_to_kimi(messages),
             temperature=self._temperature(),
             top_p=0.95,
+            extra_body={"thinking": {"type": self._thinking_mode()}},
         )
         content = response.choices[0].message.content
         return content if content else ""
@@ -595,6 +606,7 @@ class DirectKimiProvider(LLMProvider):
             temperature=self._temperature(),
             top_p=0.95,
             stream=True,
+            extra_body={"thinking": {"type": self._thinking_mode()}},
         )
 
         for chunk in stream:
