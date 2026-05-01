@@ -559,7 +559,9 @@ class DirectKimiProvider(LLMProvider):
             "model": config.model,
             "messages": messages_to_kimi(messages),
             "temperature": config.temperature,
-            "thinking": {"type": self._thinking_mode()},
+            # OpenAI SDK rejects unknown top-level kwargs; provider-specific fields
+            # must go through extra_body.
+            "extra_body": {"thinking": {"type": self._thinking_mode()}},
         }
         if normalized:
             kwargs["tools"] = normalized
