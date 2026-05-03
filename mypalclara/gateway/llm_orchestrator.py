@@ -165,11 +165,19 @@ class LLMOrchestrator:
         for iteration in range(MAX_TOOL_ITERATIONS):
             logger.debug(f"[{request_id}] Iteration {iteration + 1}/{MAX_TOOL_ITERATIONS}")
 
-            # Compact context if it's grown too large from tool results
+            # Compact context if it's grown too large from tool results.
+            # Resolve the actual configured model so 1M-context Claude 4.6/4.7
+            # models get their full window (passing the literal "claude"
+            # would silently collapse to the 200K fallback).
             if iteration > 0:
+                from mypalclara.core.llm.tiers import get_base_model, get_model_for_tier
                 from mypalclara.core.token_counter import get_context_window
 
-                budget = get_context_window("claude")
+                provider_name = os.getenv("LLM_PROVIDER", "openrouter").lower()
+                model_name = (
+                    get_model_for_tier(tier, provider_name) if tier else get_base_model(provider_name)
+                )
+                budget = get_context_window(model_name)
                 compaction = await self._context_compactor.compact_if_needed(working_messages, budget)
                 if compaction.was_compacted:
                     working_messages = compaction.messages

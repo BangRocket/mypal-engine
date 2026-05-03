@@ -44,11 +44,16 @@ def _ensure_messages(messages: list) -> list[Message]:
 def _provider_type_for_config(config: LLMConfig, *, tools: bool = False) -> str:
     """Pick the provider route for a config.
 
-    Kimi stays on its own direct path so Kimi-specific tool message shaping does
-    not affect the generic OpenAI-compatible route.
+    Anthropic uses the direct SDK so we can attach prompt-cache breakpoints,
+    adaptive thinking, and effort to requests — features LangChain's
+    ChatAnthropic does not surface cleanly. Kimi stays on its own direct
+    path so Kimi-specific tool message shaping does not affect the generic
+    OpenAI-compatible route.
     """
     if config.provider == "kimi":
         return "direct_kimi"
+    if config.provider == "anthropic":
+        return "direct_anthropic"
     return "langchain"
 
 
@@ -180,25 +185,37 @@ def make_llm_with_tools_anthropic(
     client = Anthropic(**client_kwargs)
 
     def llm(messages: list[dict]) -> "anthropic.types.Message":
-        # Extract system messages (Anthropic handles it separately)
-        system_parts = []
+        # Extract system messages (Anthropic handles it separately).
+        # Each system message becomes its own typed text block so we can
+        # mark the FIRST block (the stable persona) as cache-eligible.
+        system_blocks: list[dict] = []
         filtered = []
         for m in messages:
             if m.get("role") == "system":
-                system_parts.append(m.get("content", ""))
+                content = m.get("content", "")
+                if content:
+                    system_blocks.append({"type": "text", "text": content})
             else:
                 filtered.append(convert_message_to_anthropic(m))
-        system = "\n\n".join(system_parts)
+
+        if config.cache_system and system_blocks:
+            system_blocks[0]["cache_control"] = {"type": "ephemeral"}
 
         kwargs: dict = {
             "model": config.model,
             "max_tokens": config.max_tokens,
             "messages": filtered,
         }
-        if system:
-            kwargs["system"] = system
+        if system_blocks:
+            kwargs["system"] = system_blocks
         if tools:
             kwargs["tools"] = convert_tools_to_claude_format(tools)
+        if not config.drop_sampling_params and config.temperature is not None:
+            kwargs["temperature"] = config.temperature
+        if config.thinking in ("adaptive", "disabled"):
+            kwargs["thinking"] = {"type": config.thinking}
+        if config.effort:
+            kwargs["output_config"] = {"effort": config.effort}
 
         return client.messages.create(**kwargs)
 

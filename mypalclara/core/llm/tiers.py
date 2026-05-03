@@ -60,8 +60,13 @@ DEFAULT_MODELS = {
         "low": "kimi-k2.6",
     },
     "anthropic": {
-        "high": "claude-opus-4-5",
-        "mid": "claude-sonnet-4-5",
+        # 4.6/4.7 family: 1M context, adaptive thinking, effort knob, server-side compaction.
+        # Migration notes (see shared/model-migration.md):
+        # - Opus 4.7 rejects temperature/top_p/top_k → drop_sampling_params auto-set in LLMConfig.
+        # - 4.6/4.7 reject assistant-turn prefills → use output_config.format instead.
+        # - budget_tokens deprecated → use thinking={"type": "adaptive"} + effort.
+        "high": "claude-opus-4-7",
+        "mid": "claude-sonnet-4-6",
         "low": "claude-haiku-4-5",
     },
     "bedrock": {

@@ -47,7 +47,7 @@ class LLMConfig:
     model: str
     api_key: str | None = None
     base_url: str | None = None
-    max_tokens: int = 4096
+    max_tokens: int = 16384
     temperature: float = 0.0
     tier: ModelTier | None = None
     extra_headers: dict[str, str] | None = None
@@ -59,6 +59,18 @@ class LLMConfig:
     tool_choice: str | dict | None = (
         None  # "required", "auto", "none", or {"type": "function", "function": {"name": "..."}}
     )
+
+    # Anthropic-specific (ignored by other providers)
+    # thinking: None | "adaptive" | "disabled" — adaptive is recommended on 4.6/4.7
+    thinking: str | None = None
+    # effort: None | "low" | "medium" | "high" | "xhigh" | "max"
+    # Goes inside output_config; only Opus 4.5+/Sonnet 4.6 accept it.
+    effort: str | None = None
+    # When True, the provider must NOT send temperature/top_p/top_k.
+    # Required for Opus 4.7 (those parameters return 400).
+    drop_sampling_params: bool = False
+    # Enables prompt-cache breakpoint on the first system block.
+    cache_system: bool = True
 
     # Provider-specific options
     aws_region: str | None = None  # Bedrock
@@ -176,6 +188,9 @@ class LLMConfig:
                     extra_headers = {}
                 extra_headers["User-Agent"] = "Clara/1.0"
 
+            # Anthropic-specific knobs from env (read again later when
+            # constructing the config — see end of from_env).
+
         elif provider == "bedrock":
             # Amazon Bedrock uses AWS credentials (env vars, IAM role, or profile)
             # No API key needed - uses boto3 credential chain
@@ -212,13 +227,50 @@ class LLMConfig:
             azure_deployment = os.getenv("AZURE_DEPLOYMENT_NAME")
             azure_api_version = os.getenv("AZURE_API_VERSION", "2024-02-15-preview")
 
+        # Anthropic-specific knobs (env-driven, applied only when relevant).
+        thinking: str | None = None
+        effort: str | None = None
+        drop_sampling_params = False
+        max_tokens_default = 16384
+        cache_system = True
+
+        if provider == "anthropic":
+            thinking_env = os.getenv("ANTHROPIC_THINKING", "").strip().lower()
+            if thinking_env in ("adaptive", "disabled"):
+                thinking = thinking_env
+            elif thinking_env == "":
+                # Default: adaptive on 4.6/4.7-class models, off elsewhere.
+                if any(m in (model or "").lower() for m in ("opus-4-7", "opus-4-6", "sonnet-4-6")):
+                    thinking = "adaptive"
+
+            effort_env = os.getenv("ANTHROPIC_EFFORT", "").strip().lower()
+            if effort_env in ("low", "medium", "high", "xhigh", "max"):
+                effort = effort_env
+
+            mt_env = os.getenv("ANTHROPIC_MAX_TOKENS")
+            if mt_env and mt_env.isdigit():
+                max_tokens_default = int(mt_env)
+
+            # Opus 4.7 rejects temperature/top_p/top_k — drop them automatically.
+            if "opus-4-7" in (model or "").lower():
+                drop_sampling_params = True
+
+            cache_env = os.getenv("ANTHROPIC_CACHE_SYSTEM", "").strip().lower()
+            if cache_env in ("0", "false", "no", "off"):
+                cache_system = False
+
         return cls(
             provider=provider,
             model=model,
             api_key=api_key,
             base_url=base_url,
+            max_tokens=max_tokens_default,
             extra_headers=extra_headers,
             tier=effective_tier,
+            thinking=thinking,
+            effort=effort,
+            drop_sampling_params=drop_sampling_params,
+            cache_system=cache_system,
             aws_region=aws_region,
             azure_deployment=azure_deployment,
             azure_api_version=azure_api_version,
@@ -235,9 +287,17 @@ class LLMConfig:
         """
         from mypalclara.core.llm.tiers import get_model_for_tier
 
+        new_model = get_model_for_tier(tier, self.provider)
+        # Re-derive drop_sampling_params for the new model — Opus 4.7 rejects
+        # sampling params, but other models may accept them.
+        drop_sampling = (
+            self.drop_sampling_params
+            if self.provider != "anthropic"
+            else "opus-4-7" in (new_model or "").lower()
+        )
         return LLMConfig(
             provider=self.provider,
-            model=get_model_for_tier(tier, self.provider),
+            model=new_model,
             api_key=self.api_key,
             base_url=self.base_url,
             max_tokens=self.max_tokens,
@@ -246,6 +306,10 @@ class LLMConfig:
             extra_headers=self.extra_headers,
             top_p=self.top_p,
             top_k=self.top_k,
+            thinking=self.thinking,
+            effort=self.effort,
+            drop_sampling_params=drop_sampling,
+            cache_system=self.cache_system,
             aws_region=self.aws_region,
             azure_deployment=self.azure_deployment,
             azure_api_version=self.azure_api_version,

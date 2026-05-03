@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 from mypalclara.core.llm.providers.base import LLMProvider, _normalize_tools
 from mypalclara.core.llm.tools.formats import (
     messages_to_anthropic,
+    messages_to_anthropic_blocks,
     messages_to_kimi,
     messages_to_langchain,
     messages_to_openai,
@@ -285,14 +286,28 @@ class LangChainProvider(LLMProvider):
 
 
 class DirectAnthropicProvider(LLMProvider):
-    """Direct Anthropic SDK provider for native tool calling.
+    """Direct Anthropic SDK provider.
 
-    Use this when you need direct access to Anthropic's native SDK,
-    bypassing LangChain. Useful for:
-    - Maximum compatibility with clewdr proxies
-    - Direct access to all Anthropic features
-    - Avoiding LangChain overhead
+    Owned features (cannot be expressed cleanly through LangChain's
+    ChatAnthropic):
+
+    - Prompt caching: a ``cache_control: ephemeral`` breakpoint is placed
+      on the first system block when ``config.cache_system`` is True. Read
+      ``response.usage.cache_read_input_tokens`` to verify hits.
+    - Adaptive thinking: pass ``config.thinking="adaptive"`` (recommended
+      on Sonnet 4.6 / Opus 4.6 / Opus 4.7).
+    - Effort knob: ``config.effort`` in {low, medium, high, xhigh, max}.
+    - Sampling-param dropping: ``config.drop_sampling_params=True``
+      strips temperature/top_p/top_k. Required on Opus 4.7 (those
+      parameters return 400). Auto-enabled by ``LLMConfig.from_env``
+      for opus-4-7.
+    - Long output: requests with large ``max_tokens`` are routed
+      through ``client.messages.stream`` to avoid SDK HTTP timeouts.
     """
+
+    # Above this max_tokens threshold the SDK requires streaming to avoid
+    # idle-connection timeouts on long generations.
+    _STREAM_MAX_TOKENS_THRESHOLD = 16384
 
     _clients: dict[str, Any] = {}
 
@@ -303,7 +318,6 @@ class DirectAnthropicProvider(LLMProvider):
         """
         from anthropic import Anthropic
 
-        # Create cache key from relevant config fields
         cache_key = f"{config.api_key}:{config.base_url}"
         if cache_key not in self._clients:
             kwargs: dict[str, Any] = {"api_key": config.api_key}
@@ -314,6 +328,48 @@ class DirectAnthropicProvider(LLMProvider):
             self._clients[cache_key] = Anthropic(**kwargs)
         return self._clients[cache_key]
 
+    def _build_kwargs(
+        self,
+        messages: list[Message],
+        config: "LLMConfig",
+        *,
+        tools: list[dict] | None = None,
+    ) -> dict[str, Any]:
+        """Assemble kwargs for messages.create / messages.stream.
+
+        Centralized so streaming and non-streaming paths stay in sync.
+        """
+        system_blocks, api_messages = messages_to_anthropic_blocks(
+            messages, cache_persona=config.cache_system
+        )
+
+        kwargs: dict[str, Any] = {
+            "model": config.model,
+            "max_tokens": config.max_tokens,
+            "messages": api_messages,
+        }
+        if system_blocks:
+            kwargs["system"] = system_blocks
+        if tools:
+            kwargs["tools"] = tools
+
+        # Sampling params: only when not explicitly dropped (Opus 4.7 rejects them).
+        if not config.drop_sampling_params and config.temperature is not None:
+            kwargs["temperature"] = config.temperature
+
+        # Adaptive thinking — model decides when/how much to think.
+        if config.thinking in ("adaptive", "disabled"):
+            kwargs["thinking"] = {"type": config.thinking}
+
+        # Effort knob lives inside output_config (Opus 4.5+/Sonnet 4.6).
+        if config.effort:
+            kwargs["output_config"] = {"effort": config.effort}
+
+        if config.tool_choice:
+            kwargs["tool_choice"] = config.tool_choice
+
+        return kwargs
+
     def complete(
         self,
         messages: list[Message],
@@ -321,18 +377,21 @@ class DirectAnthropicProvider(LLMProvider):
     ) -> str:
         """Generate a text completion using native Anthropic SDK."""
         client = self._get_client(config)
-        system, api_messages = messages_to_anthropic(messages)
+        kwargs = self._build_kwargs(messages, config)
 
-        kwargs: dict[str, Any] = {
-            "model": config.model,
-            "max_tokens": config.max_tokens,
-            "messages": api_messages,
-        }
-        if system:
-            kwargs["system"] = system
+        if config.max_tokens > self._STREAM_MAX_TOKENS_THRESHOLD:
+            with client.messages.stream(**kwargs) as stream:
+                final = stream.get_final_message()
+            for block in final.content:
+                if getattr(block, "type", None) == "text":
+                    return block.text
+            return ""
 
         response = client.messages.create(**kwargs)
-        return response.content[0].text if response.content else ""
+        for block in response.content:
+            if getattr(block, "type", None) == "text":
+                return block.text
+        return ""
 
     def complete_with_tools(
         self,
@@ -344,20 +403,17 @@ class DirectAnthropicProvider(LLMProvider):
         from mypalclara.core.llm.tools.formats import convert_tools_to_claude_format
 
         client = self._get_client(config)
-        system, api_messages = messages_to_anthropic(messages)
         normalized = _normalize_tools(tools)
+        claude_tools = convert_tools_to_claude_format(normalized) if normalized else None
 
-        kwargs: dict[str, Any] = {
-            "model": config.model,
-            "max_tokens": config.max_tokens,
-            "messages": api_messages,
-        }
-        if system:
-            kwargs["system"] = system
-        if normalized:
-            kwargs["tools"] = convert_tools_to_claude_format(normalized)
+        kwargs = self._build_kwargs(messages, config, tools=claude_tools)
 
-        response = client.messages.create(**kwargs)
+        if config.max_tokens > self._STREAM_MAX_TOKENS_THRESHOLD:
+            with client.messages.stream(**kwargs) as stream:
+                response = stream.get_final_message()
+        else:
+            response = client.messages.create(**kwargs)
+
         return ToolResponse.from_anthropic(response)
 
     def stream(
@@ -367,21 +423,20 @@ class DirectAnthropicProvider(LLMProvider):
     ) -> Iterator[str]:
         """Generate a streaming completion using native Anthropic SDK."""
         client = self._get_client(config)
-        system, api_messages = messages_to_anthropic(messages)
-
-        kwargs: dict[str, Any] = {
-            "model": config.model,
-            "max_tokens": config.max_tokens,
-            "messages": api_messages,
-        }
-        if system:
-            kwargs["system"] = system
+        kwargs = self._build_kwargs(messages, config)
 
         with client.messages.stream(**kwargs) as stream:
             yield from stream.text_stream
 
     def get_langchain_model(self, config: "LLMConfig") -> "BaseChatModel":
-        """Get LangChain model (uses LangChainProvider internally)."""
+        """Get a LangChain model handle.
+
+        Provided for callers that bypass DirectAnthropicProvider's own
+        complete/stream methods. cache_control, thinking, effort, and
+        output_config are NOT applied here — LangChain has no clean way
+        to surface them. Use the provider's own methods to get those
+        features.
+        """
         from langchain_anthropic import ChatAnthropic
 
         kwargs: dict[str, Any] = {
@@ -389,6 +444,8 @@ class DirectAnthropicProvider(LLMProvider):
             "api_key": config.api_key,
             "max_tokens": config.max_tokens,
         }
+        if not config.drop_sampling_params and config.temperature is not None:
+            kwargs["temperature"] = config.temperature
         if config.base_url:
             kwargs["base_url"] = config.base_url
         if config.extra_headers:

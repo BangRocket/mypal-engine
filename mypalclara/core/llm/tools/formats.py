@@ -415,8 +415,12 @@ def messages_to_anthropic(
     """Convert typed Messages to Anthropic API format, extracting system messages.
 
     Anthropic's API takes system as a separate parameter. This function
-    splits system messages out and joins them, returning the rest as
-    converted API messages.
+    splits system messages out and joins them into a single string,
+    returning the rest as converted API messages.
+
+    For prompt-cache-aware callers, use ``messages_to_anthropic_blocks``
+    instead — it returns system as a list of typed blocks so callers can
+    attach ``cache_control`` to the stable persona block.
 
     Args:
         msgs: List of typed Message instances.
@@ -438,6 +442,62 @@ def messages_to_anthropic(
             api_messages.append(message_to_anthropic(msg))
 
     return "\n\n".join(system_parts), api_messages
+
+
+def messages_to_anthropic_blocks(
+    msgs: list["Message"],
+    *,
+    cache_persona: bool = True,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Convert typed Messages to Anthropic format with system as typed blocks.
+
+    Returns ``system`` as a list of ``{"type": "text", "text": ...}`` blocks
+    — one per SystemMessage — so callers can place ``cache_control`` on
+    individual blocks.
+
+    Caching strategy: when ``cache_persona`` is True (the default), a
+    ``cache_control: {"type": "ephemeral"}`` marker is placed on the FIRST
+    system block, which is by convention the stable persona produced by
+    ``build_worm_persona``. Subsequent system blocks (layered context, VCH,
+    channel context, workspace) are left uncached because they vary per
+    request and including them in the cache would only burn cache writes
+    without ever paying off.
+
+    Anthropic renders ``tools`` → ``system`` → ``messages``, and the cache
+    is a strict prefix match: a breakpoint on the first system block also
+    caches the tool list (rendered before it). Keep tool definitions stable
+    across requests for the breakpoint to actually pay off.
+
+    Args:
+        msgs: List of typed Message instances.
+        cache_persona: When True, set ephemeral cache_control on the first
+            system block. Set False to disable (e.g. when the first block
+            isn't actually stable in your call path).
+
+    Returns:
+        Tuple of (system_blocks, api_messages). ``system_blocks`` is empty
+        if no SystemMessage objects were provided; pass ``system=None`` to
+        the API in that case rather than an empty list.
+    """
+    from mypalclara.core.llm.messages import SystemMessage as SystemMsg
+
+    system_blocks: list[dict[str, Any]] = []
+    api_messages: list[dict[str, Any]] = []
+
+    for msg in msgs:
+        if isinstance(msg, SystemMsg):
+            block: dict[str, Any] = {"type": "text", "text": msg.content}
+            system_blocks.append(block)
+        else:
+            api_messages.append(message_to_anthropic(msg))
+
+    if cache_persona and system_blocks:
+        # The persona block sits first by construction in PromptBuilder; mark
+        # it cache-eligible. Everything after it can vary without invalidating
+        # this breakpoint, but anything before it (tools) must stay stable.
+        system_blocks[0]["cache_control"] = {"type": "ephemeral"}
+
+    return system_blocks, api_messages
 
 
 def messages_to_langchain(msgs: list["Message"]) -> list:
