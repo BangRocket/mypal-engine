@@ -155,7 +155,7 @@ def finalize_conversation_emotional_context(
     Returns:
         EmotionalSummary if successful, None if no data to finalize
     """
-    from mypalclara.core.memory import PALACE
+    from mypalclara.core.memory.routed import PALACE
 
     sentiments = get_conversation_sentiments(user_id, channel_id)
 

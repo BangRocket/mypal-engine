@@ -213,7 +213,7 @@ def init_platform(
             display notifications when memories are accessed.
     """
     from mypalclara.core.llm import make_llm
-    from mypalclara.core.memory_manager import MemoryManager
+    from mypalclara.core.memory.routed import MemoryManager
     from mypalclara.core.tools import ToolRegistry
     from mypalclara.db.connection import init_db
 

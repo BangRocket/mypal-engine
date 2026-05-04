@@ -96,7 +96,7 @@ class MCPMemoryIntegration:
             True if stored successfully, False otherwise
         """
         try:
-            from mypalclara.core.memory import PALACE
+            from mypalclara.core.memory.routed import PALACE
 
             if PALACE is None:
                 logger.debug("[MCPMemory] Palace not available, skipping storage")
@@ -243,7 +243,7 @@ class MCPMemoryIntegration:
             True if stored successfully
         """
         try:
-            from mypalclara.core.memory import PALACE
+            from mypalclara.core.memory.routed import PALACE
 
             if PALACE is None:
                 return False
@@ -303,7 +303,7 @@ class MCPMemoryIntegration:
             - relevance_score: Palace's similarity score
         """
         try:
-            from mypalclara.core.memory import PALACE
+            from mypalclara.core.memory.routed import PALACE
 
             if PALACE is None:
                 return []
@@ -364,7 +364,7 @@ class MCPMemoryIntegration:
             - preference_type: Type of preference
         """
         try:
-            from mypalclara.core.memory import PALACE
+            from mypalclara.core.memory.routed import PALACE
 
             if PALACE is None:
                 return []

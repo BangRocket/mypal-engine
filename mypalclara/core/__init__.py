@@ -54,7 +54,7 @@ from mypalclara.core.llm import (
     message_from_dict,
     messages_from_dicts,
 )
-from mypalclara.core.memory_manager import MemoryManager
+from mypalclara.core.memory.routed import MemoryManager
 from mypalclara.core.platform import PlatformAdapter, PlatformContext, PlatformMessage
 from mypalclara.core.tools import ToolRegistry
 

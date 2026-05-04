@@ -90,7 +90,7 @@ class MemoryWriter:
             participants: List of {"id": str, "name": str} for people mentioned
             is_dm: Whether this is a DM conversation (stores as "personal" vs "project")
         """
-        from mypalclara.core.memory import PALACE
+        from mypalclara.core.memory.routed import PALACE
 
         if PALACE is None:
             return

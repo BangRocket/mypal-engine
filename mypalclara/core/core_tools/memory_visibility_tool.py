@@ -28,7 +28,7 @@ Never make a memory public without the user's explicit consent.
 
 def _get_memory():
     """Get the Palace memory instance."""
-    from mypalclara.core.memory import PALACE
+    from mypalclara.core.memory.routed import PALACE
 
     return PALACE
 

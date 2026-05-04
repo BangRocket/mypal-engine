@@ -44,7 +44,7 @@ class MemoryIngestionManager:
         Returns:
             Filtered list of results (duplicates removed, contradictions superseded)
         """
-        from mypalclara.core.memory import PALACE
+        from mypalclara.core.memory.routed import PALACE
 
         if not mem_results or PALACE is None:
             return mem_results
@@ -122,11 +122,11 @@ class MemoryIngestionManager:
         Returns:
             Tuple of (decision, existing_memory_id)
         """
-        from mypalclara.core.memory import PALACE
         from mypalclara.core.memory.dynamics.contradiction import (
             calculate_similarity,
             detect_contradiction,
         )
+        from mypalclara.core.memory.routed import PALACE
 
         if PALACE is None:
             return "create", None
@@ -251,7 +251,7 @@ class MemoryIngestionManager:
         Returns:
             New memory ID, or None on failure
         """
-        from mypalclara.core.memory import PALACE
+        from mypalclara.core.memory.routed import PALACE
 
         if PALACE is None:
             return None

@@ -276,7 +276,7 @@ async def _process_message(
     but without requiring a WebSocket connection.
     """
     from mypalclara.core import make_llm
-    from mypalclara.core.memory_manager import MemoryManager
+    from mypalclara.core.memory.routed import MemoryManager
 
     try:
         mm = MemoryManager.get_instance()

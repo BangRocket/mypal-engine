@@ -92,7 +92,7 @@ class PromptBuilder:
             - is_dm: Whether it was a DM
         """
 
-        from mypalclara.core.memory import PALACE
+        from mypalclara.core.memory.routed import PALACE
 
         if PALACE is None:
             return []

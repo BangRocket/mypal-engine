@@ -59,7 +59,7 @@ def _get_user_ids(user: CanonicalUser, db: DBSession) -> list[str]:
 
 def _get_memory_client():
     """Get the ClaraMemory singleton (Palace)."""
-    from mypalclara.core.memory import PALACE
+    from mypalclara.core.memory.routed import PALACE
 
     if PALACE is None:
         logger.error("Palace memory system not initialized")

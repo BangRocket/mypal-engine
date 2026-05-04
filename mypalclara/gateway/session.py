@@ -445,7 +445,7 @@ class SessionManager:
         and records self-awareness notes.
         """
         try:
-            from mypalclara.core.memory_manager import MemoryManager
+            from mypalclara.core.memory.routed import MemoryManager
 
             mm = MemoryManager.get_instance()
         except (RuntimeError, ImportError):

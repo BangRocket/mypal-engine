@@ -162,7 +162,7 @@ def store_topic_mention(
     Returns:
         True if stored successfully, False otherwise
     """
-    from mypalclara.core.memory import PALACE
+    from mypalclara.core.memory.routed import PALACE
 
     if PALACE is None:
         return False
@@ -302,7 +302,7 @@ def fetch_topic_mentions(
     Returns:
         List of topic mention dicts from Palace
     """
-    from mypalclara.core.memory import PALACE
+    from mypalclara.core.memory.routed import PALACE
 
     if PALACE is None:
         return []

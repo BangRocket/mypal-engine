@@ -131,7 +131,7 @@ def main():
 
     # Initialize memory manager for reflection
     from mypalclara.core import make_llm
-    from mypalclara.core.memory_manager import MemoryManager
+    from mypalclara.core.memory.routed import MemoryManager
 
     llm = make_llm()
     mm = MemoryManager.initialize(llm_callable=llm)

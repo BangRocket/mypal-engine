@@ -102,7 +102,7 @@ class MemoryRetriever:
             Tuple of (user_memories, project_memories, graph_relations)
             graph_relations is a list of dicts with keys: source, relationship, destination
         """
-        from mypalclara.core.memory import PALACE
+        from mypalclara.core.memory.routed import PALACE
 
         if PALACE is None:
             return [], [], []

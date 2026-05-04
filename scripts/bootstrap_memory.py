@@ -411,7 +411,7 @@ def link_user_to_person(user_id: str):
 
 def apply_to_mem0(memories: dict, user_id: str, dry_run: bool = False):
     """Upsert memories to mem0 with relationship-rich grouping for graph extraction."""
-    from mypalclara.core.memory import PALACE
+    from mypalclara.core.memory.routed import PALACE
 
     if PALACE is None:
         print("[bootstrap] Error: Palace is not initialized")
