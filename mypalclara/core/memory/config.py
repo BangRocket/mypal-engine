@@ -377,5 +377,11 @@ def _init_palace() -> ClaraMemory | None:
         return None
 
 
-# Initialize at module load
-PALACE = _init_palace()
+# Initialize at module load — but skip when the routed layer is targeting a
+# remote Palace service. The embedded init pulls in Qdrant/embedder/etc.,
+# which is wasted work (and noisy errors) when callers go through the
+# remote PalaceClient path.
+if os.getenv("USE_PALACE_SERVICE", "false").lower() in ("1", "true", "yes"):
+    logger.info("Skipping embedded Palace init (USE_PALACE_SERVICE is on)")
+else:
+    PALACE = _init_palace()
