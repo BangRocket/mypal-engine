@@ -494,27 +494,40 @@ class MemoryManager:
 
     @property
     def episode_store(self):
-        """Lazy-initialized episode store."""
+        """Lazy-initialized episode store.
+
+        Remote (USE_PALACE_SERVICE=true): a RemoteEpisodeStore proxying the
+        Palace episode/arc endpoints. Embedded: an EpisodeStore backed by the
+        local clara_episodes Qdrant collection.
+        """
         if self._episode_store is None:
             try:
-                from mypalclara.core.memory.config import PALACE
-                from mypalclara.core.memory.episodes import EpisodeStore
+                from mypalclara.core.memory.routed import PALACE, USE_PALACE_SERVICE
 
-                if PALACE is not None:
-                    # Build qdrant config from env (same source as main memory store)
-                    qdrant_config = {}
-                    qdrant_url = os.getenv("QDRANT_URL")
-                    if qdrant_url:
-                        qdrant_config["url"] = qdrant_url
-                        api_key = os.getenv("QDRANT_API_KEY")
-                        if api_key:
-                            qdrant_config["api_key"] = api_key
+                if USE_PALACE_SERVICE:
+                    from mypalclara.core.memory.routed import RemoteEpisodeStore
 
-                    self._episode_store = EpisodeStore(
-                        embedding_model=PALACE.embedding_model,
-                        qdrant_config=qdrant_config,
-                    )
-                    memory_logger.info("Episode store initialized")
+                    if PALACE is not None:
+                        self._episode_store = RemoteEpisodeStore(PALACE)
+                        memory_logger.info("Episode store initialized (remote Palace)")
+                else:
+                    from mypalclara.core.memory.episodes import EpisodeStore
+
+                    if PALACE is not None:
+                        # Build qdrant config from env (same source as main memory store)
+                        qdrant_config = {}
+                        qdrant_url = os.getenv("QDRANT_URL")
+                        if qdrant_url:
+                            qdrant_config["url"] = qdrant_url
+                            api_key = os.getenv("QDRANT_API_KEY")
+                            if api_key:
+                                qdrant_config["api_key"] = api_key
+
+                        self._episode_store = EpisodeStore(
+                            embedding_model=PALACE.embedding_model,
+                            qdrant_config=qdrant_config,
+                        )
+                        memory_logger.info("Episode store initialized (embedded)")
             except Exception as e:
                 memory_logger.warning(f"Episode store unavailable: {e}")
         return self._episode_store
@@ -557,7 +570,15 @@ class MemoryManager:
 
         Call this after a conversation session ends. Stores episodes,
         updates the knowledge graph, and returns the reflection result.
+
+        Remote (USE_PALACE_SERVICE=true): reflection runs server-side via
+        Palace's POST /v1/reflection/session — see _reflect_on_session_remote.
         """
+        from mypalclara.core.memory.routed import USE_PALACE_SERVICE
+
+        if USE_PALACE_SERVICE:
+            return self._reflect_on_session_remote(messages, user_id, session_id)
+
         from mypalclara.core import make_llm
         from mypalclara.core.memory.reflection import (
             build_episodes_from_reflection,
@@ -604,7 +625,7 @@ class MemoryManager:
         # Store self-notes as semantic memories
         self_notes = extract_self_notes(reflection)
         if self_notes:
-            from mypalclara.core.memory.config import PALACE
+            from mypalclara.core.memory.routed import PALACE
 
             if PALACE is not None:
                 for note in self_notes:
@@ -625,12 +646,91 @@ class MemoryManager:
 
         return reflection
 
+    def _reflect_on_session_remote(
+        self,
+        messages: list[dict],
+        user_id: str,
+        session_id: str | None = None,
+    ) -> dict | None:
+        """Remote-path session reflection.
+
+        Palace extracts and stores episodes server-side via
+        POST /v1/reflection/session (async — enqueues a worker job). Episode
+        extraction quality therefore depends on the Palace deployment's LLM
+        config (PALACE_LLM_*), not mypalclara's. Self-awareness notes are
+        handled by the server's reflection pass; mypalclara does not extract
+        them client-side on this path. Entity resolution stays client-side —
+        it uses the local EntityResolver, which is not Palace-backed.
+        """
+        from mypalclara.core.memory.routed import PALACE
+
+        job_info: dict | None = None
+        if PALACE is not None:
+            try:
+                pending = PALACE.bridge.submit(
+                    PALACE.client.reflect_session(
+                        messages=messages,
+                        user_id=user_id,
+                        agent_id=self.agent_id,
+                        session_id=session_id,
+                        mode="async",
+                    )
+                )
+                job_id = getattr(pending, "job_id", None)
+                job_info = {
+                    "remote": True,
+                    "job_id": job_id,
+                    "status": getattr(pending, "status", "pending"),
+                }
+                memory_logger.info(f"Remote reflection enqueued (job={job_id})")
+            except Exception as e:
+                memory_logger.warning(f"Remote reflection failed: {e}")
+        else:
+            memory_logger.warning("Remote reflection skipped — Palace unavailable")
+
+        # Entity resolution stays client-side regardless of Palace mode.
+        if self.entity_resolver:
+            try:
+                self.entity_resolver.register_from_conversation(
+                    messages, user_id, llm_callable=self.llm
+                )
+            except Exception as e:
+                memory_logger.warning(f"Entity resolution failed: {e}")
+
+        return job_info
+
     def run_narrative_synthesis(self, user_id: str) -> list[dict]:
         """Synthesize narrative arcs from recent episodes.
 
         Called periodically (daily/weekly) to connect episodes into
         ongoing stories and arcs.
+
+        Remote (USE_PALACE_SERVICE=true): synthesis runs server-side via
+        Palace's POST /v1/synthesis/narratives (async worker job); this
+        returns an empty list since arcs land asynchronously.
         """
+        from mypalclara.core.memory.routed import PALACE, USE_PALACE_SERVICE
+
+        if USE_PALACE_SERVICE:
+            if PALACE is None:
+                return []
+            try:
+                pending = PALACE.bridge.submit(
+                    PALACE.client.synthesize_narratives(
+                        user_id=user_id,
+                        agent_id=self.agent_id,
+                        lookback_episodes=20,
+                        mode="async",
+                    )
+                )
+                memory_logger.info(
+                    f"Remote narrative synthesis enqueued for {user_id} "
+                    f"(job={getattr(pending, 'job_id', None)})"
+                )
+            except Exception as e:
+                memory_logger.warning(f"Remote narrative synthesis failed: {e}")
+            return []
+
         from mypalclara.core.memory.reflection import synthesize_narratives
 
         if not self.episode_store:

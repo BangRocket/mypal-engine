@@ -313,11 +313,6 @@ class MCPMemoryIntegration:
             if server_name:
                 query = f"{server_name} {query}"
 
-            # Search with MCP-specific filter
-            filters = {"memory_type": "mcp_tool_usage"}
-            if server_name:
-                filters["server_name"] = server_name
-
             result = PALACE.search(
                 query,
                 user_id=user_id,
@@ -327,9 +322,14 @@ class MCPMemoryIntegration:
 
             memories = []
             for r in result.get("results", []):
-                metadata = r.get("metadata", {})
+                metadata = r.get("metadata", {}) or {}
+                # memory_type is a typed top-level field on the remote
+                # ScoredMemory shape but lives in metadata on the embedded
+                # shape — check both. server_name/tool_name are free-form
+                # metadata, so they are None on the remote search path.
+                mem_type = r.get("memory_type") or metadata.get("memory_type", "")
                 # Only include MCP-related memories
-                if metadata.get("memory_type", "").startswith("mcp_"):
+                if mem_type.startswith("mcp_"):
                     memories.append(
                         {
                             "memory": r.get("memory", ""),

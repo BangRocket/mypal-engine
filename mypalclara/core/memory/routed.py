@@ -23,18 +23,29 @@ Env vars (only read when USE_PALACE_SERVICE=true):
                             provider in `memory/config.py`.
   PALACE_SERVICE_TIMEOUT    HTTP timeout in seconds (default: 30).
 
-Lossy translations to be aware of (Phase B will surface real breakages):
-- `RemotePalace.search()` results lack `agent_id`, `actor_id`, `role`,
-  `visibility`, and arbitrary metadata fields — the remote ScoredMemory
-  shape is thinner than the embedded one. `get_all()` does carry full
-  metadata (Memory shape).
+Lossy translations to be aware of (Phase B routed the heavy callers —
+prompt_builder, memory_manager, episodes/reflection; the gaps below are
+intentional, not bugs):
+- `RemotePalace.search()` results carry `id`, `memory`, `score`,
+  `created_at`, `memory_type`, and `importance`, but still lack
+  `agent_id`, `actor_id`, `role`, `visibility`, and the free-form
+  metadata dict — the remote ScoredMemory shape is thinner than the
+  embedded one. Callers needing arbitrary metadata keys must use
+  `get_all()` (full Memory shape) or per-id `get()`.
 - `RemotePalace.history()` has no remote endpoint in mypalace-client
-  0.7.x — returns `[]` with a warning.
+  0.7.x — returns `[]` with a warning. No callers currently depend on it.
+- Episodes / reflection / narrative synthesis route server-side:
+  `RemoteEpisodeStore` proxies search / get_recent / get_active_arcs, and
+  `MemoryManager.reflect_on_session` / `.run_narrative_synthesis` call the
+  Palace reflection/synthesis endpoints (async worker jobs).
+  `RemoteEpisodeStore.store()` / `.store_arc()` raise — the remote path
+  never writes a hand-built episode or arc.
 - `RemotePalace.embedding_model`, `.graph`, `.vector_store`, `.db` are all
   `None`. Code paths that touch these (graph search, manual embedding,
   vector-store reset, history DB) become no-ops or skip via existing
-  `is not None` guards. Migration scripts that need direct access should
-  keep importing from `mypalclara.core.memory` (the embedded path).
+  `is not None` / `getattr` guards. Migration scripts that need direct
+  Qdrant access should keep importing from `mypalclara.core.memory` (the
+  embedded path).
 """
 
 from __future__ import annotations
@@ -241,16 +252,22 @@ class RemotePalace:
     def _scored_to_dict(scored: Any) -> dict:
         """Translate a remote ScoredMemory into the embedded item shape.
 
-        Note: ScoredMemory is intentionally thinner than Memory — agent_id,
-        user_id, metadata, and promoted keys are not in the wire shape.
-        Downstream callers that need those fields should switch to get_all
-        or per-id get() for the remote path.
+        Note: ScoredMemory is still thinner than Memory — agent_id, user_id,
+        and the free-form metadata dict are not in the wire shape. The typed
+        `memory_type` and `importance` fields *are* carried, so callers that
+        only need to filter by memory_type work on the remote path. Callers
+        needing arbitrary metadata keys must switch to get_all (or per-id
+        get()) — see fetch_tool_context in mcp/memory_integration.py.
         """
         item: dict[str, Any] = {
             "id": scored.id,
             "memory": scored.content,
             "score": scored.score,
         }
+        if getattr(scored, "memory_type", None) is not None:
+            item["memory_type"] = scored.memory_type
+        if getattr(scored, "importance", None) is not None:
+            item["importance"] = scored.importance
         if scored.created_at is not None:
             item["created_at"] = scored.created_at.isoformat()
         return item
@@ -396,6 +413,87 @@ class RemotePalace:
 
 
 # ---------------------------------------------------------------------------
+# Remote episode store
+# ---------------------------------------------------------------------------
+
+
+class RemoteEpisodeStore:
+    """Sync facade mirroring `EpisodeStore`, backed by remote Palace endpoints.
+
+    Episodes and narrative arcs are *extracted and stored server-side* — via
+    `client.reflect_session` (POST /v1/reflection/session) and
+    `client.synthesize_narratives` (POST /v1/synthesis/narratives), driven from
+    `MemoryManager.reflect_on_session` / `.run_narrative_synthesis`. This store
+    is therefore read-mostly: `search`, `get_recent`, `get_by_topic`, and
+    `get_active_arcs` proxy to the Palace HTTP API; the write methods
+    (`store`, `store_arc`) raise, because the remote path never writes an
+    individually-constructed episode.
+
+    Return values are the `mypalace_client` pydantic `Episode` / `NarrativeArc`
+    models. Their field names match the embedded dataclasses (plus a harmless
+    extra `score` on `Episode`), so existing `ep.__dict__` callers in
+    `prompt_builder` and `run_narrative_synthesis` keep working unchanged.
+    """
+
+    # No client-side embedder on the remote path — the service embeds.
+    embedding_model: Any = None
+
+    def __init__(self, palace: "RemotePalace") -> None:
+        self._palace = palace
+
+    def search(
+        self,
+        query: str,
+        user_id: str,
+        limit: int = 5,
+        min_significance: float = 0.0,
+    ) -> list:
+        if not query or not query.strip():
+            return []
+        client = self._palace.client
+        return self._palace.bridge.submit(
+            client.search_episodes(
+                query=query,
+                user_id=user_id,
+                limit=limit,
+                min_significance=min_significance,
+            )
+        )
+
+    def get_recent(self, user_id: str, limit: int = 5) -> list:
+        client = self._palace.client
+        return self._palace.bridge.submit(
+            client.get_recent_episodes(user_id=user_id, limit=limit)
+        )
+
+    def get_by_topic(self, topic: str, user_id: str, limit: int = 5) -> list:
+        # Mirrors EpisodeStore: semantic search scoped to the user.
+        return self.search(query=topic, user_id=user_id, limit=limit)
+
+    def get_active_arcs(self, user_id: str, limit: int = 10) -> list:
+        client = self._palace.client
+        return self._palace.bridge.submit(
+            client.get_active_arcs(user_id=user_id, limit=limit)
+        )
+
+    def store(self, episode: Any) -> str:  # noqa: ARG002
+        raise NotImplementedError(
+            "RemoteEpisodeStore.store() is unavailable — on the remote path "
+            "episodes are extracted and persisted server-side via "
+            "MemoryManager.reflect_on_session (POST /v1/reflection/session). "
+            "Direct episode writes require the embedded EpisodeStore."
+        )
+
+    def store_arc(self, arc: Any) -> str:  # noqa: ARG002
+        raise NotImplementedError(
+            "RemoteEpisodeStore.store_arc() is unavailable — on the remote path "
+            "arcs are synthesized server-side via "
+            "MemoryManager.run_narrative_synthesis "
+            "(POST /v1/synthesis/narratives)."
+        )
+
+
+# ---------------------------------------------------------------------------
 # PALACE selector
 # ---------------------------------------------------------------------------
 
@@ -434,4 +532,10 @@ else:
 # from this module — matches the pattern in docs/migrating-mypalclara.md.
 from mypalclara.core.memory_manager import MemoryManager  # noqa: E402
 
-__all__ = ["PALACE", "MemoryManager", "RemotePalace", "USE_PALACE_SERVICE"]
+__all__ = [
+    "PALACE",
+    "MemoryManager",
+    "RemoteEpisodeStore",
+    "RemotePalace",
+    "USE_PALACE_SERVICE",
+]

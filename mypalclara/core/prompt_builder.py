@@ -392,8 +392,8 @@ class PromptBuilder:
         Returns:
             List of typed Messages ready for LLM.
         """
-        from mypalclara.core.memory.config import PALACE
         from mypalclara.core.memory.retrieval_layers import LayeredRetrieval
+        from mypalclara.core.memory.routed import PALACE, USE_PALACE_SERVICE
         from mypalclara.core.security.worm_persona import build_worm_persona
 
         retrieval = LayeredRetrieval()
@@ -402,88 +402,143 @@ class PromptBuilder:
         from concurrent.futures import ThreadPoolExecutor
 
         semantic_memories = []
+        relevant_memories = []
         graph_context = []
         relevant_episodes = []
         recent_episodes = []
         active_arcs = []
 
         # Pre-embed the query once to warm the cache, so all parallel
-        # searches get cache hits instead of each calling the HF API
-        if PALACE is not None:
+        # searches get cache hits instead of each calling the HF API.
+        # Embedded path only — the remote Palace service embeds server-side,
+        # so RemotePalace exposes no embedding_model and this is skipped.
+        if PALACE is not None and getattr(PALACE, "embedding_model", None) is not None:
             try:
                 PALACE.embedding_model.embed(user_message, "search")
             except Exception:
                 pass
 
-        # Run searches in parallel (all hit embedding cache now)
+        # Gather memory layers. Remote mode collapses L1+L2 into a single
+        # /v1/context/layered round-trip (server-side FSRS rerank); the
+        # embedded path runs parallel searches against local stores. VCH
+        # stays local either way — it searches mypalclara's own message DB.
         vch_snippets = []
 
-        with ThreadPoolExecutor(max_workers=4, thread_name_prefix="memory") as pool:
-            futures = {}
+        def _as_embedded_mems(items: list | None) -> list:
+            # Server layered memories carry a `content` key; the L1/L2
+            # renderers read `memory`. Add it without dropping other fields.
+            return [
+                {**m, "memory": m.get("memory") or m.get("content", "")}
+                for m in (items or [])
+            ]
 
-            if PALACE is not None:
-                futures["semantic"] = pool.submit(
-                    lambda: PALACE.search(
-                        user_message, user_id=user_id, agent_id=self.agent_id, limit=15
+        if USE_PALACE_SERVICE and PALACE is not None:
+            with ThreadPoolExecutor(max_workers=2, thread_name_prefix="memory") as pool:
+                lc_future = pool.submit(
+                    lambda: PALACE.bridge.submit(
+                        PALACE.client.assemble_layered_context(
+                            user_id=user_id,
+                            query=user_message,
+                            agent_id=self.agent_id,
+                        )
                     )
                 )
-
-            if PALACE is not None and hasattr(PALACE, "graph") and PALACE.graph is not None:
-                futures["graph"] = pool.submit(
-                    lambda: PALACE.graph.search(user_message, {"user_id": user_id}, limit=20)
+                vch_future = pool.submit(
+                    lambda: __import__(
+                        "mypalclara.core.memory.vch", fromlist=["search_vch"]
+                    ).search_vch(user_message, user_id, limit=3, context_window=2)
                 )
 
-            if memory_manager and memory_manager.episode_store:
-                futures["episodes"] = pool.submit(
-                    lambda: memory_manager.episode_store.search(
-                        user_message, user_id, limit=3, min_significance=0.3
-                    )
-                )
-
-            # VCH: full-text search over raw conversation history (no embedding needed)
-            futures["vch"] = pool.submit(
-                lambda: __import__("mypalclara.core.memory.vch", fromlist=["search_vch"]).search_vch(
-                    user_message, user_id, limit=3, context_window=2
-                )
-            )
-
-            # Collect results
-            for key, future in futures.items():
                 try:
-                    result = future.result(timeout=15)
-                    if key == "semantic":
-                        semantic_memories = result.get("results", []) if isinstance(result, dict) else []
-                    elif key == "graph":
-                        graph_context = result if isinstance(result, list) else []
-                    elif key == "episodes":
-                        relevant_episodes = [
-                            ep.__dict__ if hasattr(ep, "__dict__") else ep
-                            for ep in (result if isinstance(result, list) else [])
-                        ]
-                    elif key == "vch":
-                        vch_snippets = result if isinstance(result, list) else []
+                    lc = lc_future.result(timeout=15)
+                    l1 = lc.l1_user_profile or {}
+                    l2 = lc.l2_relevant_context or {}
+                    semantic_memories = _as_embedded_mems(l1.get("memories"))
+                    recent_episodes = l1.get("recent_episodes") or []
+                    active_arcs = l1.get("active_arcs") or []
+                    relevant_memories = _as_embedded_mems(l2.get("memories"))
+                    relevant_episodes = l2.get("episodes") or []
                 except Exception as e:
-                    logger.debug(f"{key} fetch failed: {e}")
+                    logger.debug(f"Remote layered context fetch failed: {e}")
 
-        # Non-embedding fetches (fast, no parallelization needed)
-        if memory_manager and memory_manager.episode_store:
-            try:
-                recent_episodes = [
-                    ep.__dict__ if hasattr(ep, "__dict__") else ep
-                    for ep in memory_manager.episode_store.get_recent(user_id, limit=5)
-                ]
-            except Exception as e:
-                logger.debug(f"Recent episode fetch failed: {e}")
+                try:
+                    vch_result = vch_future.result(timeout=15)
+                    vch_snippets = vch_result if isinstance(vch_result, list) else []
+                except Exception as e:
+                    logger.debug(f"vch fetch failed: {e}")
+        else:
+            # Embedded path — parallel searches (all hit the embedding cache).
+            with ThreadPoolExecutor(max_workers=4, thread_name_prefix="memory") as pool:
+                futures = {}
 
-            try:
-                active_arcs = [
-                    arc.__dict__ if hasattr(arc, "__dict__") else arc
-                    for arc in memory_manager.episode_store.get_active_arcs(user_id)
-                ]
-            except Exception as e:
-                logger.debug(f"Active arc fetch failed: {e}")
+                if PALACE is not None:
+                    futures["semantic"] = pool.submit(
+                        lambda: PALACE.search(
+                            user_message, user_id=user_id, agent_id=self.agent_id, limit=15
+                        )
+                    )
+
+                if PALACE is not None and hasattr(PALACE, "graph") and PALACE.graph is not None:
+                    futures["graph"] = pool.submit(
+                        lambda: PALACE.graph.search(user_message, {"user_id": user_id}, limit=20)
+                    )
+
+                if memory_manager and memory_manager.episode_store:
+                    futures["episodes"] = pool.submit(
+                        lambda: memory_manager.episode_store.search(
+                            user_message, user_id, limit=3, min_significance=0.3
+                        )
+                    )
+
+                # VCH: full-text search over raw conversation history (no embedding needed)
+                futures["vch"] = pool.submit(
+                    lambda: __import__("mypalclara.core.memory.vch", fromlist=["search_vch"]).search_vch(
+                        user_message, user_id, limit=3, context_window=2
+                    )
+                )
+
+                # Collect results
+                for key, future in futures.items():
+                    try:
+                        result = future.result(timeout=15)
+                        if key == "semantic":
+                            semantic_memories = result.get("results", []) if isinstance(result, dict) else []
+                        elif key == "graph":
+                            graph_context = result if isinstance(result, list) else []
+                        elif key == "episodes":
+                            relevant_episodes = [
+                                ep.__dict__ if hasattr(ep, "__dict__") else ep
+                                for ep in (result if isinstance(result, list) else [])
+                            ]
+                        elif key == "vch":
+                            vch_snippets = result if isinstance(result, list) else []
+                    except Exception as e:
+                        logger.debug(f"{key} fetch failed: {e}")
+
+            # Non-embedding fetches (fast, no parallelization needed)
+            if memory_manager and memory_manager.episode_store:
+                try:
+                    recent_episodes = [
+                        ep.__dict__ if hasattr(ep, "__dict__") else ep
+                        for ep in memory_manager.episode_store.get_recent(user_id, limit=5)
+                    ]
+                except Exception as e:
+                    logger.debug(f"Recent episode fetch failed: {e}")
+
+                try:
+                    active_arcs = [
+                        arc.__dict__ if hasattr(arc, "__dict__") else arc
+                        for arc in memory_manager.episode_store.get_active_arcs(user_id)
+                    ]
+                except Exception as e:
+                    logger.debug(f"Active arc fetch failed: {e}")
+
+            # L2 reuses L1's semantic set in the embedded path.
+            relevant_memories = semantic_memories
 
         # --- Build layered context ---
+        # Embedded: L1 and L2 share the same semantic set. Remote: the Palace
+        # service returns distinct FSRS-reranked L1/L2 tiers (see above).
         layered_context = retrieval.build_context(
             user_id=user_id,
             semantic_memories=semantic_memories,
@@ -491,7 +546,7 @@ class PromptBuilder:
             active_arcs=active_arcs,
             graph_context=graph_context,
             relevant_episodes=relevant_episodes,
-            relevant_memories=semantic_memories,  # Same data, filtered differently by L2
+            relevant_memories=relevant_memories,
             relevant_relations=graph_context,
         )
 
