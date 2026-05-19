@@ -462,9 +462,7 @@ class RemoteEpisodeStore:
 
     def get_recent(self, user_id: str, limit: int = 5) -> list:
         client = self._palace.client
-        return self._palace.bridge.submit(
-            client.get_recent_episodes(user_id=user_id, limit=limit)
-        )
+        return self._palace.bridge.submit(client.get_recent_episodes(user_id=user_id, limit=limit))
 
     def get_by_topic(self, topic: str, user_id: str, limit: int = 5) -> list:
         # Mirrors EpisodeStore: semantic search scoped to the user.
@@ -472,9 +470,7 @@ class RemoteEpisodeStore:
 
     def get_active_arcs(self, user_id: str, limit: int = 10) -> list:
         client = self._palace.client
-        return self._palace.bridge.submit(
-            client.get_active_arcs(user_id=user_id, limit=limit)
-        )
+        return self._palace.bridge.submit(client.get_active_arcs(user_id=user_id, limit=limit))
 
     def store(self, episode: Any) -> str:  # noqa: ARG002
         raise NotImplementedError(

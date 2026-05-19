@@ -226,9 +226,7 @@ class PromptBuilder:
             ]
 
             if vault_snapshot_block:
-                messages.append(
-                    SystemMessage(content=f"## User Context\n\n{vault_snapshot_block}")
-                )
+                messages.append(SystemMessage(content=f"## User Context\n\n{vault_snapshot_block}"))
 
             # Add recent messages (same formatting as FULL mode)
             for m in recent_msgs:
@@ -306,9 +304,7 @@ class PromptBuilder:
         ]
 
         if vault_snapshot_block:
-            messages.append(
-                SystemMessage(content=f"## User Context\n\n{vault_snapshot_block}")
-            )
+            messages.append(SystemMessage(content=f"## User Context\n\n{vault_snapshot_block}"))
 
         if context_parts:
             messages.append(SystemMessage(content="\n\n".join(context_parts)))
@@ -427,10 +423,7 @@ class PromptBuilder:
         def _as_embedded_mems(items: list | None) -> list:
             # Server layered memories carry a `content` key; the L1/L2
             # renderers read `memory`. Add it without dropping other fields.
-            return [
-                {**m, "memory": m.get("memory") or m.get("content", "")}
-                for m in (items or [])
-            ]
+            return [{**m, "memory": m.get("memory") or m.get("content", "")} for m in (items or [])]
 
         if USE_PALACE_SERVICE and PALACE is not None:
             with ThreadPoolExecutor(max_workers=2, thread_name_prefix="memory") as pool:
@@ -444,9 +437,9 @@ class PromptBuilder:
                     )
                 )
                 vch_future = pool.submit(
-                    lambda: __import__(
-                        "mypalclara.core.memory.vch", fromlist=["search_vch"]
-                    ).search_vch(user_message, user_id, limit=3, context_window=2)
+                    lambda: __import__("mypalclara.core.memory.vch", fromlist=["search_vch"]).search_vch(
+                        user_message, user_id, limit=3, context_window=2
+                    )
                 )
 
                 try:
@@ -473,9 +466,7 @@ class PromptBuilder:
 
                 if PALACE is not None:
                     futures["semantic"] = pool.submit(
-                        lambda: PALACE.search(
-                            user_message, user_id=user_id, agent_id=self.agent_id, limit=15
-                        )
+                        lambda: PALACE.search(user_message, user_id=user_id, agent_id=self.agent_id, limit=15)
                     )
 
                 if PALACE is not None and hasattr(PALACE, "graph") and PALACE.graph is not None:
@@ -560,9 +551,7 @@ class PromptBuilder:
         ]
 
         if vault_snapshot_block:
-            messages.append(
-                SystemMessage(content=f"## User Context\n\n{vault_snapshot_block}")
-            )
+            messages.append(SystemMessage(content=f"## User Context\n\n{vault_snapshot_block}"))
 
         # Add layered context as second system message
         if layered_context:
@@ -582,9 +571,7 @@ class PromptBuilder:
 
             vch_text = format_vch_for_context(vch_snippets, max_chars=2000)
             if vch_text:
-                messages.append(
-                    SystemMessage(content=f"## Relevant past conversations (verbatim)\n{vch_text}")
-                )
+                messages.append(SystemMessage(content=f"## Relevant past conversations (verbatim)\n{vch_text}"))
 
         # Add channel context
         if channel_context:
@@ -599,9 +586,7 @@ class PromptBuilder:
                 ws_parts = []
                 for filename, content in user_ws.items():
                     ws_parts.append(f"### {filename}\n{content}")
-                messages.append(
-                    SystemMessage(content="USER WORKSPACE (private):\n" + "\n\n".join(ws_parts))
-                )
+                messages.append(SystemMessage(content="USER WORKSPACE (private):\n" + "\n\n".join(ws_parts)))
 
         # Add conversation history
         for m in recent_msgs:

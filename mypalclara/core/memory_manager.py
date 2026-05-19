@@ -598,9 +598,7 @@ class MemoryManager:
         if not self.episode_store:
             memory_logger.warning("Episode store not available — episodes will not be stored")
         if self.episode_store:
-            episode_dicts = build_episodes_from_reflection(
-                reflection, messages, user_id, session_id
-            )
+            episode_dicts = build_episodes_from_reflection(reflection, messages, user_id, session_id)
             for ep_dict in episode_dicts:
                 try:
                     from mypalclara.core.memory.episodes import Episode
@@ -616,9 +614,7 @@ class MemoryManager:
         # Update entity resolver from conversation
         if self.entity_resolver:
             try:
-                self.entity_resolver.register_from_conversation(
-                    messages, user_id, llm_callable=self.llm
-                )
+                self.entity_resolver.register_from_conversation(messages, user_id, llm_callable=self.llm)
             except Exception as e:
                 memory_logger.warning(f"Entity resolution failed: {e}")
 
@@ -691,9 +687,7 @@ class MemoryManager:
         # Entity resolution stays client-side regardless of Palace mode.
         if self.entity_resolver:
             try:
-                self.entity_resolver.register_from_conversation(
-                    messages, user_id, llm_callable=self.llm
-                )
+                self.entity_resolver.register_from_conversation(messages, user_id, llm_callable=self.llm)
             except Exception as e:
                 memory_logger.warning(f"Entity resolution failed: {e}")
 
@@ -724,8 +718,7 @@ class MemoryManager:
                     )
                 )
                 memory_logger.info(
-                    f"Remote narrative synthesis enqueued for {user_id} "
-                    f"(job={getattr(pending, 'job_id', None)})"
+                    f"Remote narrative synthesis enqueued for {user_id} " f"(job={getattr(pending, 'job_id', None)})"
                 )
             except Exception as e:
                 memory_logger.warning(f"Remote narrative synthesis failed: {e}")
@@ -738,15 +731,11 @@ class MemoryManager:
 
         # Get recent episodes
         recent = self.episode_store.get_recent(user_id, limit=20)
-        episode_dicts = [
-            ep.__dict__ if hasattr(ep, "__dict__") else ep
-            for ep in recent
-        ]
+        episode_dicts = [ep.__dict__ if hasattr(ep, "__dict__") else ep for ep in recent]
 
         # Get existing arcs
         existing_arcs = [
-            arc.__dict__ if hasattr(arc, "__dict__") else arc
-            for arc in self.episode_store.get_active_arcs(user_id)
+            arc.__dict__ if hasattr(arc, "__dict__") else arc for arc in self.episode_store.get_active_arcs(user_id)
         ]
 
         # Synthesize
