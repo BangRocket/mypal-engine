@@ -229,6 +229,38 @@ async def extract_and_store_topics(
     Returns:
         List of extracted topics
     """
+    from mypalclara.core.memory.routed import PALACE, USE_PALACE_SERVICE
+
+    if USE_PALACE_SERVICE:
+        # Remote path: the Palace service runs extraction (LLM) + storage in a
+        # background worker. It returns a job, not the topics, so we enqueue and
+        # return []. The async client is bound to the bridge loop, so dispatch
+        # via run_in_executor to avoid blocking the caller's event loop.
+        if PALACE is None:
+            return []
+        import asyncio
+
+        loop = asyncio.get_event_loop()
+        try:
+            await loop.run_in_executor(
+                None,
+                lambda: PALACE.bridge.submit(
+                    PALACE.client.extract_topics(
+                        user_id=user_id,
+                        conversation_text=conversation_text,
+                        conversation_sentiment=conversation_sentiment,
+                        agent_id=agent_id,
+                        channel_id=channel_id,
+                        channel_name=channel_name,
+                        is_dm=is_dm,
+                    )
+                ),
+            )
+            logger.info(f"Enqueued remote topic extraction for {user_id}")
+        except Exception as e:
+            logger.error(f"Remote topic extraction failed: {e}", exc_info=True)
+        return []
+
     topics = await extract_topics_from_conversation(
         conversation_text=conversation_text,
         conversation_sentiment=conversation_sentiment,
@@ -451,6 +483,27 @@ def fetch_topic_recurrence(
         - pattern_note: Natural language description
         - channels: List of channel names where mentioned
     """
+    from mypalclara.core.memory.routed import PALACE, USE_PALACE_SERVICE
+
+    if USE_PALACE_SERVICE:
+        # Remote path: the Palace service groups + computes recurrence patterns
+        # server-side and returns the same dict shape this function produces.
+        if PALACE is None:
+            return []
+        try:
+            rows = PALACE.bridge.submit(
+                PALACE.client.get_topic_recurrence(
+                    user_id=user_id,
+                    lookback_days=lookback_days,
+                    min_mentions=min_mentions,
+                    agent_id=agent_id,
+                )
+            )
+        except Exception as e:
+            logger.error(f"Remote topic recurrence fetch failed: {e}", exc_info=True)
+            return []
+        return [r.model_dump() if hasattr(r, "model_dump") else dict(r) for r in rows]
+
     mentions = fetch_topic_mentions(user_id, lookback_days, agent_id)
 
     if not mentions:

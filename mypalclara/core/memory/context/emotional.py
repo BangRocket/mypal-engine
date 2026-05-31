@@ -126,6 +126,62 @@ def compute_emotional_arc(sentiment_timeline: list[float]) -> str:
         return "stable"
 
 
+def _finalize_remote(
+    *,
+    user_id: str,
+    channel_id: str,
+    channel_name: str,
+    is_dm: bool,
+    energy: str,
+    summary: str,
+    agent_id: str,
+    on_event: Callable[[str, dict], None] | None,
+    messages: list[str],
+) -> None:
+    """Remote path: Palace scores the conversation server-side and stores it.
+
+    Always records (even with empty messages, e.g. the proactive finalize
+    path) so summary+energy persist; the server computes the emotional arc
+    from whatever messages are supplied. Returns None — callers ignore the
+    return value.
+    """
+    from mypalclara.core.memory.routed import PALACE
+
+    arc = "stable"
+    try:
+        result = PALACE.bridge.submit(
+            PALACE.client.record_emotional_context(
+                user_id=user_id,
+                messages=messages,
+                agent_id=agent_id,
+                channel_id=channel_id,
+                channel_name=channel_name,
+                is_dm=is_dm,
+                energy=energy,
+                summary=summary,
+            )
+        )
+        arc = getattr(result, "emotional_arc", "stable")
+        logger.info(f"Recorded emotional context (remote) for {user_id}: {arc} arc, {energy} energy")
+        if on_event:
+            on_event(
+                "emotional_context_stored",
+                {
+                    "user_id": user_id,
+                    "arc": arc,
+                    "energy": energy,
+                    "channel_name": channel_name,
+                    "is_dm": is_dm,
+                },
+            )
+    except Exception as e:
+        logger.error(f"Error recording remote emotional context: {e}", exc_info=True)
+    finally:
+        clear_conversation_sentiments(user_id, channel_id)
+
+    return None
+
+
 def finalize_conversation_emotional_context(
     user_id: str,
     channel_id: str,
@@ -135,6 +191,7 @@ def finalize_conversation_emotional_context(
     summary: str,
     agent_id: str = "clara",
     on_event: Callable[[str, dict], None] | None = None,
+    messages: list[str] | None = None,
 ) -> EmotionalSummary | None:
     """
     Finalize emotional context for a conversation and store to Palace memory.
@@ -151,11 +208,28 @@ def finalize_conversation_emotional_context(
         agent_id: Clara's agent ID for Palace
         on_event: Optional callback for emotional context events.
             Called with ("emotional_context_stored", data_dict).
+        messages: Optional list of conversation message texts. Used only on
+            the remote (Palace service) path, where the server scores them
+            with VADER. Ignored on the embedded path (which uses the in-memory
+            per-message sentiment timeline).
 
     Returns:
         EmotionalSummary if successful, None if no data to finalize
     """
-    from mypalclara.core.memory.routed import PALACE
+    from mypalclara.core.memory.routed import PALACE, USE_PALACE_SERVICE
+
+    if USE_PALACE_SERVICE:
+        return _finalize_remote(
+            user_id=user_id,
+            channel_id=channel_id,
+            channel_name=channel_name,
+            is_dm=is_dm,
+            energy=energy,
+            summary=summary,
+            agent_id=agent_id,
+            on_event=on_event,
+            messages=messages or [],
+        )
 
     sentiments = get_conversation_sentiments(user_id, channel_id)
 

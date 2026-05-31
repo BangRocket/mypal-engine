@@ -369,6 +369,16 @@ class SessionManager:
             energy = session.context.get("energy", "neutral")
             summary = session.context.get("last_topic", "general conversation")
 
+            # On the remote path Palace scores the raw messages server-side, so
+            # gather the user-message texts to send. The embedded path ignores
+            # this (it uses the in-memory per-message sentiment timeline).
+            from mypalclara.core.memory.routed import USE_PALACE_SERVICE
+
+            user_texts: list[str] | None = None
+            if USE_PALACE_SERVICE:
+                session_messages = await self._fetch_session_messages(session)
+                user_texts = [m["content"] for m in session_messages if m.get("role") == "user" and m.get("content")]
+
             finalize_conversation_emotional_context(
                 user_id=session.user_id,
                 channel_id=session.channel_id,
@@ -376,6 +386,7 @@ class SessionManager:
                 is_dm=is_dm,
                 energy=energy,
                 summary=summary,
+                messages=user_texts,
             )
 
             # Extract topics from conversation

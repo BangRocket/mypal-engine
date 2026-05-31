@@ -92,10 +92,13 @@ class PromptBuilder:
             - is_dm: Whether it was a DM
         """
 
-        from mypalclara.core.memory.routed import PALACE
+        from mypalclara.core.memory.routed import PALACE, USE_PALACE_SERVICE
 
         if PALACE is None:
             return []
+
+        if USE_PALACE_SERVICE:
+            return self._fetch_emotional_context_remote(user_id, limit, max_age_days)
 
         try:
             # Search for emotional_context memories
@@ -150,6 +153,61 @@ class PromptBuilder:
         except Exception as e:
             logger.error(f"Error fetching emotional context: {e}", exc_info=True)
             return []
+
+    def _fetch_emotional_context_remote(
+        self,
+        user_id: str,
+        limit: int,
+        max_age_days: int,
+    ) -> list[dict]:
+        """Remote path: fetch emotional context from the Palace service.
+
+        The server returns rows newest-first, already limited and age-filtered,
+        so we only translate the typed EmotionalContext models into the dict
+        shape ``_format_emotional_context`` expects (reconstructing the natural-
+        language ``memory`` line the embedded path stored).
+        """
+        from mypalclara.core.memory.routed import PALACE
+
+        arc_descriptions = {
+            "stable": "maintained consistent energy",
+            "improving": "started tense but became more relaxed",
+            "declining": "started light but became more stressed",
+            "volatile": "had emotional ups and downs",
+        }
+        try:
+            rows = PALACE.bridge.submit(
+                PALACE.client.get_emotional_context(
+                    user_id=user_id,
+                    limit=limit,
+                    max_age_days=max_age_days,
+                    agent_id=self.agent_id,
+                )
+            )
+        except Exception as e:
+            logger.debug(f"Remote emotional context fetch failed: {e}")
+            return []
+
+        out: list[dict] = []
+        for r in rows:
+            arc = getattr(r, "emotional_arc", "stable")
+            energy = getattr(r, "energy_level", "neutral")
+            topic = getattr(r, "topic_summary", "") or "general conversation"
+            arc_desc = arc_descriptions.get(arc, "had varied emotional tones")
+            created_at = getattr(r, "created_at", None)
+            out.append(
+                {
+                    "memory": f"Conversation about {topic}. They {arc_desc} throughout. "
+                    f"Ended with {energy} energy.",
+                    "timestamp": created_at.isoformat() if created_at else "",
+                    "arc": arc,
+                    "energy": energy,
+                    "channel_name": getattr(r, "channel_name", "") or "unknown",
+                    "is_dm": getattr(r, "is_dm", False),
+                    "ending_sentiment": getattr(r, "ending_sentiment", 0.0),
+                }
+            )
+        return out
 
     # ---------- prompt building ----------
 
