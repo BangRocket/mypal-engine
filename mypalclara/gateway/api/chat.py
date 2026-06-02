@@ -18,6 +18,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
+from mypalclara.gateway.api._visual import collect_system_extra, strip_pose_tags
 from mypalclara.gateway.api.auth import get_db
 
 logger = logging.getLogger("clara.gateway.api.chat")
@@ -109,10 +110,7 @@ async def _resolve_user(request: Request, body_user: str | None = None) -> str:
                     canonical_user_id = row[0]
                     # Find platform links for this user
                     links = db.execute(
-                        sql_text(
-                            "SELECT prefixed_user_id FROM platform_links "
-                            "WHERE canonical_user_id = :uid"
-                        ),
+                        sql_text("SELECT prefixed_user_id FROM platform_links " "WHERE canonical_user_id = :uid"),
                         {"uid": canonical_user_id},
                     ).fetchall()
 
@@ -155,6 +153,7 @@ async def chat_completions(request: Request):
     stream = body.get("stream", True)
     model = body.get("model", "clara")
     user_id = await _resolve_user(request, body.get("user"))
+    system_extra = collect_system_extra(messages)
 
     if not messages:
         return {"error": {"message": "messages is required", "type": "invalid_request_error"}}
@@ -166,9 +165,7 @@ async def chat_completions(request: Request):
             content = msg.get("content", "")
             if isinstance(content, list):
                 # Multimodal — extract text parts
-                user_message = " ".join(
-                    p.get("text", "") for p in content if p.get("type") == "text"
-                )
+                user_message = " ".join(p.get("text", "") for p in content if p.get("type") == "text")
             else:
                 user_message = content
             break
@@ -181,7 +178,7 @@ async def chat_completions(request: Request):
 
     if stream:
         return StreamingResponse(
-            _stream_response(user_message, user_id, model, completion_id, messages),
+            _stream_response(user_message, user_id, model, completion_id, messages, system_extra),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -191,7 +188,7 @@ async def chat_completions(request: Request):
         )
     else:
         # Non-streaming — collect full response
-        full_text = await _get_full_response(user_message, user_id, messages)
+        full_text = await _get_full_response(user_message, user_id, messages, system_extra)
         return {
             "id": completion_id,
             "object": "chat.completion",
@@ -214,11 +211,12 @@ async def _stream_response(
     model: str,
     completion_id: str,
     messages: list[dict],
+    system_extra: str = "",
 ):
     """Stream response in OpenAI SSE format."""
     full_text = ""
 
-    async for chunk_text in _process_message(user_message, user_id, messages):
+    async for chunk_text in _process_message(user_message, user_id, messages, system_extra):
         full_text += chunk_text
         chunk = {
             "id": completion_id,
@@ -257,10 +255,11 @@ async def _get_full_response(
     user_message: str,
     user_id: str,
     messages: list[dict],
+    system_extra: str = "",
 ) -> str:
     """Get full response (non-streaming)."""
     chunks = []
-    async for chunk in _process_message(user_message, user_id, messages):
+    async for chunk in _process_message(user_message, user_id, messages, system_extra):
         chunks.append(chunk)
     return "".join(chunks)
 
@@ -269,6 +268,7 @@ async def _process_message(
     user_message: str,
     user_id: str,
     messages: list[dict],
+    system_extra: str = "",
 ):
     """Process a message through Clara's pipeline and yield response chunks.
 
@@ -331,6 +331,13 @@ async def _process_message(
             UserMessage(content=user_message),
         ]
 
+    # Append client-supplied system instructions (e.g. visual-clara pose tags)
+    # after the persona + memory layers, before the user turn is converted.
+    if system_extra:
+        from mypalclara.core.llm.messages import SystemMessage
+
+        prompt_messages.append(SystemMessage(content=system_extra))
+
     # Convert to dict format for LLM
     from mypalclara.core.llm.tools.formats import messages_to_openai
 
@@ -370,7 +377,9 @@ async def _process_message(
             try:
                 # Store both user message and assistant response
                 mm._session_manager.store_message(store_db, db_session.id, user_id, "user", user_message)
-                mm._session_manager.store_message(store_db, db_session.id, user_id, "assistant", full_response)
+                mm._session_manager.store_message(
+                    store_db, db_session.id, user_id, "assistant", strip_pose_tags(full_response)
+                )
                 store_db.commit()
                 logger.debug(f"Stored exchange: {len(user_message)} + {len(full_response)} chars")
             finally:
@@ -413,9 +422,7 @@ async def _process_message(
                 if len(msg_dicts_for_reflect) >= 4:
                     await loop.run_in_executor(
                         None,
-                        lambda: mm.reflect_on_session(
-                            msg_dicts_for_reflect, user_id, session_id="app"
-                        ),
+                        lambda: mm.reflect_on_session(msg_dicts_for_reflect, user_id, session_id="app"),
                     )
             except Exception as e:
                 logger.warning(f"Reflection failed: {e}")
