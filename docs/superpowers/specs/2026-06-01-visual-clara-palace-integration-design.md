@@ -89,9 +89,9 @@ All changes are in the gateway HTTP API; no change to `MemoryManager` or
 - Reflection reads the already-stripped DB copy, so it is covered with no extra change.
 
 ### 3. CORS — [`app.py`](../../../mypalclara/gateway/api/app.py)
-- Make allowed origins env-configurable via `CLARA_API_CORS_ORIGINS`
-  (comma-separated), defaulting to the current list **plus**
-  `http://localhost:5180` and `http://127.0.0.1:5180` (visual-clara's dev port).
+- The existing `GATEWAY_API_CORS_ORIGINS` env var already drives the allowed list;
+  extend its **default** to include `http://localhost:5180` and `http://127.0.0.1:5180`
+  (visual-clara's dev port). No new var needed.
 
 ## Client changes (visual-clara)
 
@@ -131,13 +131,15 @@ All changes are in the gateway HTTP API; no change to `MemoryManager` or
 1. **Gateway in service-aware mode** (the live MyPalace link): HTTP API on 18790 with
    `USE_PALACE_SERVICE=true`, `PALACE_SERVICE_URL=http://localhost:8000` (or
    `http://palace:8000` in Docker), `PALACE_SERVICE_API_KEY=pk_live_...`.
-2. **Mint a `clara_xxx` key** tied to the canonical user. The endpoint validates against the
-   identity service first, then a local `api_keys` table (`key_hash = sha256(key)`,
-   `is_active = true`, joined to `platform_links`). Provide a documented insert/CLI for the
-   local path during implementation.
-3. **visual-clara `.env`:** `VITE_BACKEND=clara`, `VITE_CLARA_API_URL`, `VITE_CLARA_API_KEY`,
-   `VITE_CLARA_MODEL=clara`.
-4. **Gateway env:** `CLARA_API_CORS_ORIGINS` includes visual-clara's origin.
+2. **Identity (refined during planning).** The local DB has **no `api_keys` table** — it is
+   an identity-service feature, so `_resolve_user` falls back to the request body's `user`
+   field. The runnable dev path therefore sets `user` = your platform-prefixed id (e.g.
+   `discord-271274659385835521`) for shared memory with Discord Clara. The
+   `Authorization: Bearer clara_xxx` key is still sent when configured and takes precedence,
+   but is optional and only resolves once the identity service / `api_keys` table exists.
+3. **visual-clara `.env`:** `VITE_BACKEND=clara`, `VITE_CLARA_API_URL`, `VITE_CLARA_MODEL=clara`,
+   `VITE_CLARA_USER_ID` (shared-identity dev path), and optional `VITE_CLARA_API_KEY`.
+4. **Gateway env:** `GATEWAY_API_CORS_ORIGINS` default extended to include visual-clara's origin.
 
 ## Error handling
 
