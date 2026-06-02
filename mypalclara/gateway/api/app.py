@@ -31,7 +31,8 @@ def create_app() -> FastAPI:
     # CORS — allow the Rails app and any configured origins
     cors_origins = os.getenv(
         "GATEWAY_API_CORS_ORIGINS",
-        "http://localhost:3000,http://localhost:5173,http://localhost:1420,tauri://localhost,https://tauri.localhost"
+        "http://localhost:3000,http://localhost:5173,http://localhost:5180,"
+        "http://127.0.0.1:5180,http://localhost:1420,tauri://localhost,https://tauri.localhost",
     ).split(",")
     app.add_middleware(
         CORSMiddleware,
