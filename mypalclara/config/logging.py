@@ -269,12 +269,19 @@ class DiscordLogHandler(logging.Handler):
         self._shutdown = False
         self._task = None
         self._loop = None
+        self._embed_renderer = None  # set by set_bot(); (descriptor: dict) -> Any
 
-    def set_bot(self, bot, channel_id: int, loop):
-        """Set the Discord bot client and start the background task."""
+    def set_bot(self, bot, channel_id: int, loop, embed_renderer=None):
+        """Set the Discord bot client and start the background task.
+
+        Args:
+            embed_renderer: optional callable(descriptor: dict) -> platform embed.
+                Provided by the Discord adapter so this engine module never imports discord.
+        """
         self._bot = bot
         self._channel_id = channel_id
         self._loop = loop
+        self._embed_renderer = embed_renderer
         self._task = loop.create_task(self._worker())
 
     async def _worker(self):
@@ -314,8 +321,13 @@ class DiscordLogHandler(logging.Handler):
 
             for item in items:
                 try:
-                    if item.get("embed"):
-                        await channel.send(embed=item["embed"])
+                    if item.get("embed_data") is not None:
+                        if self._embed_renderer is None:
+                            # No renderer (non-discord deploy): fall back to title text.
+                            await channel.send(item["embed_data"].get("title", ""))
+                        else:
+                            embed = self._embed_renderer(item["embed_data"])
+                            await channel.send(embed=embed)
                     else:
                         msg = item.get("message", "")
                         # Discord message limit is 2000 chars
@@ -394,7 +406,7 @@ class DiscordLogHandler(logging.Handler):
         footer: str | None = None,
         tag: str | None = None,
     ):
-        """Send a rich embed to the log channel.
+        """Queue a rich embed (as a plain descriptor) for the log channel.
 
         Args:
             title: Embed title
@@ -406,40 +418,19 @@ class DiscordLogHandler(logging.Handler):
         """
         if not self._bot or not self._channel_id:
             return
-
+        if color is None:
+            color = self.TAG_EMBED_COLORS.get(tag, 0x5865F2)  # Discord blurple default
+        descriptor = {
+            "title": title,
+            "description": description,
+            "color": color,
+            "fields": fields or [],
+            "footer": footer,
+        }
         try:
-            import discord
-
-            # Determine color
-            if color is None:
-                color = self.TAG_EMBED_COLORS.get(tag, 0x5865F2)  # Discord blurple default
-
-            embed = discord.Embed(
-                title=title,
-                description=description,
-                color=discord.Color(color),
-                timestamp=datetime.now(timezone.utc),
-            )
-
-            if fields:
-                for field in fields:
-                    embed.add_field(
-                        name=field.get("name", ""),
-                        value=field.get("value", ""),
-                        inline=field.get("inline", True),
-                    )
-
-            if footer:
-                embed.set_footer(text=footer)
-
-            # Queue the embed
-            try:
-                self._queue.put_nowait({"embed": embed})
-            except Exception:
-                pass  # Drop if queue full
-
-        except Exception as e:
-            print(f"[logging] Failed to create embed: {e}", file=sys.stderr)
+            self._queue.put_nowait({"embed_data": descriptor})
+        except Exception:
+            pass  # Drop if queue full
 
     def queue_embed(
         self,
@@ -526,13 +517,15 @@ def set_db_session_factory(session_factory):
         _db_handler.set_session_factory(session_factory)
 
 
-def init_discord_logging(bot, channel_id: int, loop) -> DiscordLogHandler | None:
+def init_discord_logging(bot, channel_id: int, loop, embed_renderer=None) -> DiscordLogHandler | None:
     """Initialize Discord log handler after bot is ready.
 
     Args:
         bot: Discord bot client
         channel_id: Discord channel ID to send logs to
         loop: asyncio event loop
+        embed_renderer: optional callable(descriptor: dict) -> discord.Embed, supplied
+            by the Discord adapter so this engine module never imports discord.
 
     Returns:
         The DiscordLogHandler instance, or None if channel_id is invalid
@@ -550,7 +543,7 @@ def init_discord_logging(bot, channel_id: int, loop) -> DiscordLogHandler | None
         )
         logging.getLogger().addHandler(_discord_handler)
 
-    _discord_handler.set_bot(bot, channel_id, loop)
+    _discord_handler.set_bot(bot, channel_id, loop, embed_renderer=embed_renderer)
     return _discord_handler
 
 

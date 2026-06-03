@@ -43,7 +43,6 @@ FORBIDDEN_INTERNAL_PREFIXES = ("mypalclara.adapters",)
 # Files (relative to mypalclara/) still expected to violate. Shrinks to {} by Task 8.
 KNOWN_VIOLATIONS = {
     "services/proactive/engine.py",
-    "config/logging.py",
 }
 
 
