@@ -1,0 +1,23 @@
+[project]
+name = "mypal-protocol"
+version = "0.1.0"
+description = "Wire-protocol message models shared between mypal-engine and its clients."
+requires-python = ">=3.11,<3.14"
+license = { text = "PolyForm-Noncommercial-1.0.0" }
+dependencies = [
+    "pydantic>=2,<3",
+]
+
+[project.urls]
+Homepage = "https://github.com/BangRocket/mypalclara"
+
+[tool.setuptools]
+packages = ["mypal_protocol"]
+package-dir = { mypal_protocol = "." }
+
+[tool.setuptools.package-data]
+mypal_protocol = ["py.typed"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
