@@ -105,3 +105,30 @@ def test_known_violations_allowlist_is_not_stale():
         "These files no longer violate — remove them from KNOWN_VIOLATIONS: "
         f"{sorted(stale)}"
     )
+
+
+# --- Client side must not import gateway internals (only mypal_protocol / HTTP API) ---
+
+CLIENT_PACKAGES = ["adapters"]
+
+# Files (relative to mypalclara/) still importing mypalclara.gateway.*. Shrinks to {}.
+KNOWN_CLIENT_GATEWAY_IMPORTS: set[str] = set()
+
+
+def _client_gateway_importers() -> set[str]:
+    found: set[str] = set()
+    for pkg in CLIENT_PACKAGES:
+        base = PKG_ROOT / pkg
+        for path in base.rglob("*.py"):
+            rel = path.relative_to(PKG_ROOT).as_posix()
+            for module in _imported_modules(path):
+                if module == "mypalclara.gateway" or module.startswith("mypalclara.gateway."):
+                    found.add(rel)
+                    break
+    return found
+
+
+def test_client_does_not_import_gateway_internals():
+    importers = _client_gateway_importers()
+    unexpected = importers - KNOWN_CLIENT_GATEWAY_IMPORTS
+    assert not unexpected, f"Client modules importing gateway internals: {sorted(unexpected)}"
