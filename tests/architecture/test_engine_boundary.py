@@ -42,10 +42,6 @@ FORBIDDEN_INTERNAL_PREFIXES = ("mypalclara.adapters",)
 
 # Files (relative to mypalclara/) still expected to violate. Shrinks to {} by Task 8.
 KNOWN_VIOLATIONS = {
-    "core/discord/__init__.py",
-    "core/discord/commands.py",
-    "core/discord/views.py",
-    "core/discord/embeds.py",
     "services/email/monitor.py",
     "services/proactive/engine.py",
     "config/logging.py",
