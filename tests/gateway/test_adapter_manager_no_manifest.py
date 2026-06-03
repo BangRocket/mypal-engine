@@ -21,12 +21,7 @@ def test_adapter_manager_does_not_import_adapters_package():
 
 def test_adapter_manager_loads_yaml_config(tmp_path):
     cfg = tmp_path / "adapters.yaml"
-    cfg.write_text(
-        "adapters:\n"
-        "  discord:\n"
-        "    enabled: true\n"
-        "    module: mypalclara.adapters.discord\n"
-    )
+    cfg.write_text("adapters:\n" "  discord:\n" "    enabled: true\n" "    module: mypalclara.adapters.discord\n")
     mgr = am.AdapterManager(config_path=cfg)
     configs = mgr.load_config()
     assert "discord" in configs
