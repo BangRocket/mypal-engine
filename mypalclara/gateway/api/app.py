@@ -11,6 +11,7 @@ from mypalclara.gateway.api.admin import router as admin_router
 from mypalclara.gateway.api.backup import router as backup_router
 from mypalclara.gateway.api.channels import router as channels_router
 from mypalclara.gateway.api.chat import router as chat_router
+from mypalclara.gateway.api.email_accounts import router as email_accounts_router
 from mypalclara.gateway.api.game import router as game_router
 from mypalclara.gateway.api.graph import router as graph_router
 from mypalclara.gateway.api.guilds import router as guilds_router
@@ -61,6 +62,7 @@ def create_app() -> FastAPI:
     app.include_router(sandbox_router, prefix="/api/v1/sandbox", tags=["sandbox"])
     app.include_router(channels_router, prefix="/api/v1", tags=["channels"])
     app.include_router(guilds_router, prefix="/api/v1", tags=["guilds"])
+    app.include_router(email_accounts_router, prefix="/api/v1", tags=["email-accounts"])
 
     @app.get("/api/v1/health")
     async def health():
