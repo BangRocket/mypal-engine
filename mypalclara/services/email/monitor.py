@@ -7,10 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
-
-import discord
 
 from mypalclara.config.logging import get_logger
 from mypalclara.db.connection import SessionLocal
@@ -20,10 +18,10 @@ from mypalclara.services.email.providers.gmail import GmailProvider
 from mypalclara.services.email.providers.imap import IMAPProvider
 from mypalclara.services.email.rules_engine import RuleMatch, evaluate_email
 
-if TYPE_CHECKING:
-    from discord import Client
-
 logger = get_logger("email.monitor")
+
+# Type of the injected alert sender: async (user_id, channel_id, content) -> message_id | None
+SendAlertFn = Callable[[str, str, str], Awaitable[str | None]]
 
 # Configuration
 EMAIL_MONITORING_ENABLED = os.getenv("EMAIL_MONITORING_ENABLED", "false").lower() == "true"
@@ -47,40 +45,34 @@ def get_provider(account: EmailAccount) -> EmailProvider:
         return IMAPProvider(account)
 
 
-async def email_monitor_loop(client: Client) -> None:
-    """Main email monitoring loop.
+async def email_monitor_loop(
+    send_alert_fn: SendAlertFn,
+    poll_seconds: int = 60,
+) -> None:
+    """Poll email accounts and deliver alerts via send_alert_fn.
 
-    Started via self.loop.create_task() in Discord bot's on_ready().
+    Args:
+        send_alert_fn: async (user_id, channel_id, content) -> message_id | None
+        poll_seconds: base sleep between scheduler passes
     """
     logger.info("Email monitoring loop starting...")
+    await asyncio.sleep(10)  # let startup settle
 
-    # Wait for bot to be ready
-    await client.wait_until_ready()
-
-    # Initial delay to let things settle
-    await asyncio.sleep(10)
-
-    while not client.is_closed():
+    while True:
         try:
             now = datetime.now(UTC).replace(tzinfo=None)
-
-            # Get all enabled accounts that need checking
             accounts = get_accounts_to_check(now)
-
             for account in accounts:
                 try:
-                    await check_account(account, client)
+                    await check_account(account, send_alert_fn)
                 except Exception as e:
                     logger.error(f"Error checking account {account.email_address}: {e}")
                     await handle_account_error(account, str(e))
-
-                # Small delay between accounts to avoid overwhelming
                 await asyncio.sleep(1)
-
-            # Calculate sleep duration until next account needs checking
             sleep_seconds = calculate_next_sleep()
-            await asyncio.sleep(min(60, max(10, sleep_seconds)))
-
+            await asyncio.sleep(min(poll_seconds, max(10, sleep_seconds)))
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             logger.error(f"Email monitor loop error: {e}")
             await asyncio.sleep(60)
@@ -123,7 +115,7 @@ def calculate_next_sleep() -> int:
     return max(10, int(delta))
 
 
-async def check_account(account: EmailAccount, client: Client) -> None:
+async def check_account(account: EmailAccount, send_alert_fn: SendAlertFn) -> None:
     """Check a single account for new emails."""
     logger.debug(f"Checking email account: {account.email_address}")
 
@@ -151,7 +143,7 @@ async def check_account(account: EmailAccount, client: Client) -> None:
 
             # Process each message
             for msg in messages:
-                await process_message(account, msg, rules, client)
+                await process_message(account, msg, rules, send_alert_fn)
 
             # Update last seen
             if messages:
@@ -194,7 +186,7 @@ async def process_message(
     account: EmailAccount,
     msg: EmailMessage,
     rules: list[EmailRule],
-    client: Client,
+    send_alert_fn: SendAlertFn,
 ) -> None:
     """Process a single email message."""
     # Check for duplicate alert
@@ -216,10 +208,17 @@ async def process_message(
         logger.debug(f"Quiet hours active for {account.email_address}, skipping alert")
         return
 
-    # Send Discord alert
-    message_id = await send_email_alert(client, account, msg, match)
+    # Deliver the alert via the injected sender
+    content = format_email_alert(
+        subject=msg.subject,
+        from_addr=msg.from_addr,
+        account_email=account.email_address,
+        rule_name=match.rule_name,
+        importance=match.importance,
+        snippet=msg.snippet,
+    )
+    message_id = await send_alert_fn(account.user_id, account.alert_channel_id, content)
 
-    # Record alert
     if message_id:
         record_alert(account, msg, match, message_id)
 
@@ -257,66 +256,33 @@ def is_quiet_hours(account: EmailAccount) -> bool:
         return current_hour >= start or current_hour < end
 
 
-async def send_email_alert(
-    client: Client,
-    account: EmailAccount,
-    email: EmailMessage,
-    match: RuleMatch,
-) -> str | None:
-    """Send formatted email alert to Discord channel."""
-    if not account.alert_channel_id:
-        logger.warning(f"No alert channel set for {account.email_address}")
-        return None
+IMPORTANCE_EMOJI = {
+    "urgent": "🚨",
+    "high": "⚠️",
+    "normal": "📬",
+    "low": "📭",
+}
 
-    try:
-        channel = client.get_channel(int(account.alert_channel_id))
-        if not channel:
-            logger.warning(f"Channel {account.alert_channel_id} not found")
-            return None
 
-        # Build embed
-        color = {
-            "urgent": 0xFF0000,  # Red
-            "high": 0xFF9900,  # Orange
-            "normal": 0x3498DB,  # Blue
-            "low": 0x95A5A6,  # Gray
-        }.get(match.importance, 0x3498DB)
-
-        embed = discord.Embed(
-            title=f"📬 {email.subject[:100]}",
-            description=email.snippet[:200] if email.snippet else None,
-            color=color,
-            timestamp=email.received_at,
-        )
-        embed.add_field(name="From", value=email.from_addr[:100], inline=True)
-        embed.add_field(name="Rule", value=match.rule_name, inline=True)
-        embed.add_field(name="Account", value=account.email_address, inline=True)
-        embed.set_footer(text=f"Importance: {match.importance.upper()}")
-
-        # Determine if we should ping
-        should_ping = False
-        if match.override_ping == "true":
-            should_ping = True
-        elif match.override_ping == "false":
-            should_ping = False
-        elif account.ping_on_alert == "true":
-            should_ping = True
-
-        # Build mention
-        mention = ""
-        if should_ping:
-            # Extract Discord user ID from user_id (e.g., "discord-123456")
-            discord_user_id = account.user_id.replace("discord-", "")
-            if discord_user_id.isdigit():
-                mention = f"<@{discord_user_id}>"
-
-        # Send
-        msg = await channel.send(content=mention if mention else None, embed=embed)
-        return str(msg.id)
-
-    except Exception as e:
-        logger.error(f"Failed to send email alert: {e}")
-        return None
+def format_email_alert(
+    subject: str,
+    from_addr: str,
+    account_email: str,
+    rule_name: str,
+    importance: str,
+    snippet: str | None = None,
+) -> str:
+    """Render an email alert as plain Discord-flavored markdown (no SDK objects)."""
+    emoji = IMPORTANCE_EMOJI.get(importance, "📬")
+    lines = [
+        f"{emoji} **{subject[:100]}**",
+        f"**From:** {from_addr[:100]}",
+        f"**Rule:** {rule_name}  •  **Account:** {account_email}",
+        f"**Importance:** {importance.upper()}",
+    ]
+    if snippet:
+        lines.append(f"> {snippet[:200]}")
+    return "\n".join(lines)
 
 
 def record_alert(

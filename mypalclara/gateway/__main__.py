@@ -590,6 +590,47 @@ async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] 
         heartbeat_task = asyncio.create_task(heartbeat_loop(_heartbeat_llm_async, _heartbeat_send))
         logger.info("Heartbeat loop started")
 
+    # Start email monitoring loop if enabled (routes alerts over the gateway WS)
+    email_task = None
+    from mypalclara.services.email.monitor import is_email_monitoring_enabled
+
+    if is_email_monitoring_enabled():
+        from mypalclara.services.email.monitor import email_monitor_loop
+
+        async def _email_send(user_id: str, channel_id: str, content: str) -> str | None:
+            """Route an email alert to the adapter that owns the user, over WS.
+
+            Returns a truthy sentinel when delivered to >=1 node so the caller
+            records the alert (dedup keys on account_id+email_uid, not on the id).
+            """
+            from mypal_protocol import ChannelInfo, ProactiveMessage, UserInfo
+
+            platform = user_id.split("-", 1)[0] if "-" in user_id else "unknown"
+            platform_user_id = user_id.split("-", 1)[1] if "-" in user_id else user_id
+            raw_channel_id = channel_id.split("-", 1)[1] if "-" in channel_id else channel_id
+            channel_type = "dm" if str(channel_id).startswith("dm-") else "server"
+
+            delivered = 0
+            nodes = await server.node_registry.get_all_nodes()
+            for node in nodes:
+                if node.platform and node.platform != platform:
+                    continue
+                try:
+                    msg = ProactiveMessage(
+                        user=UserInfo(id=user_id, platform_id=platform_user_id, name=None),
+                        channel=ChannelInfo(id=raw_channel_id, type=channel_type),
+                        content=content,
+                        priority="high",
+                    )
+                    await node.websocket.send(msg.model_dump_json())
+                    delivered += 1
+                except Exception as e:
+                    logger.warning(f"Failed to send email alert to {node.node_id}: {e}")
+            return "ws" if delivered else None
+
+        email_task = asyncio.create_task(email_monitor_loop(_email_send))
+        logger.info("Email monitoring loop started")
+
     # Emit startup event
     await emit(
         Event(
@@ -647,6 +688,14 @@ async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] 
         except asyncio.CancelledError:
             pass
         logger.info("Heartbeat loop stopped")
+
+    if email_task and not email_task.done():
+        email_task.cancel()
+        try:
+            await email_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("Email monitoring loop stopped")
 
     if adapter_manager:
         await adapter_manager.stop()
