@@ -57,26 +57,19 @@ async def run_blog_task() -> None:
 
 
 async def _announce(post: dict) -> None:
-    """Announce the blog post on Discord via proactive message."""
+    """Announce the blog post (delivery wired when the ORS loop is activated)."""
     try:
-        from mypalclara.services.proactive.engine import send_proactive_message
-
         link = post.get("wordpress", {}).get("link", "")
         title = post.get("title", "New post")
         topic = post.get("topic", "")
-
         message = (
             f"I just published a new blog post: **{title}**\n\n"
             f"{topic}\n\n"
             f"Read it here: {link}"
         )
-
-        await send_proactive_message(
-            user_id=None,
-            channel_id=BLOG_ANNOUNCE_CHANNEL,
-            message=message,
-        )
-        logger.info(f"Announced blog post in channel {BLOG_ANNOUNCE_CHANNEL}")
+        # Delivery is wired when the proactive/ORS loop is activated in the gateway.
+        # Until then, log the announcement rather than calling an unbound sender.
+        logger.info(f"Blog announcement ready for {BLOG_ANNOUNCE_CHANNEL}: {message[:80]}...")
     except Exception as e:
         logger.warning(f"Failed to announce blog post: {e}")
 

@@ -40,10 +40,8 @@ FORBIDDEN_SDK_ROOTS = {
 }
 FORBIDDEN_INTERNAL_PREFIXES = ("mypalclara.adapters",)
 
-# Files (relative to mypalclara/) still expected to violate. Shrinks to {} by Task 8.
-KNOWN_VIOLATIONS = {
-    "services/proactive/engine.py",
-}
+# Files (relative to mypalclara/) still expected to violate. Empty: the engine is clean.
+KNOWN_VIOLATIONS: set[str] = set()
 
 
 def _iter_engine_files():

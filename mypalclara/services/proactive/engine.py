@@ -17,11 +17,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import Enum
-from typing import TYPE_CHECKING
 
 from mypalclara.config.bot import BOT_NAME
 from mypalclara.config.logging import get_logger
@@ -36,10 +35,10 @@ from mypalclara.db.models import (
     UserInteractionPattern,
 )
 
-if TYPE_CHECKING:
-    from discord import Client
-
 logger = get_logger("ors")
+
+# Type of the injected proactive sender: async (user_id, channel_id, message) -> delivered
+SendProactiveFn = Callable[["str | None", str, str], Awaitable[bool]]
 
 # =============================================================================
 # Configuration
@@ -1665,35 +1664,24 @@ def _persist_proactive_to_history(user_id: str, channel_id: str, message: str):
 
 
 async def send_proactive_message(
-    client: Client,
-    user_id: str,
+    send_fn: SendProactiveFn,
+    user_id: str | None,
     channel_id: str,
     message: str,
-    purpose: str,
+    purpose: str = "",
 ) -> bool:
-    """Send a proactive message and record it."""
+    """Deliver a proactive message via send_fn and record it.
+
+    Args:
+        send_fn: async (user_id, channel_id, message) -> delivered: bool
+            Provided by the gateway; routes over the adapter WebSocket.
+    """
     try:
-        # Parse channel ID
-        if channel_id.startswith("discord-dm-"):
-            # DM to user
-            discord_user_id = int(channel_id.replace("discord-dm-", "").replace("discord-", ""))
-            user = await client.fetch_user(discord_user_id)
-            dm = await user.create_dm()
-            await dm.send(message)
-        elif channel_id.startswith("discord-channel-"):
-            # Channel message
-            discord_channel_id = int(channel_id.replace("discord-channel-", ""))
-            channel = client.get_channel(discord_channel_id)
-            if channel:
-                await channel.send(message)
-            else:
-                logger.warning(f"Channel not found: {channel_id}")
-                return False
-        else:
-            logger.warning(f"Unknown channel format: {channel_id}")
+        delivered = await send_fn(user_id, channel_id, message)
+        if not delivered:
+            logger.warning(f"Proactive delivery failed for channel {channel_id}")
             return False
 
-        # Record the message
         with SessionLocal() as session:
             record = ProactiveMessage(
                 user_id=user_id,
@@ -1705,8 +1693,8 @@ async def send_proactive_message(
             session.add(record)
             session.commit()
 
-        # Persist to conversation history so Clara sees it next interaction
-        _persist_proactive_to_history(user_id, channel_id, message)
+        if user_id:
+            _persist_proactive_to_history(user_id, channel_id, message)
 
         logger.info(f"Sent proactive message to {user_id}: {message[:50]}...")
         return True
@@ -1740,7 +1728,7 @@ def get_active_users() -> list[str]:
 
 async def process_user(
     user_id: str,
-    client: Client,
+    send_fn: SendProactiveFn,
     llm_call: Callable,
 ) -> int:
     """Process ORS cycle for a single user. Returns minutes until next check."""
@@ -1793,7 +1781,7 @@ async def process_user(
 
         if can_speak and context.last_interaction_channel:
             success = await send_proactive_message(
-                client=client,
+                send_fn=send_fn,
                 user_id=user_id,
                 channel_id=context.last_interaction_channel,
                 message=decision.message,
@@ -1813,14 +1801,14 @@ async def process_user(
 
 
 async def ors_main_loop(
-    client: Client,
+    send_fn: SendProactiveFn,
     llm_call: Callable,
     get_recent_messages: Callable | None = None,
 ):
     """Main ORS loop - runs continuously with adaptive timing.
 
     Args:
-        client: Discord client for sending messages
+        send_fn: async (user_id, channel_id, message) -> delivered; routes over the adapter WS
         llm_call: Async function to call LLM
         get_recent_messages: Optional async function(user_id) -> str for conversation extraction
     """
@@ -1881,7 +1869,7 @@ async def ors_main_loop(
 
                 try:
                     logger.info(f"ORS processing user: {user_id}")
-                    minutes_until_next = await process_user(user_id, client, llm_call)
+                    minutes_until_next = await process_user(user_id, send_fn, llm_call)
                     next_checks[user_id] = now + timedelta(minutes=minutes_until_next)
                     last_decisions[user_id] = now  # Track when we made this decision
                     processed_count += 1
