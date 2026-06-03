@@ -355,7 +355,7 @@ SMITHERY_API_KEY=...              # For Smithery registry access
 ```bash
 CLARA_GATEWAY_HOST=127.0.0.1
 CLARA_GATEWAY_PORT=18789
-CLARA_GATEWAY_SECRET=...          # Optional auth secret
+CLARA_GATEWAY_SECRET=...          # REQUIRED: shared secret for WS registration; all adapters must set the same value
 CLARA_GATEWAY_API_PORT=18790          # Gateway HTTP API port (default: 18790)
 CLARA_GATEWAY_API_URL=http://127.0.0.1:18790  # Gateway HTTP API URL (for Rails proxy)
 ```
