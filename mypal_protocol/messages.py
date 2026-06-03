@@ -118,6 +118,10 @@ class RegisterMessage(BaseModel):
         default_factory=dict,
         description="Additional adapter-specific info",
     )
+    secret: str | None = Field(
+        default=None,
+        description="Shared gateway secret for authentication (CLARA_GATEWAY_SECRET)",
+    )
 
 
 class RegisteredMessage(BaseModel):
@@ -127,6 +131,10 @@ class RegisteredMessage(BaseModel):
     node_id: str = Field(..., description="Confirmed node ID")
     session_id: str = Field(..., description="Gateway session ID for reconnection")
     server_time: datetime = Field(default_factory=datetime.now)
+    adapter_token: str | None = Field(
+        default=None,
+        description="Server-issued per-connection identity token",
+    )
 
 
 # ============================================================================
