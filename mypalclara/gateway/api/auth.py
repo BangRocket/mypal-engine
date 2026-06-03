@@ -20,6 +20,24 @@ def get_db():
         db.close()
 
 
+def require_gateway_secret(
+    x_gateway_secret: str | None = Header(None),
+) -> bool:
+    """Authorize a trusted internal caller (an adapter) via the shared secret.
+
+    Management endpoints (MCP, channel/guild config, backup, sandbox) are not
+    user-scoped; they authorize on CLARA_GATEWAY_SECRET alone. Raises 401 if the
+    secret is unset on the server or does not match.
+    """
+    expected = os.getenv("CLARA_GATEWAY_SECRET")
+    if not expected or x_gateway_secret != expected:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing gateway secret",
+        )
+    return True
+
+
 def get_current_user(
     x_canonical_user_id: str | None = Header(None),
     x_gateway_secret: str | None = Header(None),
