@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from mypalclara.gateway.api.admin import router as admin_router
+from mypalclara.gateway.api.backup import router as backup_router
 from mypalclara.gateway.api.chat import router as chat_router
 from mypalclara.gateway.api.game import router as game_router
 from mypalclara.gateway.api.graph import router as graph_router
@@ -53,6 +54,7 @@ def create_app() -> FastAPI:
     app.include_router(users_router, prefix="/api/v1/users", tags=["users"])
     app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
     app.include_router(game_router, prefix="/api/v1/game", tags=["game"])
+    app.include_router(backup_router, prefix="/api/v1/backup", tags=["backup"])
 
     @app.get("/api/v1/health")
     async def health():
