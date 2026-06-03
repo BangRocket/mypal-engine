@@ -1,5 +1,5 @@
 """Game API -- delegates to game adapter."""
 
-from mypalclara.adapters.game.api import router
+from mypalclara.core.game.api import router
 
 __all__ = ["router"]

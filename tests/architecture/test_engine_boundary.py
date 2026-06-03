@@ -46,7 +46,6 @@ KNOWN_VIOLATIONS = {
     "services/proactive/engine.py",
     "config/logging.py",
     "gateway/adapter_manager.py",
-    "gateway/api/game.py",
 }
 
 
