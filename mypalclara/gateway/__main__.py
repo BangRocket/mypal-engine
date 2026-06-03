@@ -520,10 +520,11 @@ async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] 
     api_task = asyncio.create_task(api_server.serve())
     logger.info(f"HTTP API server started on {args.host}:{api_port}")
 
-    # Initialize and start adapter manager
-    # None = start all enabled, [] = start none, ["foo"] = start specific
+    # Standalone-engine default: do NOT spawn adapters in-process. Adapters are
+    # external WebSocket clients. In-process spawning is a dev convenience, opted
+    # into by explicitly naming adapters (e.g. `--adapter discord`).
     adapter_manager = None
-    if adapter_names is None or adapter_names:
+    if adapter_names:
         config_path = args.adapters_config or (Path(__file__).parent / "adapters.yaml")
         adapter_manager = get_adapter_manager(config_path)
         await adapter_manager.start(adapter_names)

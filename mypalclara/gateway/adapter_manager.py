@@ -20,7 +20,6 @@ from typing import Any
 
 import yaml
 
-from mypalclara.adapters.manifest import get_adapter, list_adapters
 from mypalclara.config.logging import get_logger
 from mypalclara.gateway.daemon import get_adapter_pidfile
 
@@ -209,81 +208,6 @@ class AdapterManager:
 
         return configs
 
-    def discover_from_manifest(self) -> dict[str, dict[str, Any]]:
-        """Discover available adapters from the manifest registry.
-
-        Returns:
-            Dictionary of adapter name to manifest info
-        """
-        discovered: dict[str, dict[str, Any]] = {}
-
-        try:
-            registered_adapters = list_adapters()
-            for adapter_name in registered_adapters:
-                result = get_adapter(adapter_name)
-                if result:
-                    adapter_cls, manifest = result
-                    discovered[adapter_name] = {
-                        "class": adapter_cls,
-                        "manifest": manifest,
-                        "module": f"adapters.{adapter_name}",
-                        "capabilities": manifest.capabilities,
-                        "required_env": manifest.required_env,
-                        "optional_env": manifest.optional_env,
-                    }
-            logger.info(f"Discovered {len(discovered)} adapters from manifest registry")
-        except Exception as e:
-            logger.warning(f"Failed to discover adapters from manifest: {e}")
-
-        return discovered
-
-    def check_adapter_env(self, name: str) -> tuple[bool, list[str]]:
-        """Check if required environment variables are set for an adapter.
-
-        Args:
-            name: Adapter name
-
-        Returns:
-            Tuple of (all_set, missing_vars)
-        """
-        result = get_adapter(name)
-        if not result:
-            return True, []  # Unknown adapter, assume OK
-
-        _, manifest = result
-        missing = []
-        for env_var in manifest.required_env:
-            if not os.environ.get(env_var):
-                missing.append(env_var)
-
-        return len(missing) == 0, missing
-
-    def get_adapter_manifest(self, name: str) -> dict[str, Any] | None:
-        """Get manifest info for a specific adapter.
-
-        Args:
-            name: Adapter name
-
-        Returns:
-            Manifest data dict or None if not found
-        """
-        result = get_adapter(name)
-        if not result:
-            return None
-
-        _, manifest = result
-        return {
-            "name": manifest.name,
-            "platform": manifest.platform,
-            "version": manifest.version,
-            "display_name": manifest.display_name,
-            "description": manifest.description,
-            "icon": manifest.icon,
-            "capabilities": manifest.capabilities,
-            "required_env": manifest.required_env,
-            "optional_env": manifest.optional_env,
-        }
-
     async def start(self, adapter_names: list[str] | None = None) -> None:
         """Start the adapter manager and configured adapters.
 
@@ -352,13 +276,6 @@ class AdapterManager:
 
         if ap.state == AdapterState.DISABLED:
             logger.info(f"Adapter {name} is disabled, skipping")
-            return False
-
-        # Check required environment variables
-        env_ok, missing = self.check_adapter_env(name)
-        if not env_ok:
-            logger.error(f"Adapter {name} missing required environment variables: {', '.join(missing)}")
-            ap.state = AdapterState.FAILED
             return False
 
         ap.state = AdapterState.STARTING
@@ -506,16 +423,6 @@ class AdapterManager:
                 "restart_count": ap.restart_count,
                 "last_exit_code": ap.last_exit_code,
             }
-
-            # Include manifest info if available
-            manifest_info = self.get_adapter_manifest(name)
-            if manifest_info:
-                adapter_status["manifest"] = manifest_info
-                # Check env vars
-                env_ok, missing = self.check_adapter_env(name)
-                adapter_status["env_configured"] = env_ok
-                if not env_ok:
-                    adapter_status["missing_env"] = missing
 
             status[name] = adapter_status
         return status

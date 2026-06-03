@@ -44,7 +44,6 @@ FORBIDDEN_INTERNAL_PREFIXES = ("mypalclara.adapters",)
 KNOWN_VIOLATIONS = {
     "services/proactive/engine.py",
     "config/logging.py",
-    "gateway/adapter_manager.py",
 }
 
 
