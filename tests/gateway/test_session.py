@@ -55,6 +55,19 @@ class TestNodeRegistry:
         assert "streaming" in node.capabilities
 
     @pytest.mark.asyncio
+    async def test_register_stores_adapter_token(self, node_registry, mock_websocket):
+        """Should persist a server-issued adapter_token on the node."""
+        session_id, _ = await node_registry.register(
+            websocket=mock_websocket,
+            node_id="node-tok",
+            platform="discord",
+            adapter_token="adp-deadbeef",
+        )
+        node = await node_registry.get_node("node-tok")
+        assert node is not None
+        assert node.adapter_token == "adp-deadbeef"
+
+    @pytest.mark.asyncio
     async def test_reconnect_while_connected(self, node_registry, mock_websocket):
         """Should recognize reconnection when old node is still connected."""
         mock_websocket2 = MagicMock()

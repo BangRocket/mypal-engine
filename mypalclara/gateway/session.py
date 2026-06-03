@@ -34,6 +34,7 @@ class NodeConnection:
     connected_at: datetime = field(default_factory=datetime.now)
     last_ping: datetime = field(default_factory=datetime.now)
     metadata: dict[str, Any] = field(default_factory=dict)
+    adapter_token: str | None = None
 
     @property
     def supports_streaming(self) -> bool:
@@ -85,6 +86,7 @@ class NodeRegistry:
         capabilities: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
         session_id: str | None = None,
+        adapter_token: str | None = None,
     ) -> tuple[str, bool]:
         """Register a new adapter node or reconnect an existing one.
 
@@ -126,6 +128,7 @@ class NodeRegistry:
                 websocket=websocket,
                 capabilities=capabilities or [],
                 metadata=metadata or {},
+                adapter_token=adapter_token,
             )
 
             # Register in all maps
