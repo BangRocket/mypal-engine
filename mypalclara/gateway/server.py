@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -99,6 +100,11 @@ class GatewayServer:
 
     async def start(self) -> None:
         """Start the WebSocket server."""
+        if not self.secret:
+            raise RuntimeError(
+                "CLARA_GATEWAY_SECRET is required to start the gateway. "
+                "Set it in the environment (and configure adapters with the same value)."
+            )
         self._started_at = datetime.now()
         self._server = await serve(
             self._handle_connection,
@@ -189,32 +195,43 @@ class GatewayServer:
         self,
         websocket: WebSocketServerProtocol,
         msg: RegisterMessage,
-    ) -> str:
-        """Handle adapter registration.
+    ) -> str | None:
+        """Handle adapter registration (requires a matching shared secret).
 
         Args:
             websocket: The WebSocket connection
             msg: Registration message
 
         Returns:
-            The registered node ID
+            The registered node ID, or None if authentication failed
         """
+        if not self.secret or msg.secret != self.secret:
+            logger.warning(f"Rejected registration from {msg.node_id} ({msg.platform}): bad secret")
+            await self._send_error(
+                websocket, None, "auth_failed", "Invalid or missing gateway secret", recoverable=False
+            )
+            await websocket.close(code=1008, reason="auth_failed")
+            return None
+
+        adapter_token = f"adp-{uuid.uuid4().hex[:16]}"
         session_id, is_reconnection = await self.node_registry.register(
             websocket=websocket,
             node_id=msg.node_id,
             platform=msg.platform,
             capabilities=msg.capabilities,
             metadata=msg.metadata,
+            adapter_token=adapter_token,
         )
 
         response = RegisteredMessage(
             node_id=msg.node_id,
             session_id=session_id,
+            adapter_token=adapter_token,
         )
         await self._send(websocket, response)
 
         action = "reconnected" if is_reconnection else "registered"
-        logger.info(f"Node {msg.node_id} ({msg.platform}) {action}")
+        logger.info(f"Node {msg.node_id} ({msg.platform}) {action} [token {adapter_token[:10]}…]")
 
         return msg.node_id
 
