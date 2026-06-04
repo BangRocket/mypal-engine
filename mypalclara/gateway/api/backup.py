@@ -37,3 +37,21 @@ async def run_backup(body: BackupRunRequest, _: bool = Depends(require_gateway_s
 async def backup_status(_: bool = Depends(require_gateway_secret)) -> dict:
     service = get_backup_service()
     return await service.get_status()
+
+
+@router.get("/list")
+async def list_backups(
+    database: str | None = None,
+    limit: int = 10,
+    _: bool = Depends(require_gateway_secret),
+) -> list[dict]:
+    service = get_backup_service()
+    entries = await service.list_backups(database=database, limit=limit)
+    out: list[dict] = []
+    for entry in entries:
+        d = _to_dict(entry)
+        ts = d.get("timestamp")
+        if hasattr(ts, "isoformat"):
+            d["timestamp"] = ts.isoformat()
+        out.append(d)
+    return out
