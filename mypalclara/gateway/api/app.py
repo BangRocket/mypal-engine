@@ -18,6 +18,7 @@ from mypalclara.gateway.api.guilds import router as guilds_router
 from mypalclara.gateway.api.intentions import router as intentions_router
 from mypalclara.gateway.api.mcp import router as mcp_router
 from mypalclara.gateway.api.memories import router as memories_router
+from mypalclara.gateway.api.memory_internal import router as memory_internal_router
 from mypalclara.gateway.api.sandbox import router as sandbox_router
 from mypalclara.gateway.api.sessions import router as sessions_router
 from mypalclara.gateway.api.users import router as users_router
@@ -65,6 +66,7 @@ def create_app() -> FastAPI:
     app.include_router(guilds_router, prefix="/api/v1", tags=["guilds"])
     app.include_router(email_accounts_router, prefix="/api/v1", tags=["email-accounts"])
     app.include_router(mcp_router, prefix="/api/v1/mcp", tags=["mcp"])
+    app.include_router(memory_internal_router, prefix="/api/v1/memory", tags=["memory-internal"])
 
     @app.get("/api/v1/health")
     async def health():
