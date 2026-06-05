@@ -52,10 +52,35 @@ USER_REGISTRY = {
 
 CLARA_BOTS = {"MyPalClara", "MyPalClarissa"}
 
+# Maps a Clara-variant bot name to the Palace agent_id its conversations
+# should be attributed to (per-channel persona separation).
+CLARA_BOT_AGENT = {
+    "MyPalClara": "clara",
+    "MyPalClarissa": "clarissa",
+    "MyPalFlorence": "florence",
+}
+
+
+def resolve_channel_agent(messages: list[dict], default_agent: str) -> str:
+    """Pick the agent_id for a channel from its dominant Clara-variant bot.
+
+    Counts messages authored by Clara-variant bots (is_clara=True) and maps the
+    most frequent author via CLARA_BOT_AGENT. Falls back to default_agent when
+    the channel has no Clara-variant bot or the bot is unmapped.
+    """
+    from collections import Counter
+
+    counts = Counter(m["author_name"] for m in messages if m.get("is_clara"))
+    if not counts:
+        return default_agent
+    dominant = counts.most_common(1)[0][0]
+    return CLARA_BOT_AGENT.get(dominant, default_agent)
+
 
 # ---------------------------------------------------------------------------
 # Loading and filtering
 # ---------------------------------------------------------------------------
+
 
 def load_chat_with_decisions(chat_path: Path) -> tuple[dict, list[dict]]:
     """Load a chat export and filter by decisions.
@@ -98,17 +123,19 @@ def load_chat_with_decisions(chat_path: Path) -> tuple[dict, list[dict]]:
         author_id = m.get("author", {}).get("id", "")
         is_bot = m.get("author", {}).get("isBot", False)
 
-        kept.append({
-            "content": content,
-            "author_name": author_name,
-            "author_id": author_id,
-            "canonical_name": USER_REGISTRY.get(author_name, author_name),
-            "is_bot": is_bot,
-            "is_clara": author_name in CLARA_BOTS,
-            "role": "assistant" if author_name in CLARA_BOTS else "user",
-            "timestamp": m.get("timestamp", ""),
-            "message_id": mid,
-        })
+        kept.append(
+            {
+                "content": content,
+                "author_name": author_name,
+                "author_id": author_id,
+                "canonical_name": USER_REGISTRY.get(author_name, author_name),
+                "is_bot": is_bot,
+                "is_clara": author_name in CLARA_BOTS,
+                "role": "assistant" if author_name in CLARA_BOTS else "user",
+                "timestamp": m.get("timestamp", ""),
+                "message_id": mid,
+            }
+        )
 
     metadata = {
         "channel": chat.get("channel", {}).get("name", "unknown"),
@@ -122,9 +149,7 @@ def load_chat_with_decisions(chat_path: Path) -> tuple[dict, list[dict]]:
     return metadata, kept
 
 
-def split_into_sessions(
-    messages: list[dict], gap_minutes: int = 30, max_messages: int = 40
-) -> list[list[dict]]:
+def split_into_sessions(messages: list[dict], gap_minutes: int = 30, max_messages: int = 40) -> list[list[dict]]:
     """Split messages into conversation sessions based on time gaps.
 
     A new session starts when:
@@ -171,6 +196,7 @@ def _timestamp_gap_minutes(ts1: str, ts2: str) -> float:
 # Processing
 # ---------------------------------------------------------------------------
 
+
 def format_session_for_reflection(session: list[dict]) -> list[dict]:
     """Format a session's messages for the reflection LLM call."""
     return [
@@ -182,6 +208,38 @@ def format_session_for_reflection(session: list[dict]) -> list[dict]:
         }
         for m in session
     ]
+
+
+def import_session(
+    session: list[dict],
+    *,
+    user_id: str,
+    agent_id: str,
+    channel: str,
+    mm,
+    palace,
+    use_service: bool,
+) -> dict:
+    """Reflect one session into memory; return a result dict for logging.
+
+    Service mode: synchronous server-side reflection via the Palace client,
+    attributed to agent_id. Returns {"episodes": [...]} (the stored episodes).
+    Embedded mode: delegates to MemoryManager.reflect_on_session (unchanged),
+    returning its reflection dict.
+    """
+    msg_dicts = format_session_for_reflection(session)
+    if use_service:
+        episodes = palace.bridge.submit(
+            palace.client.reflect_session(
+                messages=msg_dicts,
+                user_id=user_id,
+                agent_id=agent_id,
+                session_id=channel,
+                mode="sync",
+            )
+        )
+        return {"episodes": episodes or []}
+    return mm.reflect_on_session(msg_dicts, user_id, session_id=channel) or {}
 
 
 def get_session_users(session: list[dict]) -> list[str]:
@@ -221,8 +279,83 @@ def session_fingerprint(session: list[dict], user_id: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Reset
+# ---------------------------------------------------------------------------
+
+
+def reset_embedded_memory(mm, palace) -> None:
+    """Clear all embedded memory data (episodes, semantic memories, graph,
+    history). Embedded-only — uses Qdrant/graph/db handles that are None on
+    the remote path.
+    """
+    logger.warning("Resetting ALL memory data...")
+    # Clear episodes collection
+    try:
+        from mypalclara.core.memory.episodes import EPISODES_COLLECTION
+
+        ep_client = mm.episode_store.client
+        existing = [c.name for c in ep_client.get_collections().collections]
+        if EPISODES_COLLECTION in existing:
+            ep_client.delete_collection(EPISODES_COLLECTION)
+            logger.info(f"  Deleted {EPISODES_COLLECTION} collection")
+        mm.episode_store._ensure_collection()
+        logger.info(f"  Recreated {EPISODES_COLLECTION} collection")
+    except Exception as e:
+        logger.warning(f"  Failed to reset episodes: {e}")
+
+    # Clear semantic memories collection
+    try:
+        vs = palace.vector_store
+        if hasattr(vs, "delete_col"):
+            vs.delete_col()
+        from mypalclara.core.memory.config import EMBEDDING_MODEL_DIMS
+
+        if hasattr(vs, "create_col"):
+            vs.create_col(vector_size=EMBEDDING_MODEL_DIMS, distance="Cosine")
+        logger.info("  Reset semantic memories collection")
+    except Exception as e:
+        logger.warning(f"  Failed to reset semantic memories: {e}")
+
+    # Clear graph
+    try:
+        if hasattr(palace, "graph") and palace.graph is not None:
+            palace.graph.reset()
+            palace.graph._create_indexes()
+            logger.info("  Reset graph")
+    except Exception as e:
+        logger.warning(f"  Failed to reset graph: {e}")
+
+    # Clear memory history
+    try:
+        if hasattr(palace, "db"):
+            palace.db.reset()
+            logger.info("  Reset memory history")
+    except Exception as e:
+        logger.warning(f"  Failed to reset memory history: {e}")
+
+    logger.info("Reset complete")
+
+
+def maybe_reset(do_reset: bool, use_service: bool, mm, palace) -> bool:
+    """Run embedded reset if requested; no-op (with warning) in service mode.
+
+    Returns True only when an embedded reset actually ran.
+    """
+    if not do_reset:
+        return False
+    if use_service:
+        logger.warning(
+            "--reset is embedded-only; ignored in service mode " "(USE_PALACE_SERVICE=true). No data deleted."
+        )
+        return False
+    reset_embedded_memory(mm, palace)
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(description="Import Discord chat exports into Clara's memory")
@@ -233,11 +366,15 @@ def main():
     parser.add_argument("--reset", action="store_true", help="Clear all memory data before importing")
     args = parser.parse_args()
 
-    from mypalclara.core.memory.config import PALACE
+    from mypalclara.core.memory.routed import PALACE, USE_PALACE_SERVICE
 
     if PALACE is None:
         logger.error("Palace not initialized")
         sys.exit(1)
+    logger.info(
+        "Memory mode: %s",
+        "REMOTE Palace service" if USE_PALACE_SERVICE else "embedded",
+    )
 
     from mypalclara.core import make_llm
     from mypalclara.core.memory_manager import MemoryManager
@@ -249,54 +386,8 @@ def main():
         logger.error("Episode store not available")
         sys.exit(1)
 
-    # Reset all memory data if requested
-    if args.reset:
-        logger.warning("Resetting ALL memory data...")
-
-        # Clear episodes collection
-        try:
-            from mypalclara.core.memory.episodes import EPISODES_COLLECTION
-
-            ep_client = mm.episode_store.client
-            existing = [c.name for c in ep_client.get_collections().collections]
-            if EPISODES_COLLECTION in existing:
-                ep_client.delete_collection(EPISODES_COLLECTION)
-                logger.info(f"  Deleted {EPISODES_COLLECTION} collection")
-            mm.episode_store._ensure_collection()
-            logger.info(f"  Recreated {EPISODES_COLLECTION} collection")
-        except Exception as e:
-            logger.warning(f"  Failed to reset episodes: {e}")
-
-        # Clear semantic memories collection
-        try:
-            vs = PALACE.vector_store
-            if hasattr(vs, "delete_col"):
-                vs.delete_col()
-            from mypalclara.core.memory.config import EMBEDDING_MODEL_DIMS
-            if hasattr(vs, "create_col"):
-                vs.create_col(vector_size=EMBEDDING_MODEL_DIMS, distance="Cosine")
-            logger.info("  Reset semantic memories collection")
-        except Exception as e:
-            logger.warning(f"  Failed to reset semantic memories: {e}")
-
-        # Clear graph
-        try:
-            if hasattr(PALACE, "graph") and PALACE.graph is not None:
-                PALACE.graph.reset()
-                PALACE.graph._create_indexes()
-                logger.info("  Reset graph")
-        except Exception as e:
-            logger.warning(f"  Failed to reset graph: {e}")
-
-        # Clear memory history
-        try:
-            if hasattr(PALACE, "db"):
-                PALACE.db.reset()
-                logger.info("  Reset memory history")
-        except Exception as e:
-            logger.warning(f"  Failed to reset memory history: {e}")
-
-        logger.info("Reset complete")
+    # Reset all memory data if requested (embedded-only; no-op in service mode)
+    maybe_reset(args.reset, USE_PALACE_SERVICE, mm, PALACE)
 
     # Register known users with entity resolver
     if mm.entity_resolver:
@@ -323,6 +414,7 @@ def main():
     total_sessions = 0
     total_episodes = 0
     total_errors = 0
+    smoke_ok = False  # service mode: first successful remote reflect flips this
 
     for chat_path in chat_files:
         logger.info(f"\n{'='*60}")
@@ -331,14 +423,16 @@ def main():
 
         metadata, messages = load_chat_with_decisions(chat_path)
         logger.info(
-            f"  Channel: {metadata['channel']} ({metadata['guild']})"
-            f"  {'DM' if metadata['is_dm'] else 'Group'}"
+            f"  Channel: {metadata['channel']} ({metadata['guild']})" f"  {'DM' if metadata['is_dm'] else 'Group'}"
         )
         logger.info(
             f"  Total: {metadata['total_messages']} | "
             f"Kept: {metadata['kept_messages']} | "
             f"Removed: {metadata['removed_messages']}"
         )
+
+        channel_agent = resolve_channel_agent(messages, default_agent=mm.agent_id)
+        logger.info(f"  Agent: {channel_agent}")
 
         sessions = split_into_sessions(
             messages,
@@ -352,10 +446,7 @@ def main():
                 users = get_session_users(session)
                 ts_start = session[0].get("timestamp", "")[:16]
                 ts_end = session[-1].get("timestamp", "")[:16]
-                logger.info(
-                    f"    Session {i+1}: {len(session)} msgs, "
-                    f"users={users}, {ts_start} → {ts_end}"
-                )
+                logger.info(f"    Session {i+1}: {len(session)} msgs, " f"users={users}, {ts_start} → {ts_end}")
             if len(sessions) > 5:
                 logger.info(f"    ... and {len(sessions) - 5} more sessions")
             continue
@@ -377,27 +468,34 @@ def main():
                 continue
             seen_fingerprints.add(fp)
 
-            logger.info(
-                f"  [{i+1}/{len(sessions)}] Session: {len(session)} msgs, "
-                f"users={users}, start={ts_start}"
-            )
+            logger.info(f"  [{i+1}/{len(sessions)}] Session: {len(session)} msgs, " f"users={users}, start={ts_start}")
 
             try:
-                msg_dicts = format_session_for_reflection(session)
-                result = mm.reflect_on_session(
-                    msg_dicts, user_id, session_id=metadata["channel"]
+                result = import_session(
+                    session,
+                    user_id=user_id,
+                    agent_id=channel_agent,
+                    channel=metadata["channel"],
+                    mm=mm,
+                    palace=PALACE,
+                    use_service=USE_PALACE_SERVICE,
                 )
-
-                if result:
-                    ep_count = len(result.get("episodes", []))
-                    ent_count = len(result.get("entities", []))
-                    note_count = len(result.get("self_notes", []))
-                    total_episodes += ep_count
-                    logger.info(f"    → {ep_count} episodes, {ent_count} entities, {note_count} self-notes")
-                else:
-                    logger.info("    → No reflection output")
+                ep_count = len(result.get("episodes", []))
+                ent_count = len(result.get("entities", []))
+                note_count = len(result.get("self_notes", []))
+                total_episodes += ep_count
+                logger.info(f"    → {ep_count} episodes, {ent_count} entities, {note_count} self-notes")
+                if USE_PALACE_SERVICE:
+                    smoke_ok = True
 
             except Exception as e:
+                if USE_PALACE_SERVICE and not smoke_ok:
+                    logger.error(
+                        "    → First remote reflection FAILED — aborting before "
+                        "churning the rest. Check the Palace server's LLM config "
+                        f"(LLM_API_KEY/LLM_PROVIDER) and that it is reachable. Error: {e}"
+                    )
+                    sys.exit(1)
                 logger.error(f"    → Failed: {e}")
                 total_errors += 1
 
@@ -412,8 +510,7 @@ def main():
     if not args.dry_run:
         logger.info(f"\n{'='*60}")
         logger.info(
-            f"Import complete: {total_episodes} episodes from {total_sessions} sessions "
-            f"({total_errors} errors)"
+            f"Import complete: {total_episodes} episodes from {total_sessions} sessions " f"({total_errors} errors)"
         )
 
 
