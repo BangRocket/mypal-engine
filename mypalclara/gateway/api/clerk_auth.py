@@ -50,7 +50,7 @@ def verify_clerk_jwt(token: str) -> dict:
     issuer = os.getenv("CLERK_ISSUER")
     try:
         key = _get_signing_key(token)
-        return jwt.decode(
+        claims = jwt.decode(
             token,
             key,
             algorithms=["RS256"],
@@ -61,6 +61,9 @@ def verify_clerk_jwt(token: str) -> dict:
         raise
     except jwt.PyJWTError as e:
         raise ClerkAuthError(str(e)) from e
+    if not str(claims.get("sub", "")).strip():
+        raise ClerkAuthError("missing or empty sub")
+    return claims
 
 
 def get_or_create_clerk_user(

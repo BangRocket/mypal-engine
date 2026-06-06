@@ -132,3 +132,60 @@ def test_get_current_user_prefers_bearer(monkeypatch, rsa_keys, db):
     token = _make_token(priv, sub="clerk_cur", name="Cur")
     r = client.get("/who", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# I3: empty/whitespace sub must be rejected
+# ---------------------------------------------------------------------------
+
+
+def test_verify_empty_sub_raises(monkeypatch, rsa_keys):
+    """A validly-signed token with sub='' must raise ClerkAuthError (I3)."""
+    priv, pub = rsa_keys
+    monkeypatch.setattr(clerk_auth, "_get_signing_key", lambda token: pub)
+    monkeypatch.setenv("CLERK_ISSUER", "https://clerk.test")
+    token = _make_token(priv, sub="")
+    with pytest.raises(clerk_auth.ClerkAuthError, match="empty sub"):
+        clerk_auth.verify_clerk_jwt(token)
+
+
+def test_verify_whitespace_sub_raises(monkeypatch, rsa_keys):
+    """A validly-signed token with sub='   ' must raise ClerkAuthError (I3)."""
+    priv, pub = rsa_keys
+    monkeypatch.setattr(clerk_auth, "_get_signing_key", lambda token: pub)
+    monkeypatch.setenv("CLERK_ISSUER", "https://clerk.test")
+    token = _make_token(priv, sub="   ")
+    with pytest.raises(clerk_auth.ClerkAuthError, match="empty sub"):
+        clerk_auth.verify_clerk_jwt(token)
+
+
+# ---------------------------------------------------------------------------
+# I2: email collision must not 500 — links Clerk login to existing user
+# ---------------------------------------------------------------------------
+
+
+def test_email_collision_links_to_existing_user(db):
+    """pre-existing CanonicalUser with same email must be reused, not duplicated (I2)."""
+    # Pre-create a user with the target email
+    existing = CanonicalUser(
+        display_name="Existing User",
+        primary_email="dup@x.co",
+    )
+    db.add(existing)
+    db.commit()
+    db.refresh(existing)
+
+    # Now call get_or_create with a new Clerk sub but the same email
+    result = clerk_auth.get_or_create_clerk_user(
+        db, sub="newsub", email="dup@x.co", name="N", avatar=None
+    )
+
+    # Must return the existing user, not a new one
+    assert result.id == existing.id
+
+    # Must have created a PlatformLink for the new Clerk sub
+    link = db.query(PlatformLink).filter_by(prefixed_user_id="clerk-newsub").one()
+    assert link.canonical_user_id == existing.id
+
+    # Must NOT have created a second CanonicalUser
+    assert db.query(CanonicalUser).count() == 1
