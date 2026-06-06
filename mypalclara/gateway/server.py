@@ -17,6 +17,7 @@ import websockets
 from websockets.server import WebSocketServerProtocol, serve
 
 from mypalclara.config.logging import get_logger
+from mypalclara.gateway.api import clerk_auth
 from mypalclara.gateway.protocol import (
     CancelledMessage,
     CancelMessage,
@@ -205,6 +206,51 @@ class GatewayServer:
         Returns:
             The registered node ID, or None if authentication failed
         """
+        # Browser clients (the web app) authenticate with a Clerk JWT, not the
+        # shared secret. They register under a clerk-<sub> node id.
+        if msg.platform == "web" or msg.auth_token:
+            from mypalclara.gateway.api.clerk_auth import (
+                ClerkAuthError,
+                get_or_create_clerk_user,
+                verify_clerk_jwt,
+            )
+
+            try:
+                claims = verify_clerk_jwt(msg.auth_token or "")
+            except ClerkAuthError as e:
+                logger.warning(f"Rejected web registration: {e}")
+                await self._send_error(websocket, None, "auth_failed", "Invalid Clerk token", recoverable=False)
+                await websocket.close(code=1008, reason="auth_failed")
+                return None
+
+            db = clerk_auth.SessionLocal()
+            try:
+                user = get_or_create_clerk_user(
+                    db,
+                    sub=claims["sub"],
+                    email=claims.get("email"),
+                    name=claims.get("name") or claims.get("first_name"),
+                    avatar=claims.get("image_url") or claims.get("picture"),
+                )
+                canonical_user_id = user.id  # capture before session closes
+                node_id = f"clerk-{claims['sub']}"
+            finally:
+                db.close()
+
+            adapter_token = f"web-{uuid.uuid4().hex[:16]}"
+            session_id, is_reconnection = await self.node_registry.register(
+                websocket=websocket,
+                node_id=node_id,
+                platform="web",
+                capabilities=msg.capabilities,
+                metadata={**(msg.metadata or {}), "canonical_user_id": canonical_user_id},
+                adapter_token=adapter_token,
+            )
+            await self._send(websocket, RegisteredMessage(node_id=node_id, session_id=session_id, adapter_token=adapter_token))
+            logger.info(f"Web client {node_id} registered [token {adapter_token[:10]}…]")
+            return node_id
+
+        # --- existing adapter secret path below (unchanged) ---
         if not self.secret or msg.secret != self.secret:
             logger.warning(f"Rejected registration from {msg.node_id} ({msg.platform}): bad secret")
             await self._send_error(

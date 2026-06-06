@@ -122,6 +122,7 @@ class RegisterMessage(BaseModel):
         default=None,
         description="Shared gateway secret for authentication (CLARA_GATEWAY_SECRET)",
     )
+    auth_token: str | None = None  # Clerk JWT for browser ("web") clients; adapters use `secret`
 
 
 class RegisteredMessage(BaseModel):
