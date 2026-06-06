@@ -6,6 +6,10 @@ import os
 
 import jwt
 from jwt import PyJWKClient
+from sqlalchemy.orm import Session as DBSession
+
+from mypalclara.db.connection import SessionLocal  # noqa: F401  (patched in tests)
+from mypalclara.db.models import CanonicalUser, PlatformLink
 
 CLERK_PLATFORM = "clerk"
 
@@ -56,3 +60,31 @@ def verify_clerk_jwt(token: str) -> dict:
         raise
     except jwt.PyJWTError as e:
         raise ClerkAuthError(str(e)) from e
+
+
+def get_or_create_clerk_user(
+    db: DBSession, *, sub: str, email: str | None, name: str | None, avatar: str | None
+) -> CanonicalUser:
+    """Return the CanonicalUser for a Clerk sub, creating it (and its
+    PlatformLink) on first sight. The prefixed_user_id is ``clerk-<sub>``.
+    """
+    prefixed = f"clerk-{sub}"
+    link = db.query(PlatformLink).filter(PlatformLink.prefixed_user_id == prefixed).first()
+    if link:
+        return db.query(CanonicalUser).filter(CanonicalUser.id == link.canonical_user_id).one()
+
+    user = CanonicalUser(display_name=name or email or prefixed, primary_email=email, avatar_url=avatar)
+    db.add(user)
+    db.flush()  # assign user.id
+    db.add(
+        PlatformLink(
+            canonical_user_id=user.id,
+            platform=CLERK_PLATFORM,
+            platform_user_id=sub,
+            prefixed_user_id=prefixed,
+            display_name=name,
+            linked_via="clerk",
+        )
+    )
+    db.commit()
+    return user

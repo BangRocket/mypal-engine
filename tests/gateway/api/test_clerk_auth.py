@@ -57,3 +57,32 @@ def test_verify_wrong_issuer_raises(monkeypatch, rsa_keys):
     token = _make_token(priv, iss="https://evil.test")
     with pytest.raises(clerk_auth.ClerkAuthError):
         clerk_auth.verify_clerk_jwt(token)
+
+
+from mypalclara.db.connection import SessionLocal
+from mypalclara.db.models import Base, CanonicalUser, PlatformLink
+
+
+@pytest.fixture
+def db(monkeypatch, tmp_path):
+    # Isolated SQLite db for this test module
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    engine = create_engine(f"sqlite:///{tmp_path}/t.db")
+    Base.metadata.create_all(engine)
+    TestSession = sessionmaker(bind=engine)
+    monkeypatch.setattr("mypalclara.gateway.api.clerk_auth.SessionLocal", TestSession, raising=False)
+    s = TestSession()
+    yield s
+    s.close()
+
+
+def test_get_or_create_creates_then_reuses(db):
+    u1 = clerk_auth.get_or_create_clerk_user(db, sub="clerk_x", email="x@y.co", name="X", avatar=None)
+    assert u1.id
+    link = db.query(PlatformLink).filter_by(prefixed_user_id="clerk-clerk_x").one()
+    assert link.platform == "clerk" and link.canonical_user_id == u1.id
+    u2 = clerk_auth.get_or_create_clerk_user(db, sub="clerk_x", email="x@y.co", name="X", avatar=None)
+    assert u2.id == u1.id
+    assert db.query(CanonicalUser).count() == 1
