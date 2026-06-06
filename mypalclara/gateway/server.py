@@ -305,6 +305,13 @@ class GatewayServer:
             await self._send_error(websocket, msg.id, "not_registered", "Node not registered")
             return
 
+        # C1: Browser clients are authenticated per-connection via Clerk; never
+        # trust a client-supplied user id. Bind every message to the verified
+        # node identity (node_id == "clerk-<sub>").
+        if node.platform == "web":
+            msg.user.id = node.node_id
+            msg.user.platform_id = node.node_id.removeprefix("clerk-")
+
         # Determine if request is batchable (active mode, not DM/mention)
         is_mention = msg.metadata.get("is_mention", False)
         is_batchable = msg.channel.type == "server" and not is_mention
