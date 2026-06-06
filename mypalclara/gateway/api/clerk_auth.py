@@ -104,9 +104,15 @@ def get_or_create_clerk_user(
         db.commit()
         return existing_user
 
-    # No existing user — create one.
+    # No existing user — create one. New web signups are gated for admin
+    # approval (status="pending"); an admin promotes them to "active".
     try:
-        user = CanonicalUser(display_name=name or email or prefixed, primary_email=email, avatar_url=avatar)
+        user = CanonicalUser(
+            display_name=name or email or prefixed,
+            primary_email=email,
+            avatar_url=avatar,
+            status="pending",
+        )
         db.add(user)
         db.flush()  # assign user.id
         db.add(

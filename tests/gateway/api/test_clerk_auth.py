@@ -160,6 +160,17 @@ def test_verify_whitespace_sub_raises(monkeypatch, rsa_keys):
 
 
 # ---------------------------------------------------------------------------
+# I1: new web signups are gated (pending) for admin approval
+# ---------------------------------------------------------------------------
+
+
+def test_new_clerk_user_starts_pending(db):
+    """A brand-new Clerk user must start 'pending', not auto-active (I1)."""
+    u = clerk_auth.get_or_create_clerk_user(db, sub="newp", email="np@x.co", name="NP", avatar=None)
+    assert u.status == "pending"
+
+
+# ---------------------------------------------------------------------------
 # I2: email collision must not 500 — links Clerk login to existing user
 # ---------------------------------------------------------------------------
 
