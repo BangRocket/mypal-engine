@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 
 import jwt
+from fastapi import Depends, Header, HTTPException, status
 from jwt import PyJWKClient
 from sqlalchemy.orm import Session as DBSession
 
@@ -88,3 +89,33 @@ def get_or_create_clerk_user(
     )
     db.commit()
     return user
+
+
+def get_db():
+    """Yield a DB session (patched in tests)."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_clerk_user(
+    authorization: str | None = Header(None),
+    db: DBSession = Depends(get_db),
+) -> CanonicalUser:
+    """Resolve the CanonicalUser from a Clerk ``Authorization: Bearer`` token."""
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
+    token = authorization.split(" ", 1)[1].strip()
+    try:
+        claims = verify_clerk_jwt(token)
+    except ClerkAuthError as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid token: {e}") from e
+    return get_or_create_clerk_user(
+        db,
+        sub=claims["sub"],
+        email=claims.get("email"),
+        name=claims.get("name") or claims.get("first_name"),
+        avatar=claims.get("image_url") or claims.get("picture"),
+    )

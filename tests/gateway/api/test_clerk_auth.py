@@ -86,3 +86,28 @@ def test_get_or_create_creates_then_reuses(db):
     u2 = clerk_auth.get_or_create_clerk_user(db, sub="clerk_x", email="x@y.co", name="X", avatar=None)
     assert u2.id == u1.id
     assert db.query(CanonicalUser).count() == 1
+
+
+from fastapi import Depends, FastAPI
+from fastapi.testclient import TestClient
+
+
+def test_get_clerk_user_dependency(monkeypatch, rsa_keys, db):
+    priv, pub = rsa_keys
+    monkeypatch.setattr(clerk_auth, "_get_signing_key", lambda token: pub)
+    monkeypatch.setenv("CLERK_ISSUER", "https://clerk.test")
+    monkeypatch.setattr(clerk_auth, "get_db", lambda: iter([db]))
+
+    app = FastAPI()
+
+    @app.get("/me")
+    async def me(user=Depends(clerk_auth.get_clerk_user)):
+        return {"id": user.id, "name": user.display_name}
+
+    client = TestClient(app)
+    token = _make_token(priv, sub="clerk_dep", name="Dep", email="d@e.co")
+
+    assert client.get("/me").status_code == 401  # no header
+    r = client.get("/me", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200 and r.json()["name"] == "Dep"
+    assert client.get("/me", headers={"Authorization": "Bearer garbage"}).status_code == 401
