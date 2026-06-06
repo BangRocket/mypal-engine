@@ -41,14 +41,35 @@ def require_gateway_secret(
 def get_current_user(
     x_canonical_user_id: str | None = Header(None),
     x_gateway_secret: str | None = Header(None),
+    authorization: str | None = Header(None),
     db: DBSession = Depends(get_db),
 ) -> CanonicalUser:
-    """Extract the current user from the X-Canonical-User-Id header.
+    """Resolve the current user.
 
-    In the unified architecture, Rails authenticates users and forwards
-    the canonical user ID via a trusted internal header. Optionally
-    verifies X-Gateway-Secret if CLARA_GATEWAY_SECRET is set.
+    Web app: ``Authorization: Bearer <clerk-jwt>`` (validated against Clerk).
+    Adapters/Rails: trusted ``X-Canonical-User-Id`` header (+ optional secret).
     """
+    if authorization and authorization.lower().startswith("bearer "):
+        from mypalclara.gateway.api.clerk_auth import (
+            ClerkAuthError,
+            get_or_create_clerk_user,
+            verify_clerk_jwt,
+        )
+
+        token = authorization.split(" ", 1)[1].strip()
+        try:
+            claims = verify_clerk_jwt(token)
+        except ClerkAuthError as e:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=f"Invalid token: {e}") from e
+        return get_or_create_clerk_user(
+            db,
+            sub=claims["sub"],
+            email=claims.get("email"),
+            name=claims.get("name") or claims.get("first_name"),
+            avatar=claims.get("image_url") or claims.get("picture"),
+        )
+
+    # --- existing trusted-header path below (unchanged) ---
     # Verify gateway secret if configured
     expected_secret = os.getenv("CLARA_GATEWAY_SECRET")
     if expected_secret and x_gateway_secret != expected_secret:

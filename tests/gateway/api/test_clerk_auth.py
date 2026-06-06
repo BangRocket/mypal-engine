@@ -111,3 +111,24 @@ def test_get_clerk_user_dependency(monkeypatch, rsa_keys, db):
     r = client.get("/me", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 200 and r.json()["name"] == "Dep"
     assert client.get("/me", headers={"Authorization": "Bearer garbage"}).status_code == 401
+
+
+def test_get_current_user_prefers_bearer(monkeypatch, rsa_keys, db):
+    from mypalclara.gateway.api import auth as auth_mod
+
+    priv, pub = rsa_keys
+    monkeypatch.setattr(clerk_auth, "_get_signing_key", lambda token: pub)
+    monkeypatch.setenv("CLERK_ISSUER", "https://clerk.test")
+    monkeypatch.setattr(clerk_auth, "get_db", lambda: iter([db]))
+    monkeypatch.setattr(auth_mod, "get_db", lambda: iter([db]))
+
+    app = FastAPI()
+
+    @app.get("/who")
+    async def who(user=Depends(auth_mod.get_current_user)):
+        return {"id": user.id}
+
+    client = TestClient(app)
+    token = _make_token(priv, sub="clerk_cur", name="Cur")
+    r = client.get("/who", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
