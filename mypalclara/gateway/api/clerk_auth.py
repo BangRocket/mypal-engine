@@ -71,27 +71,69 @@ def get_or_create_clerk_user(
 ) -> CanonicalUser:
     """Return the CanonicalUser for a Clerk sub, creating it (and its
     PlatformLink) on first sight. The prefixed_user_id is ``clerk-<sub>``.
+
+    If the Clerk sub is already linked, return the existing CanonicalUser.
+    If not linked but an email match exists, attach the new PlatformLink to
+    that existing user (account-linking) rather than creating a duplicate
+    (which would violate the unique constraint on primary_email).
     """
+    from sqlalchemy.exc import IntegrityError
+
     prefixed = f"clerk-{sub}"
     link = db.query(PlatformLink).filter(PlatformLink.prefixed_user_id == prefixed).first()
     if link:
         return db.query(CanonicalUser).filter(CanonicalUser.id == link.canonical_user_id).one()
 
-    user = CanonicalUser(display_name=name or email or prefixed, primary_email=email, avatar_url=avatar)
-    db.add(user)
-    db.flush()  # assign user.id
-    db.add(
-        PlatformLink(
-            canonical_user_id=user.id,
-            platform=CLERK_PLATFORM,
-            platform_user_id=sub,
-            prefixed_user_id=prefixed,
-            display_name=name,
-            linked_via="clerk",
+    # Check for an existing user with the same primary email before creating.
+    existing_user: CanonicalUser | None = None
+    if email:
+        existing_user = db.query(CanonicalUser).filter(CanonicalUser.primary_email == email).first()
+
+    if existing_user is not None:
+        # Account-linking: attach the new Clerk identity to the existing user.
+        db.add(
+            PlatformLink(
+                canonical_user_id=existing_user.id,
+                platform=CLERK_PLATFORM,
+                platform_user_id=sub,
+                prefixed_user_id=prefixed,
+                display_name=name,
+                linked_via="clerk",
+            )
         )
-    )
-    db.commit()
-    return user
+        db.commit()
+        return existing_user
+
+    # No existing user — create one.
+    try:
+        user = CanonicalUser(display_name=name or email or prefixed, primary_email=email, avatar_url=avatar)
+        db.add(user)
+        db.flush()  # assign user.id
+        db.add(
+            PlatformLink(
+                canonical_user_id=user.id,
+                platform=CLERK_PLATFORM,
+                platform_user_id=sub,
+                prefixed_user_id=prefixed,
+                display_name=name,
+                linked_via="clerk",
+            )
+        )
+        db.commit()
+        return user
+    except IntegrityError:
+        # Another request raced us and created the user first; roll back and
+        # re-query by the Clerk prefixed_user_id which must now exist.
+        db.rollback()
+        link = db.query(PlatformLink).filter(PlatformLink.prefixed_user_id == prefixed).first()
+        if link:
+            return db.query(CanonicalUser).filter(CanonicalUser.id == link.canonical_user_id).one()
+        # Fallback: re-query by email
+        if email:
+            existing_user = db.query(CanonicalUser).filter(CanonicalUser.primary_email == email).first()
+            if existing_user:
+                return existing_user
+        raise
 
 
 def get_db():
