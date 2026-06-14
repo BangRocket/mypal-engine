@@ -360,14 +360,18 @@ CLARA_GATEWAY_API_PORT=18790          # Gateway HTTP API port (default: 18790)
 CLARA_GATEWAY_API_URL=http://127.0.0.1:18790  # Gateway HTTP API URL (for Rails proxy)
 ```
 
-### Heartbeat (OpenClaw-inspired)
+### Ambient Reflection
+Unified background loop (replaces the former ORS + heartbeat). On a fixed cron, Clara silently reflects per opted-in user (dated journal + Palace memory consolidation), then a separate gate decides whether to surface anything — queue it for the next conversation, or send an urgent DM (active-hours + min-gap gated).
 ```bash
-HEARTBEAT_ENABLED=false           # Enable periodic heartbeat checks
-HEARTBEAT_INTERVAL_MINUTES=30     # Minutes between checks (default: 30)
-HEARTBEAT_ACK_MAX_CHARS=300       # Max chars to suppress with HEARTBEAT_OK
+AMBIENT_ENABLED=false                # Enable the ambient reflection loop
+AMBIENT_CRON="0 11,14,17,20 * * *"   # Reflection cadence (server time)
+AMBIENT_MIN_DM_GAP_HOURS=4           # Min hours between unsolicited DMs
+AMBIENT_ACTIVE_HOURS=8-22            # User-local hour window for DMs
+AMBIENT_JOURNAL_READBACK_DAYS=3      # Days of journal re-read each reflection
+AMBIENT_RECENT_ACTIVITY_SKIP_MIN=15  # Skip a turn if user messaged this recently
+AMBIENT_QUEUE_TTL_DAYS=5             # Queued thoughts expire after N days
 ```
-
-Edit `mypalclara/workspace/HEARTBEAT.md` to customize what Clara checks each cycle.
+Opt users in via the `ambient_user_config` table (`reflection_opt_in`, `timezone`).
 
 ### Optional Features
 ```bash
