@@ -1,7 +1,7 @@
 """Workspace file tools - Clara core tool.
 
 Gives Clara runtime read/write access to her workspace files
-(SOUL.md, IDENTITY.md, USER.md, HEARTBEAT.md, etc.).
+(SOUL.md, IDENTITY.md, USER.md, etc.).
 
 SOUL.md and IDENTITY.md are read-only (owner-controlled).
 Clara can read, write, and create other .md files in the workspace.
