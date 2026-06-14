@@ -4,7 +4,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from mypalclara.ambient import guards
-from mypalclara.db.models import Base, Session as DbSession
+from mypalclara.db.models import Base
+from mypalclara.db.models import Session as DbSession
 
 
 def test_in_active_hours_respects_timezone():
