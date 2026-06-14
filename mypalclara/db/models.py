@@ -160,6 +160,34 @@ class ProactiveMessage(Base):
     response_at = Column(DateTime, nullable=True)
 
 
+class SurfacedThought(Base):
+    """A reflection Clara decided is worth raising; queued for the user's next
+    turn, or sent as an urgent DM."""
+
+    __tablename__ = "surfaced_thoughts"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    user_id = Column(String, nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    kind = Column(String, nullable=False, default="queue")  # "queue" | "urgent"
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    surfaced_at = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    delivered = Column(String, default="false", nullable=False)  # "true" | "false"
+
+
+class AmbientUserConfig(Base):
+    """Per-user ambient-reflection settings (opt-in + timezone + outreach state)."""
+
+    __tablename__ = "ambient_user_config"
+
+    user_id = Column(String, primary_key=True)
+    reflection_opt_in = Column(String, default="false", nullable=False)  # "true" | "false"
+    timezone = Column(String, nullable=True)  # IANA, e.g. "America/New_York"
+    last_dm_at = Column(DateTime, nullable=True)  # for the min-gap guard
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=True)
+
 
 # =============================================================================
 # Email Monitoring Models
@@ -737,6 +765,9 @@ __all__ = [
     "GoogleOAuthToken",
     # Proactive models
     "ProactiveMessage",
+    # Ambient system
+    "SurfacedThought",
+    "AmbientUserConfig",
     # Email monitoring
     "EmailAccount",
     "EmailRule",
