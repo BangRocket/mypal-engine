@@ -665,11 +665,14 @@ class MessageProcessor:
             )
         except (TimeoutError, asyncio.TimeoutError):
             logger.warning(
-                f"Layered prompt build timed out after {MEMORY_FETCH_TIMEOUT}s, "
-                "falling back to minimal prompt"
+                f"Layered prompt build timed out after {MEMORY_FETCH_TIMEOUT}s, " "falling back to minimal prompt"
             )
             messages = self._memory_manager.build_prompt(
-                [], [], None, recent_msgs, user_content,
+                [],
+                [],
+                None,
+                recent_msgs,
+                user_content,
                 privacy_scope=privacy_scope,
                 user_id=user_id,
                 system_prompts=system_prompts,
@@ -697,6 +700,16 @@ class MessageProcessor:
             intention_text = self._memory_manager.format_intentions_for_prompt(fired_intentions)
             if intention_text:
                 messages.insert(2, SystemMessage(content=intention_text))
+
+        # Inject any reflection thoughts queued while the user was away
+        try:
+            from mypalclara.ambient.inject import collect_surfaced_block
+
+            surfaced = collect_surfaced_block(user_id)
+            if surfaced:
+                messages.insert(2, SystemMessage(content=surfaced))
+        except Exception as e:
+            logger.warning(f"ambient surfaced-thought injection failed: {e}")
 
         # Add reply chain if present
         if request.reply_chain:
@@ -1089,9 +1102,7 @@ class MessageProcessor:
         except Exception as e:
             logger.warning(f"Failed to promote memories: {e}")
 
-    async def _maybe_reflect(
-        self, context: dict[str, Any], request: Any, response: str
-    ) -> None:
+    async def _maybe_reflect(self, context: dict[str, Any], request: Any, response: str) -> None:
         """Trigger episode reflection when enough messages have accumulated.
 
         Runs session reflection every N message pairs to capture episodes

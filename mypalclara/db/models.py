@@ -160,73 +160,33 @@ class ProactiveMessage(Base):
     response_at = Column(DateTime, nullable=True)
 
 
-class UserInteractionPattern(Base):
-    """Learned interaction patterns per user for proactive timing."""
+class SurfacedThought(Base):
+    """A reflection Clara decided is worth raising; queued for the user's next
+    turn, or sent as an urgent DM."""
 
-    __tablename__ = "user_interaction_patterns"
+    __tablename__ = "surfaced_thoughts"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    user_id = Column(String, nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    kind = Column(String, nullable=False, default="queue")  # "queue" | "urgent"
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    surfaced_at = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    delivered = Column(String, default="false", nullable=False)  # "true" | "false"
+
+
+class AmbientUserConfig(Base):
+    """Per-user ambient-reflection settings (opt-in + timezone + outreach state)."""
+
+    __tablename__ = "ambient_user_config"
 
     user_id = Column(String, primary_key=True)
-    last_interaction_at = Column(DateTime, nullable=True)
-    last_interaction_channel = Column(String, nullable=True)
-    last_interaction_summary = Column(Text, nullable=True)  # LLM-extracted summary of last convo
-    last_interaction_energy = Column(String, nullable=True)  # stressed, focused, casual, tired, excited, frustrated
-    typical_active_hours = Column(Text, nullable=True)  # JSON: {"weekday": [9,17], "weekend": [10,22]}
-    timezone = Column(String, nullable=True)  # IANA timezone (e.g., "America/New_York")
-    timezone_source = Column(String, nullable=True)  # "calendar", "explicit", "inferred"
-    avg_response_time_seconds = Column(Integer, nullable=True)
-    explicit_signals = Column(Text, nullable=True)  # JSON: {"do_not_disturb": false, "busy_until": null}
-    proactive_success_rate = Column(Integer, nullable=True)  # Percentage (0-100)
-    # ORS enhancements
-    proactive_response_rate = Column(Integer, nullable=True)  # % of proactive messages acknowledged (0-100)
-    preferred_proactive_times = Column(Text, nullable=True)  # JSON: When user responds best to proactive
-    preferred_proactive_types = Column(Text, nullable=True)  # JSON: What kinds of reach-outs work
-    topic_receptiveness = Column(Text, nullable=True)  # JSON: Which topics land vs. get ignored
-    explicit_boundaries = Column(Text, nullable=True)  # JSON: Things user said not to do
-    open_threads = Column(Text, nullable=True)  # JSON: Unresolved topics from conversations
-    contact_cadence_days = Column(Float, nullable=True)  # Avg days between interactions (inferred)
-    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
-
-
-class ProactiveNote(Base):
-    """Internal notes/observations for ORS - accumulated understanding over time."""
-
-    __tablename__ = "proactive_notes"
-
-    id = Column(String, primary_key=True, default=gen_uuid)
-    user_id = Column(String, nullable=False, index=True)
-    note = Column(Text, nullable=False)  # The observation/thought
-    note_type = Column(String, nullable=True)  # observation, question, follow_up, connection
-    source_context = Column(Text, nullable=True)  # JSON: What triggered this note
-    source_model = Column(String, nullable=True)  # Model that created this note (opus-4, sonnet-4, etc)
-    source_confidence = Column(String, nullable=True)  # Self-assessed confidence (high, medium, low)
-    grounding_message_ids = Column(Text, nullable=True)  # JSON: Message IDs that triggered this note
-    connections = Column(Text, nullable=True)  # JSON: List of related note IDs
-    relevance_score = Column(Integer, default=100)  # 0-100, decays over time
-    surface_conditions = Column(Text, nullable=True)  # JSON: When should this come up
-    surface_at = Column(DateTime, nullable=True)  # Specific time to potentially bring this up
-    expires_at = Column(DateTime, nullable=True)  # Time-sensitive notes expire
-    surfaced = Column(String, default="false")  # "true" or "false"
-    surfaced_at = Column(DateTime, nullable=True)
-    archived = Column(String, default="false")  # "true" or "false" - stale or surfaced notes
-    created_at = Column(DateTime, default=utcnow)
-    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
-
-
-class ProactiveAssessment(Base):
-    """Situation assessments for ORS continuity - records of THINK state processing."""
-
-    __tablename__ = "proactive_assessments"
-
-    id = Column(String, primary_key=True, default=gen_uuid)
-    user_id = Column(String, nullable=False, index=True)
-    context_snapshot = Column(Text, nullable=True)  # JSON: Full context at time of assessment
-    assessment = Column(Text, nullable=True)  # LLM's read on the situation
-    decision = Column(String, nullable=False)  # WAIT, THINK, or SPEAK
-    reasoning = Column(Text, nullable=True)  # Why this decision was made
-    note_created = Column(String, nullable=True)  # Note ID if THINK created a note
-    message_sent = Column(Text, nullable=True)  # Message text if SPEAK
-    next_check_at = Column(DateTime, nullable=True)  # When to check again
-    created_at = Column(DateTime, default=utcnow, nullable=False, index=True)
+    reflection_opt_in = Column(String, default="false", nullable=False)  # "true" | "false"
+    timezone = Column(String, nullable=True)  # IANA, e.g. "America/New_York"
+    last_dm_at = Column(DateTime, nullable=True)  # for the min-gap guard
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=True)
 
 
 # =============================================================================
@@ -805,9 +765,9 @@ __all__ = [
     "GoogleOAuthToken",
     # Proactive models
     "ProactiveMessage",
-    "UserInteractionPattern",
-    "ProactiveNote",
-    "ProactiveAssessment",
+    # Ambient system
+    "SurfacedThought",
+    "AmbientUserConfig",
     # Email monitoring
     "EmailAccount",
     "EmailRule",

@@ -1,7 +1,7 @@
 """Workspace file tools - Clara core tool.
 
 Gives Clara runtime read/write access to her workspace files
-(SOUL.md, IDENTITY.md, USER.md, HEARTBEAT.md, etc.).
+(SOUL.md, IDENTITY.md, USER.md, etc.).
 
 SOUL.md and IDENTITY.md are read-only (owner-controlled).
 Clara can read, write, and create other .md files in the workspace.
@@ -79,14 +79,12 @@ Use the workspace tools to read, update, or create these files.
 **Editable files:**
 - USER.md — Notes about the user
 - MEMORY.md — Persistent memory notes
-- HEARTBEAT.md — Instructions for your periodic heartbeat checks
 - AGENTS.md — Agent configuration notes
 - TOOLS.md — Tool-specific notes
 - Any .md file you create
 
 **When to use:**
 - Update MEMORY.md when you learn something worth remembering
-- Update HEARTBEAT.md to change what you check periodically
 - Update USER.md when you learn user preferences
 - Create new files for project notes, habits, or any persistent context
 """.strip()

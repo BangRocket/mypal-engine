@@ -529,67 +529,64 @@ async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] 
         adapter_manager = get_adapter_manager(config_path)
         await adapter_manager.start(adapter_names)
 
-    # Start heartbeat loop if enabled
-    heartbeat_task = None
-    if os.getenv("HEARTBEAT_ENABLED", "false").lower() == "true":
-        from mypalclara.core.heartbeat import heartbeat_loop
+    # Start unified ambient reflection if enabled
+    from mypalclara.ambient.config import AMBIENT_ENABLED
+
+    if AMBIENT_ENABLED:
+        from mypalclara.ambient.loop import ambient_turn
+        from mypalclara.ambient.scheduling import get_opted_in_users, register_ambient_task
         from mypalclara.core.llm.compat import make_llm
 
-        heartbeat_llm = make_llm(tier="low")
+        _gate_llm_sync = make_llm(tier="mid")
 
-        async def _heartbeat_llm_async(messages):
-            """Wrap sync LLM callable for heartbeat."""
-            return await asyncio.get_running_loop().run_in_executor(None, heartbeat_llm, messages)
+        async def _gate_llm(messages):
+            return await asyncio.get_running_loop().run_in_executor(None, _gate_llm_sync, messages)
 
-        async def _heartbeat_send(user_id: str, channel_id: str, message_text: str):
-            """Send heartbeat message to the adapter that owns the target user."""
-            from mypalclara.gateway.protocol import (
-                ChannelInfo,
-                ProactiveMessage,
-                UserInfo,
-            )
+        async def _ambient_send(user_id: str, channel_id: str, content: str) -> bool:
+            from mypal_protocol import ChannelInfo, ProactiveMessage, UserInfo
 
-            # Extract platform prefix from user_id (e.g., "discord-123" -> "discord")
             platform = user_id.split("-", 1)[0] if "-" in user_id else "unknown"
-            # Extract platform-specific user ID (e.g., "discord-123" -> "123")
             platform_user_id = user_id.split("-", 1)[1] if "-" in user_id else user_id
+            # channel_id is "dm-<user_id>" → deliver to the user's DM
+            channel_type = "dm" if str(channel_id).startswith("dm-") else "server"
+            raw_channel_id = platform_user_id if channel_type == "dm" else channel_id
 
-            # Determine channel type from context_id prefix
-            # DM context_id format: "dm-discord-12345" (user_id, not a channel)
-            # Server context_id format: "channel-12345" (actual channel ID)
-            if channel_id.startswith("dm-"):
-                channel_type = "dm"
-                # For DMs, use the platform user ID — adapter will create a DM channel
-                raw_channel_id = platform_user_id
-            else:
-                channel_type = "server"
-                raw_channel_id = channel_id.split("-", 1)[1] if "-" in channel_id else channel_id
-
+            delivered = 0
             nodes = await server.node_registry.get_all_nodes()
             for node in nodes:
-                # Only send to the adapter matching the user's platform
                 if node.platform and node.platform != platform:
                     continue
                 try:
                     msg = ProactiveMessage(
-                        user=UserInfo(
-                            id=user_id,
-                            platform_id=platform_user_id,
-                            name=None,
-                        ),
-                        channel=ChannelInfo(
-                            id=raw_channel_id,
-                            type=channel_type,
-                        ),
-                        content=message_text,
-                        priority="low",
+                        user=UserInfo(id=user_id, platform_id=platform_user_id, name=None),
+                        channel=ChannelInfo(id=raw_channel_id, type=channel_type),
+                        content=content,
+                        priority="normal",
                     )
                     await node.websocket.send(msg.model_dump_json())
+                    delivered += 1
                 except Exception as e:
-                    logger.warning(f"Failed to send heartbeat to {node.node_id}: {e}")
+                    logger.warning(f"Failed to send ambient DM to {node.node_id}: {e}")
+            return delivered > 0
 
-        heartbeat_task = asyncio.create_task(heartbeat_loop(_heartbeat_llm_async, _heartbeat_send))
-        logger.info("Heartbeat loop started")
+        _orchestrator = processor._llm_orchestrator
+        _tool_executor = processor._tool_executor
+
+        async def _ambient_tick():
+            for uid in get_opted_in_users():
+                try:
+                    await ambient_turn(
+                        uid,
+                        orchestrator=_orchestrator,
+                        tool_executor=_tool_executor,
+                        gate_llm=_gate_llm,
+                        send_fn=_ambient_send,
+                    )
+                except Exception as e:
+                    logger.error(f"ambient_turn failed for {uid}: {e}")
+
+        register_ambient_task(scheduler, runner=_ambient_tick)
+        logger.info("Ambient reflection registered")
 
     # Start email monitoring loop if enabled (routes alerts over the gateway WS)
     email_task = None
@@ -681,14 +678,6 @@ async def _async_run_gateway(args: argparse.Namespace, adapter_names: list[str] 
     api_server.should_exit = True
     await api_task
     logger.info("HTTP API server stopped")
-
-    if heartbeat_task and not heartbeat_task.done():
-        heartbeat_task.cancel()
-        try:
-            await heartbeat_task
-        except asyncio.CancelledError:
-            pass
-        logger.info("Heartbeat loop stopped")
 
     if email_task and not email_task.done():
         email_task.cancel()
