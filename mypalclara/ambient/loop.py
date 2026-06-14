@@ -118,8 +118,7 @@ async def ambient_turn(
             if delivered:
                 record_dm_fn(user_id, now_naive)
         else:
-            logger.info(f"ambient_turn: urgent for {user_id} downgraded to queue "
-                        f"(hours={ok_hours}, gap={ok_gap})")
+            logger.info(f"ambient_turn: urgent for {user_id} downgraded to queue " f"(hours={ok_hours}, gap={ok_gap})")
             enqueue_fn(user_id, content, kind="queue", expires_at=expires)
 
 

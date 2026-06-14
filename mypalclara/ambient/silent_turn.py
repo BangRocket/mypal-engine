@@ -14,8 +14,7 @@ from mypalclara.config.logging import get_logger
 logger = get_logger("ambient.silent_turn")
 
 
-async def run_silent_turn(orchestrator: Any, messages: list, tools: list,
-                          user_id: str, request_id: str) -> str:
+async def run_silent_turn(orchestrator: Any, messages: list, tools: list, user_id: str, request_id: str) -> str:
     final_text = ""
     async for event in orchestrator.generate_with_tools(
         messages=messages,

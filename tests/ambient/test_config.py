@@ -2,9 +2,14 @@ import importlib
 
 
 def test_defaults(monkeypatch):
-    for var in ["AMBIENT_ENABLED", "AMBIENT_CRON", "AMBIENT_MIN_DM_GAP_HOURS",
-                "AMBIENT_JOURNAL_READBACK_DAYS", "AMBIENT_RECENT_ACTIVITY_SKIP_MIN",
-                "AMBIENT_ACTIVE_HOURS"]:
+    for var in [
+        "AMBIENT_ENABLED",
+        "AMBIENT_CRON",
+        "AMBIENT_MIN_DM_GAP_HOURS",
+        "AMBIENT_JOURNAL_READBACK_DAYS",
+        "AMBIENT_RECENT_ACTIVITY_SKIP_MIN",
+        "AMBIENT_ACTIVE_HOURS",
+    ]:
         monkeypatch.delenv(var, raising=False)
     cfg = importlib.reload(importlib.import_module("mypalclara.ambient.config"))
     assert cfg.AMBIENT_ENABLED is False

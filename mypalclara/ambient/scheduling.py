@@ -20,11 +20,7 @@ def get_opted_in_users(*, session_factory=None) -> list[str]:
 
     db = session_factory()
     try:
-        rows = (
-            db.query(AmbientUserConfig)
-            .filter(AmbientUserConfig.reflection_opt_in == "true")
-            .all()
-        )
+        rows = db.query(AmbientUserConfig).filter(AmbientUserConfig.reflection_opt_in == "true").all()
         return [r.user_id for r in rows]
     finally:
         db.close()

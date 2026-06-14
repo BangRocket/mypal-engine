@@ -23,8 +23,7 @@ def past_min_gap(last_dm_at: datetime | None, now_naive: datetime, gap_hours: fl
     return (now_naive - last_dm_at).total_seconds() >= gap_hours * 3600
 
 
-def recently_active(user_id: str, skip_minutes: int, *, now: datetime | None = None,
-                    session_factory=None) -> bool:
+def recently_active(user_id: str, skip_minutes: int, *, now: datetime | None = None, session_factory=None) -> bool:
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     if session_factory is None:
         from mypalclara.db.connection import SessionLocal
@@ -35,11 +34,7 @@ def recently_active(user_id: str, skip_minutes: int, *, now: datetime | None = N
     cutoff = now - timedelta(minutes=skip_minutes)
     db = session_factory()
     try:
-        row = (
-            db.query(DbSession)
-            .filter(DbSession.user_id == user_id, DbSession.last_activity_at >= cutoff)
-            .first()
-        )
+        row = db.query(DbSession).filter(DbSession.user_id == user_id, DbSession.last_activity_at >= cutoff).first()
         return row is not None
     finally:
         db.close()

@@ -13,8 +13,9 @@ def _default_factory():
     return SessionLocal
 
 
-def enqueue(user_id: str, content: str, *, kind: str = "queue",
-            expires_at: datetime | None = None, session_factory=None) -> str:
+def enqueue(
+    user_id: str, content: str, *, kind: str = "queue", expires_at: datetime | None = None, session_factory=None
+) -> str:
     factory = session_factory or _default_factory()
     db = factory()
     try:

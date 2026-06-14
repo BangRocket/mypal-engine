@@ -6,6 +6,7 @@ from mypalclara.ambient import journal
 def test_append_then_read_recent(tmp_path, monkeypatch):
     monkeypatch.setenv("AMBIENT_JOURNAL_DIR", str(tmp_path))
     import importlib
+
     importlib.reload(journal)
 
     now = datetime(2026, 6, 14, 12, 0, tzinfo=timezone.utc)
@@ -19,6 +20,7 @@ def test_append_then_read_recent(tmp_path, monkeypatch):
 def test_read_recent_empty(tmp_path, monkeypatch):
     monkeypatch.setenv("AMBIENT_JOURNAL_DIR", str(tmp_path))
     import importlib
+
     importlib.reload(journal)
     assert journal.read_recent("nobody", days=3) == ""
 
@@ -26,6 +28,7 @@ def test_read_recent_empty(tmp_path, monkeypatch):
 def test_user_id_sanitized(tmp_path, monkeypatch):
     monkeypatch.setenv("AMBIENT_JOURNAL_DIR", str(tmp_path))
     import importlib
+
     importlib.reload(journal)
     p = journal.journal_path("discord/../evil", date="2026-06-14")
     assert ".." not in str(p.relative_to(tmp_path))

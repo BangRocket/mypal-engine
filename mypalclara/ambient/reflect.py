@@ -39,8 +39,7 @@ def _resolve_memory_manager():
         return None
 
 
-async def reflect(user_id: str, *, orchestrator: Any, tool_executor: Any,
-                  memory_manager: Any = None) -> str:
+async def reflect(user_id: str, *, orchestrator: Any, tool_executor: Any, memory_manager: Any = None) -> str:
     recent = journal.read_recent(user_id, days=AMBIENT_JOURNAL_READBACK_DAYS)
     all_tools = await tool_executor.get_all_tools(user_id=user_id)
     tools = _filter_tools(all_tools, REFLECTION_TOOL_ALLOWLIST)
@@ -50,8 +49,10 @@ async def reflect(user_id: str, *, orchestrator: Any, tool_executor: Any,
     messages = [
         SystemMessage(content=REFLECTION_PROMPT),
         SystemMessage(content=f"## Your recent journal\n\n{recent or '(empty — a fresh start)'}"),
-        UserMessage(content="Reflect now. Consolidate, notice patterns, look over recent "
-                            "conversations if useful, and end with a short journal entry."),
+        UserMessage(
+            content="Reflect now. Consolidate, notice patterns, look over recent "
+            "conversations if useful, and end with a short journal entry."
+        ),
     ]
     text = await run_silent_turn(orchestrator, messages, tools, user_id, f"ambient-reflect-{gen_uuid()}")
     if not text.strip():

@@ -35,8 +35,7 @@ def test_recently_active(tmp_path):
     sf = sessionmaker(bind=engine)
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     db = sf()
-    db.add(DbSession(id="s1", project_id="p1", user_id="discord-1",
-                     last_activity_at=now - timedelta(minutes=2)))
+    db.add(DbSession(id="s1", project_id="p1", user_id="discord-1", last_activity_at=now - timedelta(minutes=2)))
     db.commit()
     db.close()
     assert guards.recently_active("discord-1", 15, now=now, session_factory=sf) is True

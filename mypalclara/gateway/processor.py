@@ -665,11 +665,14 @@ class MessageProcessor:
             )
         except (TimeoutError, asyncio.TimeoutError):
             logger.warning(
-                f"Layered prompt build timed out after {MEMORY_FETCH_TIMEOUT}s, "
-                "falling back to minimal prompt"
+                f"Layered prompt build timed out after {MEMORY_FETCH_TIMEOUT}s, " "falling back to minimal prompt"
             )
             messages = self._memory_manager.build_prompt(
-                [], [], None, recent_msgs, user_content,
+                [],
+                [],
+                None,
+                recent_msgs,
+                user_content,
                 privacy_scope=privacy_scope,
                 user_id=user_id,
                 system_prompts=system_prompts,
@@ -1099,9 +1102,7 @@ class MessageProcessor:
         except Exception as e:
             logger.warning(f"Failed to promote memories: {e}")
 
-    async def _maybe_reflect(
-        self, context: dict[str, Any], request: Any, response: str
-    ) -> None:
+    async def _maybe_reflect(self, context: dict[str, Any], request: Any, response: str) -> None:
         """Trigger episode reflection when enough messages have accumulated.
 
         Runs session reflection every N message pairs to capture episodes

@@ -31,6 +31,7 @@ class _MM:
 async def test_reflect_writes_journal_filters_tools_and_consolidates(tmp_path, monkeypatch):
     monkeypatch.setenv("AMBIENT_JOURNAL_DIR", str(tmp_path))
     import importlib
+
     importlib.reload(journal)
     importlib.reload(reflect)
 
@@ -51,6 +52,7 @@ async def test_reflect_writes_journal_filters_tools_and_consolidates(tmp_path, m
 async def test_reflect_empty_text_skips_journal_and_memory(tmp_path, monkeypatch):
     monkeypatch.setenv("AMBIENT_JOURNAL_DIR", str(tmp_path))
     import importlib
+
     importlib.reload(journal)
     importlib.reload(reflect)
 
@@ -73,6 +75,7 @@ async def test_reflect_empty_text_skips_journal_and_memory(tmp_path, monkeypatch
 async def test_reflect_palace_write_failure_is_nonfatal(tmp_path, monkeypatch):
     monkeypatch.setenv("AMBIENT_JOURNAL_DIR", str(tmp_path))
     import importlib
+
     importlib.reload(journal)
     importlib.reload(reflect)
 
