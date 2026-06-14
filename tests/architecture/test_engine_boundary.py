@@ -23,7 +23,6 @@ ENGINE_PACKAGES = [
     "sandbox",
     "tools",
     "gateway",
-    "services/proactive",
     "services/blog",
     "services/email",
 ]
