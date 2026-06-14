@@ -13,34 +13,42 @@ class _Orch:
 class _ToolExec:
     async def get_all_tools(self, *, user_id):
         return [
-            {"type": "function", "function": {"name": "search_memories"}},
-            {"type": "function", "function": {"name": "send_discord_buttons"}},  # must be filtered out
-            {"type": "function", "function": {"name": "add_memory"}},
+            {"type": "function", "function": {"name": "search_chat_history"}},
+            {"type": "function", "function": {"name": "terminal"}},  # must be filtered out
+            {"type": "function", "function": {"name": "get_chat_history"}},
         ]
 
 
+class _MM:
+    def __init__(self):
+        self.calls = []
+
+    def add_to_memory(self, *, user_id, user_message, assistant_reply, is_dm=False):
+        self.calls.append({"user_id": user_id, "assistant_reply": assistant_reply})
+
+
 @pytest.mark.asyncio
-async def test_reflect_writes_journal_and_filters_tools(tmp_path, monkeypatch):
+async def test_reflect_writes_journal_filters_tools_and_consolidates(tmp_path, monkeypatch):
     monkeypatch.setenv("AMBIENT_JOURNAL_DIR", str(tmp_path))
     import importlib
     importlib.reload(journal)
     importlib.reload(reflect)
-    # restrict allowlist to known names for the test
-    monkeypatch.setattr(reflect, "REFLECTION_TOOL_ALLOWLIST", {"search_memories", "add_memory"})
 
     orch = _Orch()
-    text = await reflect.reflect("discord-1", orchestrator=orch, tool_executor=_ToolExec())
+    mm = _MM()
+    text = await reflect.reflect("discord-1", orchestrator=orch, tool_executor=_ToolExec(), memory_manager=mm)
 
     assert "plan is taking shape" in text
-    # journal got the reflection
     assert "plan is taking shape" in journal.read_recent("discord-1", days=1)
-    # destructive/irrelevant tools filtered out
     names = {t["function"]["name"] for t in orch.seen_tools}
-    assert names == {"search_memories", "add_memory"}
+    assert names == {"search_chat_history", "get_chat_history"}  # destructive tool filtered out
+    assert len(mm.calls) == 1
+    assert mm.calls[0]["user_id"] == "discord-1"
+    assert "plan is taking shape" in mm.calls[0]["assistant_reply"]
 
 
 @pytest.mark.asyncio
-async def test_reflect_empty_text_skips_journal(tmp_path, monkeypatch):
+async def test_reflect_empty_text_skips_journal_and_memory(tmp_path, monkeypatch):
     monkeypatch.setenv("AMBIENT_JOURNAL_DIR", str(tmp_path))
     import importlib
     importlib.reload(journal)
@@ -54,6 +62,24 @@ async def test_reflect_empty_text_skips_journal(tmp_path, monkeypatch):
         async def get_all_tools(self, *, user_id):
             return []
 
-    text = await reflect.reflect("discord-1", orchestrator=_Empty(), tool_executor=_TE())
+    mm = _MM()
+    text = await reflect.reflect("discord-1", orchestrator=_Empty(), tool_executor=_TE(), memory_manager=mm)
     assert text.strip() == ""
     assert journal.read_recent("discord-1", days=1) == ""
+    assert mm.calls == []
+
+
+@pytest.mark.asyncio
+async def test_reflect_palace_write_failure_is_nonfatal(tmp_path, monkeypatch):
+    monkeypatch.setenv("AMBIENT_JOURNAL_DIR", str(tmp_path))
+    import importlib
+    importlib.reload(journal)
+    importlib.reload(reflect)
+
+    class _BadMM:
+        def add_to_memory(self, **kw):
+            raise RuntimeError("palace down")
+
+    text = await reflect.reflect("discord-1", orchestrator=_Orch(), tool_executor=_ToolExec(), memory_manager=_BadMM())
+    assert "plan is taking shape" in text
+    assert "plan is taking shape" in journal.read_recent("discord-1", days=1)
