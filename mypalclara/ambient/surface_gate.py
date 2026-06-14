@@ -17,10 +17,14 @@ _NOTHING = {"decision": "nothing", "content": "", "reason": ""}
 def _parse(raw: str) -> dict:
     text = (raw or "").strip()
     if text.startswith("```"):
-        text = text.strip("`")
-        if text.lower().startswith("json"):
-            text = text[4:]
-        text = text.strip()
+        # Drop the opening fence line (``` or ```json) and the closing fence line,
+        # without mangling backticks inside the JSON itself.
+        lines = text.split("\n")
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
     try:
         data = json.loads(text)
     except Exception:
