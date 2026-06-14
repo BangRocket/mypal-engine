@@ -698,6 +698,16 @@ class MessageProcessor:
             if intention_text:
                 messages.insert(2, SystemMessage(content=intention_text))
 
+        # Inject any reflection thoughts queued while the user was away
+        try:
+            from mypalclara.ambient.inject import collect_surfaced_block
+
+            surfaced = collect_surfaced_block(user_id)
+            if surfaced:
+                messages.insert(2, SystemMessage(content=surfaced))
+        except Exception as e:
+            logger.warning(f"ambient surfaced-thought injection failed: {e}")
+
         # Add reply chain if present
         if request.reply_chain:
             from datetime import UTC
