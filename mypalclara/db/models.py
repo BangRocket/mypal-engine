@@ -737,9 +737,6 @@ __all__ = [
     "GoogleOAuthToken",
     # Proactive models
     "ProactiveMessage",
-    "UserInteractionPattern",
-    "ProactiveNote",
-    "ProactiveAssessment",
     # Email monitoring
     "EmailAccount",
     "EmailRule",
