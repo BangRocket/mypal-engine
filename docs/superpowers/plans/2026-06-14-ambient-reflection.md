@@ -935,6 +935,8 @@ async def run_silent_turn(orchestrator: Any, messages: list, tools: list,
 
 ### Task D2: Phase 1 — reflect()
 
+> **CORRECTION (applied during execution, commit `08247ad`):** The discovery step found this engine has **no agent-callable Palace memory tools** — `search_memories`/`add_memory` are config aliases, not registered tools, and memory writes are an automatic pipeline (`MemoryManager.add_to_memory()`, sync). So `REFLECTION_TOOL_ALLOWLIST` is `{"search_chat_history", "get_chat_history"}` (real registered read tools), and after the silent turn `reflect()` consolidates into Palace by calling `MemoryManager.add_to_memory(user_id, "[ambient reflection]", text, is_dm=True)` via `run_in_executor` (off-loop, best-effort, guarded). `reflect()` takes an injectable `memory_manager=None` (defaults to `MemoryManager.get_instance()`). See `mypalclara/ambient/reflect.py` + `tests/ambient/test_reflect.py` for the authoritative version; the code blocks below are the superseded original.
+
 **Files:**
 - Create: `mypalclara/ambient/reflect.py`
 - Test: `tests/ambient/test_reflect.py`
